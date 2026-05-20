@@ -7,6 +7,7 @@ const moneyflowRouter = require("./routes/moneyflow");
 const recurringRouter = require("./routes/recurring");
 const ratesRouter = require("./routes/rates");
 const summaryRouter = require("./routes/summary");
+const referenceRouter = require("./routes/reference");
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -19,6 +20,7 @@ app.use("/api/moneyflow", moneyflowRouter);
 app.use("/api/recurring", recurringRouter);
 app.use("/api/rates", ratesRouter);
 app.use("/api/summary", summaryRouter);
+app.use("/api/reference", referenceRouter);
 
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok" });
