@@ -56,21 +56,22 @@ function getMonths(txs) {
 function monthLabel(m) {
   if (!m) return "Все периоды";
   const [y, mo] = m.split("-");
-  const date = new Date(parseInt(y), parseInt(mo) - 1);
-  return date.toLocaleDateString("ru-RU", { month: "long", year: "numeric" });
+  return new Date(parseInt(y), parseInt(mo) - 1).toLocaleDateString("ru-RU", {
+    month: "long",
+    year: "numeric",
+  });
 }
 
 export default function Transactions({ moneyflow }) {
   const [search, setSearch] = useState("");
-  const [types, setTypes] = useState([]);
+  const [showExpenses, setShowExpenses] = useState(false);
+  const [showIncome, setShowIncome] = useState(false);
   const [showTransfers, setShowTransfers] = useState(false);
   const [month, setMonth] = useState("");
   const [category, setCategory] = useState("");
   const [page, setPage] = useState(1);
 
-  // Все транзакции — переводы скрыты по умолчанию
   const allReal = useMemo(() => [...moneyflow].reverse(), [moneyflow]);
-
   const months = useMemo(() => getMonths(allReal), [allReal]);
 
   const categories = useMemo(() => {
@@ -83,26 +84,24 @@ export default function Transactions({ moneyflow }) {
     return Array.from(set).sort();
   }, [allReal]);
 
-  const toggleType = (t) => {
-    setTypes((prev) =>
-      prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t],
-    );
-    setPage(1);
-  };
-
   const filtered = useMemo(() => {
+    // Ни один тип не выбран → показываем расходы и доходы (без переводов)
+    const noneSelected = !showExpenses && !showIncome && !showTransfers;
+
     return allReal.filter((t) => {
       const isTransfer = t.category === "Transfer";
+      const isExpense = t.type === "expense" && !isTransfer;
+      const isIncome = t.type === "income" && !isTransfer;
 
-      // Переводы — показываем только если чип включён
-      if (isTransfer && !showTransfers) return false;
-
-      // Фильтр по типу (только для не-переводов)
-      if (!isTransfer && types.length > 0 && !types.includes(t.type))
-        return false;
-
-      // Если показываем переводы и активен тип-фильтр — переводы всё равно показываем
-      if (isTransfer && types.length > 0) return showTransfers;
+      if (noneSelected) {
+        // По умолчанию: всё кроме переводов
+        if (isTransfer) return false;
+      } else {
+        // Проверяем каждый тип по своему чипу
+        if (isTransfer && !showTransfers) return false;
+        if (isExpense && !showExpenses) return false;
+        if (isIncome && !showIncome) return false;
+      }
 
       if (month) {
         const d = String(t.date || "").split(" ")[0];
@@ -125,9 +124,16 @@ export default function Transactions({ moneyflow }) {
 
       return true;
     });
-  }, [allReal, types, showTransfers, month, category, search]);
+  }, [
+    allReal,
+    showExpenses,
+    showIncome,
+    showTransfers,
+    month,
+    category,
+    search,
+  ]);
 
-  // Статистика считается только по реальным расходам/доходам (без переводов)
   const totalExpenses = filtered
     .filter((t) => t.type === "expense" && t.category !== "Transfer")
     .reduce((s, t) => s + parseFloat(t["amount RUB"] || 0), 0);
@@ -139,14 +145,15 @@ export default function Transactions({ moneyflow }) {
   const visible = filtered.slice(0, page * PAGE_SIZE);
   const hasMore = visible.length < filtered.length;
   const hasFilters =
-    types.length > 0 || month || category || search || showTransfers;
+    showExpenses || showIncome || showTransfers || month || category || search;
 
   const resetAll = () => {
-    setTypes([]);
+    setShowExpenses(false);
+    setShowIncome(false);
+    setShowTransfers(false);
     setMonth("");
     setCategory("");
     setSearch("");
-    setShowTransfers(false);
     setPage(1);
   };
 
@@ -213,6 +220,12 @@ export default function Transactions({ moneyflow }) {
     );
   }
 
+  const chipStyle = (active) => ({
+    minHeight: "unset",
+    minWidth: "unset",
+    ...(active ? {} : {}),
+  });
+
   return (
     <div
       style={{ display: "flex", flexDirection: "column", gap: "var(--sp-4)" }}
@@ -227,7 +240,6 @@ export default function Transactions({ moneyflow }) {
           gap: "var(--sp-3)",
         }}
       >
-        {/* Search + type chips */}
         <div
           style={{
             display: "flex",
@@ -236,6 +248,7 @@ export default function Transactions({ moneyflow }) {
             alignItems: "center",
           }}
         >
+          {/* Search */}
           <div
             style={{
               position: "relative",
@@ -269,39 +282,49 @@ export default function Transactions({ moneyflow }) {
             />
           </div>
 
+          {/* Type chips */}
           <div
             style={{ display: "flex", gap: "var(--sp-2)", flexWrap: "wrap" }}
           >
-            {[
-              { id: "expense", label: "Расходы", icon: "trending_down" },
-              { id: "income", label: "Доходы", icon: "trending_up" },
-            ].map(({ id, label, icon }) => (
-              <button
-                key={id}
-                className={`chip ${types.includes(id) ? "active" : ""}`}
-                onClick={() => {
-                  toggleType(id);
-                  setPage(1);
-                }}
-                style={{ minHeight: "unset", minWidth: "unset" }}
+            <button
+              className={`chip ${showExpenses ? "active" : ""}`}
+              onClick={() => {
+                setShowExpenses((p) => !p);
+                setPage(1);
+              }}
+              style={chipStyle(showExpenses)}
+            >
+              <span
+                className="material-symbols-outlined"
+                style={{ fontSize: "14px" }}
               >
-                <span
-                  className="material-symbols-outlined"
-                  style={{ fontSize: "14px" }}
-                >
-                  {icon}
-                </span>
-                {label}
-              </button>
-            ))}
-            {/* Переводы — отдельный чип */}
+                trending_down
+              </span>
+              Расходы
+            </button>
+            <button
+              className={`chip ${showIncome ? "active" : ""}`}
+              onClick={() => {
+                setShowIncome((p) => !p);
+                setPage(1);
+              }}
+              style={chipStyle(showIncome)}
+            >
+              <span
+                className="material-symbols-outlined"
+                style={{ fontSize: "14px" }}
+              >
+                trending_up
+              </span>
+              Доходы
+            </button>
             <button
               className={`chip ${showTransfers ? "active" : ""}`}
               onClick={() => {
                 setShowTransfers((p) => !p);
                 setPage(1);
               }}
-              style={{ minHeight: "unset", minWidth: "unset" }}
+              style={chipStyle(showTransfers)}
             >
               <span
                 className="material-symbols-outlined"
@@ -348,7 +371,7 @@ export default function Transactions({ moneyflow }) {
           </select>
         </div>
 
-        {/* Active filters */}
+        {/* Active tags */}
         {hasFilters && (
           <div
             style={{
@@ -366,9 +389,8 @@ export default function Transactions({ moneyflow }) {
             >
               Активно:
             </span>
-            {types.map((t) => (
+            {showExpenses && (
               <span
-                key={t}
                 className="badge badge-primary"
                 style={{
                   cursor: "pointer",
@@ -376,9 +398,9 @@ export default function Transactions({ moneyflow }) {
                   alignItems: "center",
                   gap: "4px",
                 }}
-                onClick={() => toggleType(t)}
+                onClick={() => setShowExpenses(false)}
               >
-                {t === "expense" ? "Расходы" : "Доходы"}
+                Расходы{" "}
                 <span
                   className="material-symbols-outlined"
                   style={{ fontSize: "12px" }}
@@ -386,7 +408,27 @@ export default function Transactions({ moneyflow }) {
                   close
                 </span>
               </span>
-            ))}
+            )}
+            {showIncome && (
+              <span
+                className="badge badge-primary"
+                style={{
+                  cursor: "pointer",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "4px",
+                }}
+                onClick={() => setShowIncome(false)}
+              >
+                Доходы{" "}
+                <span
+                  className="material-symbols-outlined"
+                  style={{ fontSize: "12px" }}
+                >
+                  close
+                </span>
+              </span>
+            )}
             {showTransfers && (
               <span
                 className="badge badge-primary"
@@ -604,7 +646,6 @@ export default function Transactions({ moneyflow }) {
           >
             {date}
           </div>
-
           <div className="card-flat" style={{ overflow: "hidden" }}>
             {txs.map((t, i) => {
               const amt = parseFloat(t["amount RUB"] || 0);
@@ -621,7 +662,7 @@ export default function Transactions({ moneyflow }) {
                     borderBottom:
                       i < txs.length - 1 ? "1px solid var(--border)" : "none",
                     minHeight: "64px",
-                    opacity: isTransfer ? 0.7 : 1,
+                    opacity: isTransfer ? 0.75 : 1,
                   }}
                 >
                   <div

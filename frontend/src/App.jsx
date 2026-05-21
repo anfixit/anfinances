@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { getSummary, getAccounts, getMoneyflow } from "./api";
 import Dashboard from "./components/Dashboard";
 import Transactions from "./components/Transactions";
+import Budget from "./components/Budget";
 import AddTransaction from "./components/AddTransaction";
 import "./index.css";
 
@@ -39,13 +40,14 @@ export default function App() {
   const NAV = [
     { id: "dashboard", icon: "dashboard", label: "Дашборд" },
     { id: "transactions", icon: "receipt_long", label: "Транзакции" },
+    { id: "budget", icon: "account_balance_wallet", label: "Бюджет" },
   ];
 
   return (
     <div
       style={{ minHeight: "100vh", display: "flex", flexDirection: "column" }}
     >
-      {/* ── NAVBAR ── */}
+      {/* NAVBAR */}
       <nav
         style={{
           background: "var(--bg-card)",
@@ -68,7 +70,6 @@ export default function App() {
             alignItems: "center",
             gap: "var(--sp-3)",
             marginRight: "var(--sp-6)",
-            textDecoration: "none",
           }}
         >
           <div
@@ -101,7 +102,7 @@ export default function App() {
           </span>
         </div>
 
-        {/* Nav items */}
+        {/* Nav */}
         <div style={{ display: "flex", flex: 1, height: "100%" }}>
           {NAV.map(({ id, icon, label }) => (
             <button
@@ -180,7 +181,7 @@ export default function App() {
         </div>
       </nav>
 
-      {/* ── CONTENT ── */}
+      {/* CONTENT */}
       <main
         style={{
           flex: 1,
@@ -188,7 +189,7 @@ export default function App() {
           maxWidth: "1100px",
           width: "100%",
           margin: "0 auto",
-          paddingBottom: "80px" /* space for FAB on mobile */,
+          paddingBottom: "80px",
         }}
       >
         {loading ? (
@@ -223,20 +224,15 @@ export default function App() {
                 summary={summary}
                 accounts={accounts}
                 moneyflow={moneyflow}
-                onAdd={() => setShowAdd(true)}
               />
             )}
-            {page === "transactions" && (
-              <Transactions
-                moneyflow={moneyflow}
-                onAdd={() => setShowAdd(true)}
-              />
-            )}
+            {page === "transactions" && <Transactions moneyflow={moneyflow} />}
+            {page === "budget" && <Budget moneyflow={moneyflow} />}
           </>
         )}
       </main>
 
-      {/* ── FAB (mobile only) ── */}
+      {/* FAB mobile */}
       <button
         className="fab show-mobile"
         onClick={() => setShowAdd(true)}
@@ -251,7 +247,6 @@ export default function App() {
         Добавить
       </button>
 
-      {/* ── ADD TRANSACTION SHEET ── */}
       {showAdd && (
         <AddTransaction
           accounts={accounts}

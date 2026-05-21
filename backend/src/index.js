@@ -21,6 +21,8 @@ app.use("/api/recurring", recurringRouter);
 app.use("/api/rates", ratesRouter);
 app.use("/api/summary", summaryRouter);
 app.use("/api/reference", referenceRouter);
+const budgetRouter = require("./routes/budget");
+app.use("/api/budget", budgetRouter);
 
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok" });
