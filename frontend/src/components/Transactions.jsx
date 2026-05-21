@@ -29,6 +29,7 @@ const CATEGORY_ICONS = {
   Income: "payments",
   Salary: "payments",
   Freelance: "work",
+  Transfer: "sync_alt",
   default: "attach_money",
 };
 
@@ -62,19 +63,23 @@ function monthLabel(m) {
 export default function Transactions({ moneyflow }) {
   const [search, setSearch] = useState("");
   const [types, setTypes] = useState([]);
+  const [showTransfers, setShowTransfers] = useState(false);
   const [month, setMonth] = useState("");
   const [category, setCategory] = useState("");
   const [page, setPage] = useState(1);
 
-  const allReal = useMemo(
-    () => [...moneyflow].filter((t) => t.category !== "Transfer").reverse(),
-    [moneyflow],
-  );
+  // Все транзакции — переводы скрыты по умолчанию
+  const allReal = useMemo(() => [...moneyflow].reverse(), [moneyflow]);
 
   const months = useMemo(() => getMonths(allReal), [allReal]);
 
   const categories = useMemo(() => {
-    const set = new Set(allReal.map((t) => t.category).filter(Boolean));
+    const set = new Set(
+      allReal
+        .filter((t) => t.category !== "Transfer")
+        .map((t) => t.category)
+        .filter(Boolean),
+    );
     return Array.from(set).sort();
   }, [allReal]);
 
@@ -87,7 +92,18 @@ export default function Transactions({ moneyflow }) {
 
   const filtered = useMemo(() => {
     return allReal.filter((t) => {
-      if (types.length > 0 && !types.includes(t.type)) return false;
+      const isTransfer = t.category === "Transfer";
+
+      // Переводы — показываем только если чип включён
+      if (isTransfer && !showTransfers) return false;
+
+      // Фильтр по типу (только для не-переводов)
+      if (!isTransfer && types.length > 0 && !types.includes(t.type))
+        return false;
+
+      // Если показываем переводы и активен тип-фильтр — переводы всё равно показываем
+      if (isTransfer && types.length > 0) return showTransfers;
+
       if (month) {
         const d = String(t.date || "").split(" ")[0];
         const parts = d.split("/");
@@ -96,7 +112,9 @@ export default function Transactions({ moneyflow }) {
           if (txMonth !== month) return false;
         }
       }
+
       if (category && t.category !== category) return false;
+
       if (search) {
         const q = search.toLowerCase();
         const hay = [t.comment, t.category, t.subcategory, t.account]
@@ -104,27 +122,31 @@ export default function Transactions({ moneyflow }) {
           .toLowerCase();
         if (!hay.includes(q)) return false;
       }
+
       return true;
     });
-  }, [allReal, types, month, category, search]);
+  }, [allReal, types, showTransfers, month, category, search]);
 
+  // Статистика считается только по реальным расходам/доходам (без переводов)
   const totalExpenses = filtered
-    .filter((t) => t.type === "expense")
+    .filter((t) => t.type === "expense" && t.category !== "Transfer")
     .reduce((s, t) => s + parseFloat(t["amount RUB"] || 0), 0);
 
   const totalIncome = filtered
-    .filter((t) => t.type === "income")
+    .filter((t) => t.type === "income" && t.category !== "Transfer")
     .reduce((s, t) => s + parseFloat(t["amount RUB"] || 0), 0);
 
   const visible = filtered.slice(0, page * PAGE_SIZE);
   const hasMore = visible.length < filtered.length;
-  const hasFilters = types.length > 0 || month || category || search;
+  const hasFilters =
+    types.length > 0 || month || category || search || showTransfers;
 
   const resetAll = () => {
     setTypes([]);
     setMonth("");
     setCategory("");
     setSearch("");
+    setShowTransfers(false);
     setPage(1);
   };
 
@@ -247,7 +269,9 @@ export default function Transactions({ moneyflow }) {
             />
           </div>
 
-          <div style={{ display: "flex", gap: "var(--sp-2)" }}>
+          <div
+            style={{ display: "flex", gap: "var(--sp-2)", flexWrap: "wrap" }}
+          >
             {[
               { id: "expense", label: "Расходы", icon: "trending_down" },
               { id: "income", label: "Доходы", icon: "trending_up" },
@@ -255,7 +279,10 @@ export default function Transactions({ moneyflow }) {
               <button
                 key={id}
                 className={`chip ${types.includes(id) ? "active" : ""}`}
-                onClick={() => toggleType(id)}
+                onClick={() => {
+                  toggleType(id);
+                  setPage(1);
+                }}
                 style={{ minHeight: "unset", minWidth: "unset" }}
               >
                 <span
@@ -267,10 +294,27 @@ export default function Transactions({ moneyflow }) {
                 {label}
               </button>
             ))}
+            {/* Переводы — отдельный чип */}
+            <button
+              className={`chip ${showTransfers ? "active" : ""}`}
+              onClick={() => {
+                setShowTransfers((p) => !p);
+                setPage(1);
+              }}
+              style={{ minHeight: "unset", minWidth: "unset" }}
+            >
+              <span
+                className="material-symbols-outlined"
+                style={{ fontSize: "14px" }}
+              >
+                sync_alt
+              </span>
+              Переводы
+            </button>
           </div>
         </div>
 
-        {/* Month + category selects */}
+        {/* Month + category */}
         <div style={{ display: "flex", gap: "var(--sp-3)", flexWrap: "wrap" }}>
           <select
             value={month}
@@ -287,7 +331,6 @@ export default function Transactions({ moneyflow }) {
               </option>
             ))}
           </select>
-
           <select
             value={category}
             onChange={(e) => {
@@ -305,7 +348,7 @@ export default function Transactions({ moneyflow }) {
           </select>
         </div>
 
-        {/* Active filter tags */}
+        {/* Active filters */}
         {hasFilters && (
           <div
             style={{
@@ -344,6 +387,26 @@ export default function Transactions({ moneyflow }) {
                 </span>
               </span>
             ))}
+            {showTransfers && (
+              <span
+                className="badge badge-primary"
+                style={{
+                  cursor: "pointer",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "4px",
+                }}
+                onClick={() => setShowTransfers(false)}
+              >
+                Переводы{" "}
+                <span
+                  className="material-symbols-outlined"
+                  style={{ fontSize: "12px" }}
+                >
+                  close
+                </span>
+              </span>
+            )}
             {month && (
               <span
                 className="badge badge-primary"
@@ -495,7 +558,7 @@ export default function Transactions({ moneyflow }) {
         ))}
       </div>
 
-      {/* EMPTY FILTERED STATE */}
+      {/* EMPTY */}
       {filtered.length === 0 && (
         <div
           style={{
@@ -526,7 +589,7 @@ export default function Transactions({ moneyflow }) {
         </div>
       )}
 
-      {/* TRANSACTION LIST */}
+      {/* LIST */}
       {Object.entries(grouped).map(([date, txs]) => (
         <div key={date}>
           <div
@@ -546,6 +609,8 @@ export default function Transactions({ moneyflow }) {
             {txs.map((t, i) => {
               const amt = parseFloat(t["amount RUB"] || 0);
               const isIncome = t.type === "income";
+              const isTransfer = t.category === "Transfer";
+
               return (
                 <div
                   key={i}
@@ -556,6 +621,7 @@ export default function Transactions({ moneyflow }) {
                     borderBottom:
                       i < txs.length - 1 ? "1px solid var(--border)" : "none",
                     minHeight: "64px",
+                    opacity: isTransfer ? 0.7 : 1,
                   }}
                 >
                   <div
@@ -564,9 +630,11 @@ export default function Transactions({ moneyflow }) {
                       height: "40px",
                       borderRadius: "var(--radius-md)",
                       flexShrink: 0,
-                      background: isIncome
-                        ? "var(--success-container)"
-                        : "var(--primary-container)",
+                      background: isTransfer
+                        ? "var(--secondary-container)"
+                        : isIncome
+                          ? "var(--success-container)"
+                          : "var(--primary-container)",
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "center",
@@ -576,9 +644,11 @@ export default function Transactions({ moneyflow }) {
                       className="material-symbols-outlined"
                       style={{
                         fontSize: "20px",
-                        color: isIncome
-                          ? "var(--on-success-container)"
-                          : "var(--on-primary-container)",
+                        color: isTransfer
+                          ? "var(--on-secondary-container)"
+                          : isIncome
+                            ? "var(--on-success-container)"
+                            : "var(--on-primary-container)",
                       }}
                     >
                       {getIcon(t.category)}
@@ -604,16 +674,30 @@ export default function Transactions({ moneyflow }) {
                           whiteSpace: "nowrap",
                         }}
                       >
-                        {t.subcategory ||
-                          t.category ||
-                          (isIncome ? "Доход" : "Расход")}
+                        {isTransfer
+                          ? `${t.account} → ${t.account_to || "?"}`
+                          : t.subcategory ||
+                            t.category ||
+                            (isIncome ? "Доход" : "Расход")}
                       </span>
-                      {t.required === "required" && (
+                      {t.required === "required" && !isTransfer && (
                         <span
                           className="badge badge-error"
                           style={{ flexShrink: 0 }}
                         >
                           обяз.
+                        </span>
+                      )}
+                      {isTransfer && (
+                        <span
+                          className="badge"
+                          style={{
+                            flexShrink: 0,
+                            background: "var(--secondary-container)",
+                            color: "var(--on-secondary-container)",
+                          }}
+                        >
+                          перевод
                         </span>
                       )}
                     </div>
@@ -645,11 +729,15 @@ export default function Transactions({ moneyflow }) {
                       style={{
                         font: "var(--font-title-small)",
                         fontFamily: "var(--font-mono)",
-                        color: isIncome ? "var(--success)" : "var(--error)",
+                        color: isTransfer
+                          ? "var(--text-muted)"
+                          : isIncome
+                            ? "var(--success)"
+                            : "var(--error)",
                         whiteSpace: "nowrap",
                       }}
                     >
-                      {isIncome ? "+" : "−"}
+                      {isTransfer ? "" : isIncome ? "+" : "−"}
                       {fmt(amt)}
                     </div>
                     <div

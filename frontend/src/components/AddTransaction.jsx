@@ -113,14 +113,10 @@ export default function AddTransaction({ accounts, onClose, onSaved }) {
   }, []);
 
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
-
-  const handleTypeChange = (t) => {
+  const handleTypeChange = (t) =>
     setForm((f) => ({ ...f, type: t, category: "", subcategory: "" }));
-  };
-
-  const handleCategoryChange = (cat) => {
+  const handleCategoryChange = (cat) =>
     setForm((f) => ({ ...f, category: cat, subcategory: "" }));
-  };
 
   const cats = form.type === "income" ? INCOME_CATS : EXPENSE_CATS;
   const subcats = (form.category && reference[form.category]) || [];
@@ -132,8 +128,6 @@ export default function AddTransaction({ accounts, onClose, onSaved }) {
     if (currency === "RUB") return amt;
     return amt * (rates[currency] || 0);
   };
-
-  const rubPreview = toRub(form.amount, form.currency);
 
   const handleSubmit = async () => {
     if (!form.amount || !form.account) {
@@ -254,115 +248,192 @@ export default function AddTransaction({ accounts, onClose, onSaved }) {
 
   return (
     <div
-      className="sheet-overlay"
       onClick={(e) => e.target === e.currentTarget && onClose()}
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "var(--overlay)",
+        zIndex: 200,
+        display: "flex",
+        alignItems: "flex-end",
+        justifyContent: "center",
+        animation: "fadeIn 0.2s ease",
+      }}
     >
-      <div className="sheet-content">
-        {/* Handle */}
-        <div className="sheet-handle" />
+      <div
+        style={{
+          background: "var(--bg-card)",
+          borderRadius: "var(--radius-xl) var(--radius-xl) 0 0",
+          width: "100%",
+          maxWidth: "600px",
+          /* Ключевое: максимальная высота и скролл ВНУТРИ */
+          maxHeight: "92vh",
+          display: "flex",
+          flexDirection: "column",
+          boxShadow: "var(--elev-5)",
+          animation: "slideUp 0.3s cubic-bezier(0.32, 0.72, 0, 1)",
+        }}
+      >
+        {/* Handle — фиксированный, не скроллится */}
+        <div
+          style={{
+            padding: "var(--sp-3) 0 0",
+            display: "flex",
+            justifyContent: "center",
+            flexShrink: 0,
+          }}
+        >
+          <div
+            style={{
+              width: "32px",
+              height: "4px",
+              background: "var(--border-strong)",
+              borderRadius: "var(--radius-full)",
+            }}
+          />
+        </div>
 
-        {/* Header */}
+        {/* Header — фиксированный */}
         <div
           style={{
             display: "flex",
             justifyContent: "space-between",
             alignItems: "center",
+            padding: "var(--sp-4) var(--sp-6)",
+            flexShrink: 0,
           }}
         >
           <span style={{ font: "var(--font-headline-small)" }}>
             Новая операция
           </span>
           <button
-            className="btn-text"
             onClick={onClose}
             style={{
-              minWidth: "var(--touch)",
-              width: "var(--touch)",
-              height: "var(--touch)",
+              background: "none",
+              border: "none",
+              width: "40px",
+              height: "40px",
               borderRadius: "var(--radius-full)",
-              padding: 0,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              color: "var(--text-muted)",
+              cursor: "pointer",
             }}
           >
             <span className="material-symbols-outlined">close</span>
           </button>
         </div>
 
-        {/* Type selector */}
-        <div className="segment-group">
-          {TYPES.map(({ id, label, icon }) => (
-            <button
-              key={id}
-              className={`segment-btn ${form.type === id ? "active" : ""}`}
-              onClick={() => handleTypeChange(id)}
-            >
-              <span
-                className="material-symbols-outlined"
-                style={{ fontSize: "16px" }}
+        {/* Type selector — фиксированный, всегда виден */}
+        <div style={{ padding: "0 var(--sp-6) var(--sp-4)", flexShrink: 0 }}>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(4, 1fr)",
+              border: "1px solid var(--border-strong)",
+              borderRadius: "var(--radius-sm)",
+              overflow: "hidden",
+              background: "var(--bg-input)",
+            }}
+          >
+            {TYPES.map(({ id, label, icon }, i) => (
+              <button
+                key={id}
+                onClick={() => handleTypeChange(id)}
+                style={{
+                  background:
+                    form.type === id
+                      ? "var(--primary-container)"
+                      : "transparent",
+                  color:
+                    form.type === id
+                      ? "var(--on-primary-container)"
+                      : "var(--text-muted)",
+                  border: "none",
+                  borderRight:
+                    i < TYPES.length - 1
+                      ? "1px solid var(--border-strong)"
+                      : "none",
+                  borderRadius: 0,
+                  padding: "var(--sp-3) var(--sp-2)",
+                  height: "52px",
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: "4px",
+                  cursor: "pointer",
+                  fontWeight: form.type === id ? 700 : 400,
+                  transition: "all 0.15s",
+                  minWidth: 0,
+                }}
               >
-                {icon}
-              </span>
-              <span className="hide-mobile">{label}</span>
-              <span
-                className="show-mobile"
-                style={{ fontSize: "11px", display: "block" }}
-              >
-                {label}
-              </span>
-            </button>
-          ))}
+                <span
+                  className="material-symbols-outlined"
+                  style={{ fontSize: "18px" }}
+                >
+                  {icon}
+                </span>
+                <span
+                  style={{
+                    fontSize: "11px",
+                    whiteSpace: "nowrap",
+                    lineHeight: 1,
+                  }}
+                >
+                  {label}
+                </span>
+              </button>
+            ))}
+          </div>
         </div>
 
-        {/* Date */}
-        <Field label="Дата">
-          <input
-            type="date"
-            value={form.date}
-            onChange={(e) => set("date", e.target.value)}
-          />
-        </Field>
-
-        {/* Amount from */}
-        <Field label={form.type === "conversion" ? "Сумма списания" : "Сумма"}>
-          <AmountRow
-            value={form.amount}
-            onChange={(v) => set("amount", v)}
-            currency={form.currency}
-            onCurrencyChange={(v) => set("currency", v)}
-          />
-        </Field>
-
-        {/* Amount to (conversion only) */}
-        {form.type === "conversion" && (
-          <Field label="Сумма получения">
-            <AmountRow
-              value={form.amountTo}
-              onChange={(v) => set("amountTo", v)}
-              currency={form.currencyTo}
-              onCurrencyChange={(v) => set("currencyTo", v)}
+        {/* Scrollable content */}
+        <div
+          style={{
+            overflowY: "auto",
+            flex: 1,
+            padding: "0 var(--sp-6) var(--sp-6)",
+            display: "flex",
+            flexDirection: "column",
+            gap: "var(--sp-4)",
+          }}
+        >
+          <Field label="Дата">
+            <input
+              type="date"
+              value={form.date}
+              onChange={(e) => set("date", e.target.value)}
             />
           </Field>
-        )}
 
-        {/* Account from */}
-        <Field label={isTransferLike ? "Откуда" : "Счёт"}>
-          <select
-            value={form.account}
-            onChange={(e) => set("account", e.target.value)}
+          <Field
+            label={form.type === "conversion" ? "Сумма списания" : "Сумма"}
           >
-            {accounts.map((a) => (
-              <option key={a.account} value={a.account}>
-                {a.account}
-              </option>
-            ))}
-          </select>
-        </Field>
+            <AmountRow
+              value={form.amount}
+              onChange={(v) => set("amount", v)}
+              currency={form.currency}
+              onCurrencyChange={(v) => set("currency", v)}
+            />
+          </Field>
 
-        {/* Account to */}
-        {isTransferLike && (
-          <Field label="Куда">
+          {form.type === "conversion" && (
+            <Field label="Сумма получения">
+              <AmountRow
+                value={form.amountTo}
+                onChange={(v) => set("amountTo", v)}
+                currency={form.currencyTo}
+                onCurrencyChange={(v) => set("currencyTo", v)}
+              />
+            </Field>
+          )}
+
+          <Field label={isTransferLike ? "Откуда" : "Счёт"}>
             <select
-              value={form.account_to}
-              onChange={(e) => set("account_to", e.target.value)}
+              value={form.account}
+              onChange={(e) => set("account", e.target.value)}
             >
               {accounts.map((a) => (
                 <option key={a.account} value={a.account}>
@@ -371,153 +442,224 @@ export default function AddTransaction({ accounts, onClose, onSaved }) {
               ))}
             </select>
           </Field>
-        )}
 
-        {/* Fee (conversion only) */}
-        {form.type === "conversion" && (
-          <div
-            style={{
-              background: "var(--bg-card-2)",
-              borderRadius: "var(--radius-md)",
-              padding: "var(--sp-4)",
-              display: "flex",
-              flexDirection: "column",
-              gap: "var(--sp-4)",
-            }}
-          >
-            <label
+          {isTransferLike && (
+            <Field label="Куда">
+              <select
+                value={form.account_to}
+                onChange={(e) => set("account_to", e.target.value)}
+              >
+                {accounts.map((a) => (
+                  <option key={a.account} value={a.account}>
+                    {a.account}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          )}
+
+          {form.type === "conversion" && (
+            <div
               style={{
+                background: "var(--bg-card-2)",
+                borderRadius: "var(--radius-md)",
+                padding: "var(--sp-4)",
                 display: "flex",
-                alignItems: "center",
-                gap: "var(--sp-3)",
-                cursor: "pointer",
-                font: "var(--font-label-large)",
-                minHeight: "var(--touch)",
+                flexDirection: "column",
+                gap: "var(--sp-4)",
               }}
             >
-              <input
-                type="checkbox"
-                checked={form.hasFee}
-                onChange={(e) => set("hasFee", e.target.checked)}
-              />
-              <span
-                className="material-symbols-outlined"
-                style={{ fontSize: "18px", color: "var(--text-muted)" }}
+              <label
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "var(--sp-3)",
+                  cursor: "pointer",
+                  font: "var(--font-body-medium)",
+                }}
               >
-                info
-              </span>
-              Есть комиссия банка
-            </label>
-            {form.hasFee && (
-              <>
-                <Field label="Сумма комиссии">
-                  <input
-                    type="number"
-                    placeholder="0.00"
-                    value={form.fee}
-                    onChange={(e) => set("fee", e.target.value)}
-                  />
-                </Field>
-                <Field label="Счёт списания комиссии">
-                  <select
-                    value={form.feeAccount}
-                    onChange={(e) => set("feeAccount", e.target.value)}
+                <input
+                  type="checkbox"
+                  checked={form.hasFee}
+                  onChange={(e) => set("hasFee", e.target.checked)}
+                />
+                Есть комиссия банка
+              </label>
+              {form.hasFee && (
+                <>
+                  <Field label="Сумма комиссии">
+                    <input
+                      type="number"
+                      placeholder="0.00"
+                      value={form.fee}
+                      onChange={(e) => set("fee", e.target.value)}
+                    />
+                  </Field>
+                  <Field label="Счёт списания комиссии">
+                    <select
+                      value={form.feeAccount}
+                      onChange={(e) => set("feeAccount", e.target.value)}
+                    >
+                      {accounts.map((a) => (
+                        <option key={a.account} value={a.account}>
+                          {a.account}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                </>
+              )}
+            </div>
+          )}
+
+          {!isTransferLike && (
+            <Field label="Категория">
+              <select
+                value={form.category}
+                onChange={(e) => handleCategoryChange(e.target.value)}
+              >
+                <option value="">— выбрать —</option>
+                {cats.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          )}
+
+          {!isTransferLike && subcats.length > 0 && (
+            <Field label="Подкатегория">
+              <select
+                value={form.subcategory}
+                onChange={(e) => set("subcategory", e.target.value)}
+              >
+                <option value="">— выбрать —</option>
+                {subcats.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          )}
+
+          {form.type === "expense" && (
+            <Field label="Тип расхода">
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr",
+                  border: "1px solid var(--border-strong)",
+                  borderRadius: "var(--radius-sm)",
+                  overflow: "hidden",
+                  background: "var(--bg-input)",
+                }}
+              >
+                {[
+                  {
+                    id: "required",
+                    label: "Обязательный",
+                    icon: "priority_high",
+                  },
+                  { id: "optional", label: "Необязательный", icon: "remove" },
+                ].map(({ id, label, icon }, i) => (
+                  <button
+                    key={id}
+                    onClick={() => set("required", id)}
+                    style={{
+                      background:
+                        form.required === id
+                          ? "var(--primary-container)"
+                          : "transparent",
+                      color:
+                        form.required === id
+                          ? "var(--on-primary-container)"
+                          : "var(--text-muted)",
+                      border: "none",
+                      borderRight:
+                        i === 0 ? "1px solid var(--border-strong)" : "none",
+                      borderRadius: 0,
+                      height: "48px",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: "var(--sp-2)",
+                      cursor: "pointer",
+                      font: "var(--font-label-medium)",
+                      fontWeight: form.required === id ? 700 : 400,
+                      transition: "all 0.15s",
+                    }}
                   >
-                    {accounts.map((a) => (
-                      <option key={a.account} value={a.account}>
-                        {a.account}
-                      </option>
-                    ))}
-                  </select>
-                </Field>
-              </>
-            )}
-          </div>
-        )}
+                    <span
+                      className="material-symbols-outlined"
+                      style={{ fontSize: "16px" }}
+                    >
+                      {icon}
+                    </span>
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </Field>
+          )}
 
-        {/* Category */}
-        {!isTransferLike && (
-          <Field label="Категория">
-            <select
-              value={form.category}
-              onChange={(e) => handleCategoryChange(e.target.value)}
-            >
-              <option value="">— выбрать —</option>
-              {cats.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </select>
+          <Field label="Комментарий">
+            <input
+              placeholder="за что?"
+              value={form.comment}
+              onChange={(e) => set("comment", e.target.value)}
+            />
           </Field>
-        )}
 
-        {/* Subcategory — dynamic, only shown when category selected */}
-        {!isTransferLike && subcats.length > 0 && (
-          <Field label="Подкатегория">
-            <select
-              value={form.subcategory}
-              onChange={(e) => set("subcategory", e.target.value)}
+          {form.amount && (
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                background: "var(--primary-container)",
+                borderRadius: "var(--radius-md)",
+                padding: "var(--sp-3) var(--sp-4)",
+              }}
             >
-              <option value="">— выбрать —</option>
-              {subcats.map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
-            </select>
-          </Field>
-        )}
-
-        {/* Required toggle (expense only) */}
-        {form.type === "expense" && (
-          <div className="segment-group">
-            {[
-              { id: "required", label: "Обязательный", icon: "priority_high" },
-              { id: "optional", label: "Необязательный", icon: "remove" },
-            ].map(({ id, label, icon }) => (
-              <button
-                key={id}
-                className={`segment-btn ${form.required === id ? "active" : ""}`}
-                onClick={() => set("required", id)}
+              <span
+                style={{
+                  font: "var(--font-label-medium)",
+                  color: "var(--on-primary-container)",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "var(--sp-2)",
+                }}
               >
                 <span
                   className="material-symbols-outlined"
                   style={{ fontSize: "16px" }}
                 >
-                  {icon}
+                  calculate
                 </span>
-                {label}
-              </button>
-            ))}
-          </div>
-        )}
+                Примерно в рублях
+              </span>
+              <span
+                style={{
+                  font: "var(--font-title-small)",
+                  fontFamily: "var(--font-mono)",
+                  color: "var(--on-primary-container)",
+                }}
+              >
+                ≈ {toRub(form.amount, form.currency).toLocaleString("ru-RU")} ₽
+              </span>
+            </div>
+          )}
 
-        {/* Comment */}
-        <Field label="Комментарий">
-          <input
-            placeholder="за что?"
-            value={form.comment}
-            onChange={(e) => set("comment", e.target.value)}
-          />
-        </Field>
-
-        {/* RUB preview */}
-        {form.amount && (
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              background: "var(--primary-container)",
-              borderRadius: "var(--radius-md)",
-              padding: "var(--sp-3) var(--sp-4)",
-            }}
-          >
-            <span
+          {error && (
+            <div
               style={{
-                font: "var(--font-label-medium)",
-                color: "var(--on-primary-container)",
+                background: "var(--error-container)",
+                borderRadius: "var(--radius-md)",
+                padding: "var(--sp-3) var(--sp-4)",
+                font: "var(--font-body-medium)",
+                color: "var(--error)",
                 display: "flex",
                 alignItems: "center",
                 gap: "var(--sp-2)",
@@ -525,84 +667,59 @@ export default function AddTransaction({ accounts, onClose, onSaved }) {
             >
               <span
                 className="material-symbols-outlined"
-                style={{ fontSize: "16px" }}
+                style={{ fontSize: "18px" }}
               >
-                calculate
+                error
               </span>
-              Примерно в рублях
-            </span>
-            <span
-              style={{
-                font: "var(--font-title-small)",
-                fontFamily: "var(--font-mono)",
-                color: "var(--on-primary-container)",
-              }}
-            >
-              ≈ {rubPreview.toLocaleString("ru-RU")} ₽
-            </span>
-          </div>
-        )}
+              {error}
+            </div>
+          )}
 
-        {/* Error */}
-        {error && (
-          <div
+          <button
+            onClick={handleSubmit}
+            disabled={loading}
             style={{
-              background: "var(--error-container)",
-              borderRadius: "var(--radius-md)",
-              padding: "var(--sp-3) var(--sp-4)",
-              font: "var(--font-body-medium)",
-              color: "var(--error)",
+              background: "var(--primary)",
+              color: "var(--on-primary)",
+              border: "none",
+              borderRadius: "var(--radius-xl)",
+              height: "56px",
+              font: "var(--font-title-small)",
+              cursor: loading ? "not-allowed" : "pointer",
+              opacity: loading ? 0.7 : 1,
               display: "flex",
               alignItems: "center",
+              justifyContent: "center",
               gap: "var(--sp-2)",
+              transition: "all 0.15s",
             }}
           >
-            <span
-              className="material-symbols-outlined"
-              style={{ fontSize: "18px" }}
-            >
-              error
-            </span>
-            {error}
-          </div>
-        )}
-
-        {/* Submit */}
-        <button
-          className="btn-success"
-          onClick={handleSubmit}
-          disabled={loading}
-          style={{
-            minHeight: "56px",
-            borderRadius: "var(--radius-xl)",
-            font: "var(--font-title-small)",
-          }}
-        >
-          {loading ? (
-            <>
-              <span
-                className="material-symbols-outlined"
-                style={{
-                  animation: "spin 1s linear infinite",
-                  fontSize: "20px",
-                }}
-              >
-                progress_activity
-              </span>
-              Сохраняем...
-            </>
-          ) : (
-            <>
-              <span
-                className="material-symbols-outlined"
-                style={{ fontSize: "20px" }}
-              >
-                check
-              </span>
-              Сохранить
-            </>
-          )}
-        </button>
+            {loading ? (
+              <>
+                <span
+                  className="material-symbols-outlined"
+                  style={{
+                    animation: "spin 1s linear infinite",
+                    fontSize: "20px",
+                  }}
+                >
+                  progress_activity
+                </span>
+                Сохраняем...
+              </>
+            ) : (
+              <>
+                <span
+                  className="material-symbols-outlined"
+                  style={{ fontSize: "20px" }}
+                >
+                  check
+                </span>
+                Сохранить
+              </>
+            )}
+          </button>
+        </div>
       </div>
     </div>
   );
