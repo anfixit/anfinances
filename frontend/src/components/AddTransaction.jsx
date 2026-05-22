@@ -22,7 +22,6 @@ const EXPENSE_CATS = [
   "Travel",
 ];
 const INCOME_CATS = ["Income"];
-const CURRENCIES = ["RUB", "USD", "UZS"];
 
 const TYPES = [
   { id: "expense", label: "Расход", icon: "trending_down" },
@@ -46,7 +45,13 @@ function Field({ label, children }) {
   );
 }
 
-function AmountRow({ value, onChange, currency, onCurrencyChange }) {
+function AmountRow({
+  value,
+  onChange,
+  currency,
+  onCurrencyChange,
+  currencies,
+}) {
   return (
     <div
       style={{
@@ -66,7 +71,7 @@ function AmountRow({ value, onChange, currency, onCurrencyChange }) {
         value={currency}
         onChange={(e) => onCurrencyChange(e.target.value)}
       >
-        {CURRENCIES.map((c) => (
+        {currencies.map((c) => (
           <option key={c}>{c}</option>
         ))}
       </select>
@@ -94,6 +99,7 @@ export default function AddTransaction({ accounts, onClose, onSaved }) {
   });
   const [reference, setReference] = useState({});
   const [rates, setRates] = useState({});
+  const [currencies, setCurrencies] = useState(["RUB"]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -104,10 +110,15 @@ export default function AddTransaction({ accounts, onClose, onSaved }) {
     getRates()
       .then((r) => {
         const map = {};
+        const list = [];
         r.forEach((row) => {
-          if (row.currency) map[row.currency] = parseFloat(row.rate);
+          if (row.currency) {
+            map[row.currency] = parseFloat(row.rate);
+            list.push(row.currency);
+          }
         });
         setRates(map);
+        setCurrencies(list);
       })
       .catch(() => {});
   }, []);
@@ -266,7 +277,6 @@ export default function AddTransaction({ accounts, onClose, onSaved }) {
           borderRadius: "var(--radius-xl) var(--radius-xl) 0 0",
           width: "100%",
           maxWidth: "600px",
-          /* Ключевое: максимальная высота и скролл ВНУТРИ */
           maxHeight: "92vh",
           display: "flex",
           flexDirection: "column",
@@ -274,7 +284,7 @@ export default function AddTransaction({ accounts, onClose, onSaved }) {
           animation: "slideUp 0.3s cubic-bezier(0.32, 0.72, 0, 1)",
         }}
       >
-        {/* Handle — фиксированный, не скроллится */}
+        {/* Handle */}
         <div
           style={{
             padding: "var(--sp-3) 0 0",
@@ -293,7 +303,7 @@ export default function AddTransaction({ accounts, onClose, onSaved }) {
           />
         </div>
 
-        {/* Header — фиксированный */}
+        {/* Header */}
         <div
           style={{
             display: "flex",
@@ -325,7 +335,7 @@ export default function AddTransaction({ accounts, onClose, onSaved }) {
           </button>
         </div>
 
-        {/* Type selector — фиксированный, всегда виден */}
+        {/* Type selector */}
         <div style={{ padding: "0 var(--sp-6) var(--sp-4)", flexShrink: 0 }}>
           <div
             style={{
@@ -416,6 +426,7 @@ export default function AddTransaction({ accounts, onClose, onSaved }) {
               onChange={(v) => set("amount", v)}
               currency={form.currency}
               onCurrencyChange={(v) => set("currency", v)}
+              currencies={currencies}
             />
           </Field>
 
@@ -426,6 +437,7 @@ export default function AddTransaction({ accounts, onClose, onSaved }) {
                 onChange={(v) => set("amountTo", v)}
                 currency={form.currencyTo}
                 onCurrencyChange={(v) => set("currencyTo", v)}
+                currencies={currencies}
               />
             </Field>
           )}

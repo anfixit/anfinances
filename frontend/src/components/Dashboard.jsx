@@ -8,6 +8,9 @@ import {
   Cell,
 } from "recharts";
 
+import { useState } from "react";
+import { updateRates } from "../api";
+
 function fmt(n) {
   return new Intl.NumberFormat("ru-RU", {
     style: "currency",
@@ -80,6 +83,23 @@ function StatCard({ label, value, sub, color, icon }) {
 
 export default function Dashboard({ summary, accounts, moneyflow }) {
   if (!summary) return null;
+
+  const [ratesUpdating, setRatesUpdating] = useState(false);
+  const [ratesUpdated, setRatesUpdated] = useState(false);
+
+  const handleUpdateRates = async () => {
+    setRatesUpdating(true);
+    setRatesUpdated(false);
+    try {
+      await updateRates();
+      setRatesUpdated(true);
+      setTimeout(() => setRatesUpdated(false), 3000);
+    } catch (e) {
+      // тихая ошибка
+    } finally {
+      setRatesUpdating(false);
+    }
+  };
 
   const expenses = moneyflow.filter(
     (t) => t.type === "expense" && t.category !== "Transfer",
@@ -327,6 +347,88 @@ export default function Dashboard({ summary, accounts, moneyflow }) {
             );
           })}
         </div>
+      </div>
+      <div
+        className="card"
+        style={{
+          padding: "var(--sp-4) var(--sp-5)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: "var(--sp-4)",
+          flexWrap: "wrap",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "var(--sp-4)",
+            flexWrap: "wrap",
+          }}
+        >
+          <div>
+            <div
+              style={{
+                font: "var(--font-label-small)",
+                color: "var(--text-muted)",
+                textTransform: "uppercase",
+                letterSpacing: "0.08em",
+                marginBottom: "var(--sp-1)",
+              }}
+            >
+              Курсы валют
+            </div>
+            <div
+              style={{ display: "flex", gap: "var(--sp-4)", flexWrap: "wrap" }}
+            >
+              {summary.ratesMap &&
+                Object.entries(summary.ratesMap)
+                  .filter(([cur]) => cur !== "RUB")
+                  .map(([cur, rate]) => (
+                    <span
+                      key={cur}
+                      style={{
+                        font: "var(--font-title-small)",
+                        fontFamily: "var(--font-mono)",
+                      }}
+                    >
+                      1 {cur} ={" "}
+                      {Number(rate).toLocaleString("ru-RU", {
+                        maximumFractionDigits: 2,
+                      })}{" "}
+                      ₽
+                    </span>
+                  ))}
+            </div>
+          </div>
+        </div>
+        <button
+          className={ratesUpdated ? "btn-success" : "btn-outlined"}
+          onClick={handleUpdateRates}
+          disabled={ratesUpdating}
+          style={{
+            height: "40px",
+            minHeight: "40px",
+            font: "var(--font-label-large)",
+            flexShrink: 0,
+          }}
+        >
+          <span
+            className="material-symbols-outlined"
+            style={{
+              fontSize: "18px",
+              animation: ratesUpdating ? "spin 1s linear infinite" : "none",
+            }}
+          >
+            {ratesUpdated ? "check" : "currency_exchange"}
+          </span>
+          {ratesUpdating
+            ? "Обновляем..."
+            : ratesUpdated
+              ? "Обновлено"
+              : "Обновить курсы"}
+        </button>
       </div>
 
       {/* ── CHART ── */}
