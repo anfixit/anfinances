@@ -11,6 +11,8 @@ export const getReference = () => api.get("/reference").then((r) => r.data);
 export const addTransaction = (data) =>
   api.post("/moneyflow", data).then((r) => r.data);
 export const updateRates = () => api.post("/rates/update").then((r) => r.data);
+export const addAccount = (data) =>
+  api.post("/accounts", data).then((r) => r.data);
 
 export const getBudget = (month) =>
   api.get("/budget", { params: { month } }).then((r) => r.data);

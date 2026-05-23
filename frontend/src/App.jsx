@@ -224,6 +224,7 @@ export default function App() {
                 summary={summary}
                 accounts={accounts}
                 moneyflow={moneyflow}
+                onReload={loadData}
               />
             )}
             {page === "transactions" && <Transactions moneyflow={moneyflow} />}

@@ -7,15 +7,15 @@ import {
   ResponsiveContainer,
   Cell,
 } from "recharts";
-
 import { useState } from "react";
 import { updateRates } from "../api";
+import AddAccount from "./AddAccount";
 
 function fmt(n) {
   return new Intl.NumberFormat("ru-RU", {
     style: "currency",
     currency: "RUB",
-    maximumFractionDigits: 0,
+    maximumFractionDigits: 2,
   }).format(n);
 }
 
@@ -81,11 +81,12 @@ function StatCard({ label, value, sub, color, icon }) {
   );
 }
 
-export default function Dashboard({ summary, accounts, moneyflow }) {
-  if (!summary) return null;
-
+export default function Dashboard({ summary, accounts, moneyflow, onReload }) {
   const [ratesUpdating, setRatesUpdating] = useState(false);
   const [ratesUpdated, setRatesUpdated] = useState(false);
+  const [showAddAccount, setShowAddAccount] = useState(false);
+
+  if (!summary) return null;
 
   const handleUpdateRates = async () => {
     setRatesUpdating(true);
@@ -95,11 +96,12 @@ export default function Dashboard({ summary, accounts, moneyflow }) {
       setRatesUpdated(true);
       setTimeout(() => setRatesUpdated(false), 3000);
     } catch (e) {
-      // тихая ошибка
     } finally {
       setRatesUpdating(false);
     }
   };
+
+  const balances = summary.accountBalancesRub || {};
 
   const expenses = moneyflow.filter(
     (t) => t.type === "expense" && t.category !== "Transfer",
@@ -129,15 +131,25 @@ export default function Dashboard({ summary, accounts, moneyflow }) {
     .sort((a, b) => b.value - a.value)
     .slice(0, 8);
 
+  // Балансы теперь из summary.accountBalancesRub
   const assets = accounts
     .filter((a) => !a["acc.type"]?.includes("Credit"))
-    .reduce((s, a) => s + parseRub(a["balance in RUB"]), 0);
+    .reduce(
+      (s, a) => s + (balances[a.account] ?? parseRub(a["balance in RUB"])),
+      0,
+    );
 
   const debts = accounts
     .filter((a) => a["acc.type"]?.includes("Credit"))
-    .reduce((s, a) => s + parseRub(a["balance in RUB"]), 0);
+    .reduce(
+      (s, a) => s + (balances[a.account] ?? parseRub(a["balance in RUB"])),
+      0,
+    );
 
-  const nonZero = accounts.filter((a) => parseRub(a["balance in RUB"]) !== 0);
+  const nonZero = accounts.filter(
+    (a) =>
+      Math.abs(balances[a.account] ?? parseRub(a["balance in RUB"])) > 0.01,
+  );
 
   return (
     <div
@@ -168,7 +180,6 @@ export default function Dashboard({ summary, accounts, moneyflow }) {
         >
           {fmt(summary.totalBalance)}
         </div>
-
         <div
           style={{
             height: "1px",
@@ -176,7 +187,6 @@ export default function Dashboard({ summary, accounts, moneyflow }) {
             marginBottom: "var(--sp-5)",
           }}
         />
-
         <div
           style={{
             display: "grid",
@@ -260,17 +270,45 @@ export default function Dashboard({ summary, accounts, moneyflow }) {
             borderBottom: "1px solid var(--border)",
           }}
         >
-          <span
+          <div
             style={{
-              font: "var(--font-label-medium)",
-              color: "var(--text-muted)",
-              textTransform: "uppercase",
-              letterSpacing: "0.1em",
+              display: "flex",
+              alignItems: "center",
+              gap: "var(--sp-3)",
             }}
           >
-            Счета
-          </span>
-          <span className="badge badge-primary">{nonZero.length} активных</span>
+            <span
+              style={{
+                font: "var(--font-label-medium)",
+                color: "var(--text-muted)",
+                textTransform: "uppercase",
+                letterSpacing: "0.1em",
+              }}
+            >
+              Счета
+            </span>
+            <span className="badge badge-primary">
+              {nonZero.length} активных
+            </span>
+          </div>
+          <button
+            className="btn-text"
+            onClick={() => setShowAddAccount(true)}
+            style={{
+              minHeight: "unset",
+              height: "32px",
+              padding: "0 var(--sp-3)",
+              font: "var(--font-label-medium)",
+            }}
+          >
+            <span
+              className="material-symbols-outlined"
+              style={{ fontSize: "16px" }}
+            >
+              add
+            </span>
+            Добавить
+          </button>
         </div>
 
         <div
@@ -282,7 +320,8 @@ export default function Dashboard({ summary, accounts, moneyflow }) {
           }}
         >
           {nonZero.map((acc) => {
-            const bal = parseRub(acc["balance in RUB"]);
+            const bal =
+              balances[acc.account] ?? parseRub(acc["balance in RUB"]);
             const isCredit = acc["acc.type"]?.includes("Credit");
             return (
               <div
@@ -348,6 +387,8 @@ export default function Dashboard({ summary, accounts, moneyflow }) {
           })}
         </div>
       </div>
+
+      {/* ── RATES ── */}
       <div
         className="card"
         style={{
@@ -605,6 +646,17 @@ export default function Dashboard({ summary, accounts, moneyflow }) {
               );
             })}
         </div>
+      )}
+
+      {/* ── ADD ACCOUNT MODAL ── */}
+      {showAddAccount && (
+        <AddAccount
+          onClose={() => setShowAddAccount(false)}
+          onSaved={() => {
+            setShowAddAccount(false);
+            if (onReload) onReload();
+          }}
+        />
       )}
     </div>
   );

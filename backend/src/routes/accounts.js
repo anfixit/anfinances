@@ -1,5 +1,5 @@
 const express = require("express");
-const { getSheet } = require("../services/sheets");
+const { getSheet, appendRow } = require("../services/sheets");
 const router = express.Router();
 
 router.get("/", async (req, res) => {
@@ -9,6 +9,16 @@ router.get("/", async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to fetch accounts" });
+  }
+});
+
+router.post("/", async (req, res) => {
+  try {
+    await appendRow("accounts", req.body);
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to add account" });
   }
 });
 
