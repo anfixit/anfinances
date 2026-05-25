@@ -1,42 +1,6 @@
 import { useState, useMemo } from "react";
 import EditTransaction from "./EditTransaction";
-
-function fmt(n) {
-  return new Intl.NumberFormat("ru-RU", {
-    style: "currency",
-    currency: "RUB",
-    maximumFractionDigits: 0,
-  }).format(n);
-}
-
-const CATEGORY_ICONS = {
-  Food: "restaurant",
-  Healthcare: "favorite",
-  Transport: "directions_car",
-  Home: "home",
-  Software: "devices",
-  Auto: "directions_car",
-  Entertainment: "celebration",
-  Communication: "phone",
-  Hardware: "memory",
-  Beauty: "spa",
-  Pets: "pets",
-  Self_Development: "school",
-  Gifts_Charity: "card_giftcard",
-  Taxes: "receipt",
-  Bank: "account_balance",
-  Clothing_Shoes: "checkroom",
-  Travel: "flight",
-  Income: "payments",
-  Transfer: "sync_alt",
-  default: "attach_money",
-};
-
-function getIcon(category) {
-  return CATEGORY_ICONS[category] || CATEGORY_ICONS.default;
-}
-
-const PAGE_SIZE = 20;
+import { getCategoryIcon, PAGE_SIZE, fmtRub } from "../constants";
 
 function getMonths(txs) {
   const set = new Set();
@@ -67,7 +31,7 @@ export default function Transactions({ moneyflow, accounts, onReload }) {
   const [month, setMonth] = useState("");
   const [category, setCategory] = useState("");
   const [page, setPage] = useState(1);
-  const [editTx, setEditTx] = useState(null); // транзакция для редактирования
+  const [editTx, setEditTx] = useState(null);
 
   const allReal = useMemo(() => [...moneyflow].reverse(), [moneyflow]);
   const months = useMemo(() => getMonths(allReal), [allReal]);
@@ -154,9 +118,21 @@ export default function Transactions({ moneyflow, accounts, onReload }) {
     }, {});
   }, [visible]);
 
-  // Найти парную строку перевода (исправлено: пустые комментарии)
+  // Найти парную строку: 1) по pair_id (новые), 2) fallback по эвристике
   const findPair = (tx) => {
     if (tx.category !== "Transfer") return null;
+
+    // По pair_id
+    if (tx.pair_id && String(tx.pair_id).trim() !== "") {
+      const byPairId = moneyflow.find(
+        (other) =>
+          String(other.id) !== String(tx.id) &&
+          String(other.pair_id) === String(tx.pair_id),
+      );
+      if (byPairId) return byPairId;
+    }
+
+    // Fallback: date + opposite accounts + comment
     const txComment = String(tx.comment || "").trim();
     const txDate = String(tx.date || "");
     return (
@@ -177,7 +153,7 @@ export default function Transactions({ moneyflow, accounts, onReload }) {
 
   const handleRowClick = (tx) => {
     const pair = findPair(tx);
-    // Для переводов открываем только expense-сторону чтобы не дублировать
+    // Income-сторону перевода не открываем — открывается через expense-сторону
     if (tx.category === "Transfer" && tx.type === "income" && pair) return;
     setEditTx({ ...tx, _pair: pair });
   };
@@ -341,13 +317,13 @@ export default function Transactions({ moneyflow, accounts, onReload }) {
           },
           {
             label: "Расходы",
-            value: fmt(totalExpenses),
+            value: fmtRub(totalExpenses),
             icon: "trending_down",
             color: "var(--error)",
           },
           {
             label: "Доходы",
-            value: fmt(totalIncome),
+            value: fmtRub(totalIncome),
             icon: "trending_up",
             color: "var(--success)",
           },
@@ -399,7 +375,6 @@ export default function Transactions({ moneyflow, accounts, onReload }) {
         ))}
       </div>
 
-      {/* EMPTY */}
       {filtered.length === 0 && (
         <div
           style={{
@@ -430,7 +405,6 @@ export default function Transactions({ moneyflow, accounts, onReload }) {
         </div>
       )}
 
-      {/* LIST */}
       {Object.entries(grouped).map(([date, txs]) => {
         const parts = date.split("/");
         let displayDate = date;
@@ -464,7 +438,7 @@ export default function Transactions({ moneyflow, accounts, onReload }) {
                 const amt = parseFloat(t["amount RUB"] || 0);
                 const isIncome = t.type === "income";
                 const isTransfer = t.category === "Transfer";
-                const isPairIncome = isTransfer && isIncome; // скрытая половина перевода
+                const isPairIncome = isTransfer && isIncome;
 
                 return (
                   <div
@@ -489,7 +463,6 @@ export default function Transactions({ moneyflow, accounts, onReload }) {
                       e.currentTarget.style.background = "transparent";
                     }}
                   >
-                    {/* Icon */}
                     <div
                       style={{
                         width: "40px",
@@ -517,11 +490,10 @@ export default function Transactions({ moneyflow, accounts, onReload }) {
                               : "var(--error)",
                         }}
                       >
-                        {getIcon(t.category)}
+                        {getCategoryIcon(t.category)}
                       </span>
                     </div>
 
-                    {/* Info */}
                     <div
                       style={{ flex: 1, minWidth: 0, padding: "0 var(--sp-3)" }}
                     >
@@ -572,7 +544,6 @@ export default function Transactions({ moneyflow, accounts, onReload }) {
                       </div>
                     </div>
 
-                    {/* Amount */}
                     <div
                       style={{
                         display: "flex",
@@ -594,7 +565,7 @@ export default function Transactions({ moneyflow, accounts, onReload }) {
                         }}
                       >
                         {isIncome ? "+" : "−"}
-                        {fmt(amt)}
+                        {fmtRub(amt)}
                       </span>
                       <span
                         style={{
@@ -613,7 +584,6 @@ export default function Transactions({ moneyflow, accounts, onReload }) {
         );
       })}
 
-      {/* LOAD MORE */}
       {hasMore && (
         <button
           className="btn-outlined"
@@ -624,7 +594,6 @@ export default function Transactions({ moneyflow, accounts, onReload }) {
         </button>
       )}
 
-      {/* EDIT MODAL */}
       {editTx && (
         <EditTransaction
           tx={editTx}

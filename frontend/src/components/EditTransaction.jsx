@@ -1,32 +1,15 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   updateTransaction,
   deleteTransaction,
   getReference,
   getRates,
 } from "../api";
-
-const EXPENSE_CATS = [
-  "Auto",
-  "Bank",
-  "Beauty",
-  "Clothing_Shoes",
-  "Communication",
-  "Entertainment",
-  "Food",
-  "Gifts_Charity",
-  "Hardware",
-  "Healthcare",
-  "Home",
-  "Self_Development",
-  "Software",
-  "Pets",
-  "Public_Services",
-  "Taxes",
-  "Transport",
-  "Travel",
-];
-const INCOME_CATS = ["Income"];
+import {
+  parseAmountString,
+  sheetDateToInput,
+  dateInputToSheet,
+} from "../constants";
 
 function Field({ label, children }) {
   return (
@@ -43,11 +26,6 @@ function Field({ label, children }) {
   );
 }
 
-function parseAmount(str) {
-  if (!str) return "";
-  return String(str).replace(/[^0-9.-]/g, "");
-}
-
 function detectUIType(tx) {
   if (tx.category === "Transfer") {
     if (tx.subcategory === "Conversion") return "conversion";
@@ -61,11 +39,13 @@ function SingleRowForm({
   accounts,
   reference,
   currencies,
+  expenseCats,
+  incomeCats,
   onChange,
   label,
 }) {
   const isExpense = tx.type === "expense";
-  const cats = isExpense ? EXPENSE_CATS : INCOME_CATS;
+  const cats = isExpense ? expenseCats : incomeCats;
   const subcats =
     (tx.category && tx.category !== "Transfer" && reference[tx.category]) || [];
 
@@ -104,7 +84,7 @@ function SingleRowForm({
           <input
             className="input"
             type="number"
-            value={parseAmount(tx.amount)}
+            value={parseAmountString(tx.amount)}
             onChange={(e) =>
               onChange("amount", `${tx.currency} ${e.target.value}`)
             }
@@ -197,7 +177,6 @@ export default function EditTransaction({ tx, accounts, onClose, onSaved }) {
   const [currencies, setCurrencies] = useState(["RUB", "USD", "UZS", "THB"]);
   const [loading, setLoading] = useState(false);
   const [showPair, setShowPair] = useState(true);
-  // Состояние подтверждения удаления: null | "single" | "pair"
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState("");
@@ -214,6 +193,16 @@ export default function EditTransaction({ tx, accounts, onClose, onSaved }) {
       .catch(() => {});
   }, []);
 
+  const allCategories = Object.keys(reference);
+  const expenseCats = useMemo(
+    () => allCategories.filter((c) => c !== "Income" && c !== "Transfer"),
+    [allCategories],
+  );
+  const incomeCats = useMemo(
+    () => allCategories.filter((c) => c === "Income"),
+    [allCategories],
+  );
+
   const updateField = (key, val) => setForm((f) => ({ ...f, [key]: val }));
   const updatePairField = (key, val) =>
     setPairForm((f) => ({ ...f, [key]: val }));
@@ -222,9 +211,13 @@ export default function EditTransaction({ tx, accounts, onClose, onSaved }) {
     setLoading(true);
     setError("");
     try {
-      await updateTransaction(form.id, form);
+      // НЕ передаём "amount RUB" — бэкенд пересчитает сам из amount+currency
+      const { "amount RUB": _, _pair, ...payload } = form;
+      await updateTransaction(form.id, payload);
+
       if (pairTx && pairForm && showPair) {
-        await updateTransaction(pairForm.id, pairForm);
+        const { "amount RUB": __, _pair: ___, ...pairPayload } = pairForm;
+        await updateTransaction(pairForm.id, pairPayload);
       }
       onSaved();
     } catch (e) {
@@ -244,20 +237,6 @@ export default function EditTransaction({ tx, accounts, onClose, onSaved }) {
       setDeleting(false);
       setConfirmDelete(null);
     }
-  };
-
-  const parseDateForInput = (dateStr) => {
-    if (!dateStr) return new Date().toISOString().split("T")[0];
-    const parts = String(dateStr).split(" ")[0].split("/");
-    if (parts.length === 3) {
-      return `${parts[2]}-${String(parts[0]).padStart(2, "0")}-${String(parts[1]).padStart(2, "0")}`;
-    }
-    return dateStr;
-  };
-
-  const formatDateForSheet = (dateInput) => {
-    const [y, m, d] = dateInput.split("-");
-    return `${parseInt(m)}/${parseInt(d)}/${y} 12:00:00`;
   };
 
   const uiType = detectUIType(tx);
@@ -356,9 +335,9 @@ export default function EditTransaction({ tx, accounts, onClose, onSaved }) {
             <input
               className="input"
               type="date"
-              value={parseDateForInput(form.date)}
+              value={sheetDateToInput(form.date)}
               onChange={(e) =>
-                updateField("date", formatDateForSheet(e.target.value))
+                updateField("date", dateInputToSheet(e.target.value))
               }
             />
           </Field>
@@ -380,6 +359,8 @@ export default function EditTransaction({ tx, accounts, onClose, onSaved }) {
             accounts={accounts}
             reference={reference}
             currencies={currencies}
+            expenseCats={expenseCats}
+            incomeCats={incomeCats}
             onChange={updateField}
             label={
               isTransfer
@@ -432,6 +413,8 @@ export default function EditTransaction({ tx, accounts, onClose, onSaved }) {
                   accounts={accounts}
                   reference={reference}
                   currencies={currencies}
+                  expenseCats={expenseCats}
+                  incomeCats={incomeCats}
                   onChange={updatePairField}
                   label={pairTx.type === "income" ? "Зачисление" : "Списание"}
                 />
@@ -446,7 +429,7 @@ export default function EditTransaction({ tx, accounts, onClose, onSaved }) {
                   }}
                 >
                   #{pairTx.id} · {pairTx.type === "income" ? "+" : "−"}
-                  {parseAmount(pairTx.amount)} {pairTx.currency} ·{" "}
+                  {parseAmountString(pairTx.amount)} {pairTx.currency} ·{" "}
                   {pairTx.account} — без изменений
                 </div>
               )}
@@ -467,7 +450,6 @@ export default function EditTransaction({ tx, accounts, onClose, onSaved }) {
             </div>
           )}
 
-          {/* Inline подтверждение удаления */}
           {confirmDelete && (
             <div
               style={{
@@ -536,7 +518,6 @@ export default function EditTransaction({ tx, accounts, onClose, onSaved }) {
             gap: "var(--sp-3)",
           }}
         >
-          {/* Кнопка удаления — если перевод с парой, показываем два варианта */}
           {isTransfer && pairTx ? (
             <div
               style={{

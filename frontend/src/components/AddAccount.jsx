@@ -1,14 +1,22 @@
 import { useState, useEffect } from "react";
-import { getRates } from "../api";
+import { getRates, addAccount } from "../api";
+import {
+  ACCOUNT_TYPES,
+  ACCOUNT_TYPE_LABELS,
+  ACCOUNT_TYPE_ICONS,
+} from "../constants";
 
-const ACCOUNT_TYPES = ["Card", "Cash", "Card, Credit"];
-
-export default function AddAccount({ onClose, onSaved }) {
+export default function AddAccount({
+  onClose,
+  onSaved,
+  existingAccounts = [],
+}) {
   const [form, setForm] = useState({
     account: "",
     "acc.type": "Card",
     currency: "RUB",
     initial_balance: "0",
+    credit_limit: "",
     comments: "",
   });
   const [currencies, setCurrencies] = useState(["RUB"]);
@@ -34,24 +42,39 @@ export default function AddAccount({ onClose, onSaved }) {
     return `${num.toFixed(2)} ${currency}`;
   };
 
+  const isCredit = form["acc.type"]?.includes("Credit");
+
   const handleSubmit = async () => {
-    if (!form.account.trim()) {
+    const nameTrimmed = form.account.trim();
+    if (!nameTrimmed) {
       setError("Введи название счёта");
       return;
     }
+    // Проверка уникальности
+    const duplicate = existingAccounts.some(
+      (a) =>
+        String(a.account || "")
+          .trim()
+          .toLowerCase() === nameTrimmed.toLowerCase(),
+    );
+    if (duplicate) {
+      setError(`Счёт с именем "${nameTrimmed}" уже существует`);
+      return;
+    }
+
     setLoading(true);
     setError("");
     try {
-      const { addAccount } = await import("../api");
       const formatted = formatBalance(form.initial_balance, form.currency);
       await addAccount({
-        account: form.account.trim(),
+        account: nameTrimmed,
         "acc.type": form["acc.type"],
         currency: form.currency,
         initial_balance: formatted,
         "balance in acc.currency": formatted,
         "balance in RUB": formatted,
         comments: form.comments,
+        credit_limit: isCredit ? form.credit_limit : "",
       });
       onSaved();
     } catch (e) {
@@ -86,9 +109,10 @@ export default function AddAccount({ onClose, onSaved }) {
           flexDirection: "column",
           boxShadow: "var(--elev-5)",
           animation: "slideUp 0.3s cubic-bezier(0.32, 0.72, 0, 1)",
+          maxHeight: "92vh",
+          overflowY: "auto",
         }}
       >
-        {/* Header */}
         <div
           style={{
             display: "flex",
@@ -116,7 +140,6 @@ export default function AddAccount({ onClose, onSaved }) {
           </button>
         </div>
 
-        {/* Form */}
         <div
           style={{
             padding: "0 var(--sp-6) var(--sp-6)",
@@ -176,16 +199,6 @@ export default function AddAccount({ onClose, onSaved }) {
               }}
             >
               {ACCOUNT_TYPES.map((type, i) => {
-                const labels = {
-                  Card: "Карта",
-                  Cash: "Наличные",
-                  "Card, Credit": "Кредитная",
-                };
-                const icons = {
-                  Card: "account_balance_wallet",
-                  Cash: "payments",
-                  "Card, Credit": "credit_card",
-                };
                 const active = form["acc.type"] === type;
                 return (
                   <button
@@ -210,24 +223,16 @@ export default function AddAccount({ onClose, onSaved }) {
                       gap: "4px",
                       cursor: "pointer",
                       fontWeight: active ? 700 : 400,
-                      transition: "all 0.15s",
-                      minWidth: 0,
                     }}
                   >
                     <span
                       className="material-symbols-outlined"
                       style={{ fontSize: "18px" }}
                     >
-                      {icons[type]}
+                      {ACCOUNT_TYPE_ICONS[type]}
                     </span>
-                    <span
-                      style={{
-                        fontSize: "11px",
-                        whiteSpace: "nowrap",
-                        lineHeight: 1,
-                      }}
-                    >
-                      {labels[type]}
+                    <span style={{ fontSize: "11px" }}>
+                      {ACCOUNT_TYPE_LABELS[type]}
                     </span>
                   </button>
                 );
@@ -235,7 +240,7 @@ export default function AddAccount({ onClose, onSaved }) {
             </div>
           </div>
 
-          {/* Валюта + начальный баланс */}
+          {/* Начальный баланс + валюта */}
           <div
             style={{
               display: "flex",
@@ -275,6 +280,33 @@ export default function AddAccount({ onClose, onSaved }) {
               </select>
             </div>
           </div>
+
+          {/* Кредитный лимит — только для Card, Credit */}
+          {isCredit && (
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: "var(--sp-2)",
+              }}
+            >
+              <label
+                style={{
+                  font: "var(--font-label-medium)",
+                  color: "var(--text-muted)",
+                }}
+              >
+                Кредитный лимит, {form.currency}
+              </label>
+              <input
+                type="number"
+                inputMode="decimal"
+                placeholder="например, 120000"
+                value={form.credit_limit}
+                onChange={(e) => set("credit_limit", e.target.value)}
+              />
+            </div>
+          )}
 
           {/* Комментарий */}
           <div
@@ -341,30 +373,7 @@ export default function AddAccount({ onClose, onSaved }) {
               transition: "all 0.15s",
             }}
           >
-            {loading ? (
-              <>
-                <span
-                  className="material-symbols-outlined"
-                  style={{
-                    animation: "spin 1s linear infinite",
-                    fontSize: "20px",
-                  }}
-                >
-                  progress_activity
-                </span>
-                Сохраняем...
-              </>
-            ) : (
-              <>
-                <span
-                  className="material-symbols-outlined"
-                  style={{ fontSize: "20px" }}
-                >
-                  check
-                </span>
-                Добавить счёт
-              </>
-            )}
+            {loading ? "Сохраняем..." : "Создать счёт"}
           </button>
         </div>
       </div>

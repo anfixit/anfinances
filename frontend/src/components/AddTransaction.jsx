@@ -1,27 +1,6 @@
-import { useState, useEffect } from "react";
-import { addTransaction, getReference, getRates } from "../api";
-
-const EXPENSE_CATS = [
-  "Auto",
-  "Bank",
-  "Beauty",
-  "Clothing_Shoes",
-  "Communication",
-  "Entertainment",
-  "Food",
-  "Gifts_Charity",
-  "Hardware",
-  "Healthcare",
-  "Home",
-  "Self_Development",
-  "Software",
-  "Pets",
-  "Public_Services",
-  "Taxes",
-  "Transport",
-  "Travel",
-];
-const INCOME_CATS = ["Income"];
+import { useState, useEffect, useMemo } from "react";
+import { addTransaction, addTransfer, getReference, getRates } from "../api";
+import { formatDateForSheet, dateInputToSheet, todayISO } from "../constants";
 
 const TYPES = [
   { id: "expense", label: "Расход", icon: "trending_down" },
@@ -92,7 +71,7 @@ export default function AddTransaction({ accounts, onClose, onSaved }) {
     subcategory: "",
     comment: "",
     required: "optional",
-    date: new Date().toISOString().split("T")[0],
+    date: todayISO(),
     hasFee: false,
     fee: "",
     feeAccount: accounts[0]?.account || "",
@@ -129,7 +108,18 @@ export default function AddTransaction({ accounts, onClose, onSaved }) {
   const handleCategoryChange = (cat) =>
     setForm((f) => ({ ...f, category: cat, subcategory: "" }));
 
-  const cats = form.type === "income" ? INCOME_CATS : EXPENSE_CATS;
+  // Категории из reference: Income — только для доходов, Transfer — никогда, остальное — для расходов
+  const allCategories = Object.keys(reference);
+  const expenseCats = useMemo(
+    () => allCategories.filter((c) => c !== "Income" && c !== "Transfer"),
+    [allCategories],
+  );
+  const incomeCats = useMemo(
+    () => allCategories.filter((c) => c === "Income"),
+    [allCategories],
+  );
+
+  const cats = form.type === "income" ? incomeCats : expenseCats;
   const subcats = (form.category && reference[form.category]) || [];
   const isTransferLike = form.type === "transfer" || form.type === "conversion";
 
@@ -156,44 +146,45 @@ export default function AddTransaction({ accounts, onClose, onSaved }) {
     setLoading(true);
     setError("");
     try {
-      const now = new Date();
-      const isToday = form.date === now.toISOString().split("T")[0];
+      const isToday = form.date === todayISO();
       const dateStr = isToday
-        ? now.toLocaleDateString("en-US") +
-          " " +
-          now.toLocaleTimeString("en-US", { hour12: false })
-        : new Date(form.date + "T12:00:00").toLocaleDateString("en-US") +
-          " 12:00:00";
+        ? formatDateForSheet(new Date())
+        : dateInputToSheet(form.date);
 
       if (form.type === "transfer") {
         const amtRub = toRub(form.amount, form.currency);
-        const base = {
+        const expense = {
           date: dateStr,
-          currency: form.currency,
-          account_to: form.account_to,
-          category: "Transfer",
-          subcategory: "Transfer",
-          comment: form.comment,
+          type: "expense",
           required: "",
           amount: `${form.currency} ${form.amount}`,
           "amount RUB": amtRub,
-        };
-        await addTransaction({
-          ...base,
-          type: "expense",
           account: form.account,
-        });
-        await addTransaction({
-          ...base,
+          account_to: form.account_to,
+          currency: form.currency,
+          category: "Transfer",
+          subcategory: "Transfer",
+          comment: form.comment,
+        };
+        const income = {
+          date: dateStr,
           type: "income",
+          required: "",
+          amount: `${form.currency} ${form.amount}`,
+          "amount RUB": amtRub,
           account: form.account_to,
           account_to: form.account,
-        });
+          currency: form.currency,
+          category: "Transfer",
+          subcategory: "Transfer",
+          comment: form.comment,
+        };
+        await addTransfer({ expense, income });
       } else if (form.type === "conversion") {
         const comment =
           form.comment ||
           `${form.amount} ${form.currency} → ${form.amountTo} ${form.currencyTo}`;
-        await addTransaction({
+        const expense = {
           date: dateStr,
           type: "expense",
           required: "",
@@ -205,8 +196,8 @@ export default function AddTransaction({ accounts, onClose, onSaved }) {
           category: "Transfer",
           subcategory: "Conversion",
           comment,
-        });
-        await addTransaction({
+        };
+        const income = {
           date: dateStr,
           type: "income",
           required: "",
@@ -218,23 +209,26 @@ export default function AddTransaction({ accounts, onClose, onSaved }) {
           category: "Transfer",
           subcategory: "Conversion",
           comment,
-        });
-        if (form.hasFee && form.fee) {
-          await addTransaction({
-            date: dateStr,
-            type: "expense",
-            required: "optional",
-            amount: `${form.currency} ${form.fee}`,
-            "amount RUB": toRub(form.fee, form.currency),
-            account: form.feeAccount,
-            account_to: "",
-            currency: form.currency,
-            category: "Bank",
-            subcategory: "Service",
-            comment: `Комиссия: ${comment}`,
-          });
-        }
+        };
+        const fee =
+          form.hasFee && form.fee
+            ? {
+                date: dateStr,
+                type: "expense",
+                required: "optional",
+                amount: `${form.currency} ${form.fee}`,
+                "amount RUB": toRub(form.fee, form.currency),
+                account: form.feeAccount,
+                account_to: "",
+                currency: form.currency,
+                category: "Bank",
+                subcategory: "Service",
+                comment: `Комиссия: ${comment}`,
+              }
+            : undefined;
+        await addTransfer({ expense, income, fee });
       } else {
+        // expense / income — одиночная транзакция
         await addTransaction({
           date: dateStr,
           type: form.type,

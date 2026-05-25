@@ -10,18 +10,7 @@ import {
 import { useState } from "react";
 import { updateRates } from "../api";
 import AddAccount from "./AddAccount";
-
-function fmt(n) {
-  return new Intl.NumberFormat("ru-RU", {
-    style: "currency",
-    currency: "RUB",
-    maximumFractionDigits: 2,
-  }).format(n);
-}
-
-function parseRub(str) {
-  return parseFloat(String(str || "").replace(/[^0-9.-]/g, "")) || 0;
-}
+import { fmtRub, parseAmount, getCategoryIcon } from "../constants";
 
 function StatCard({ label, value, sub, color, icon }) {
   return (
@@ -95,6 +84,7 @@ export default function Dashboard({ summary, accounts, moneyflow, onReload }) {
       await updateRates();
       setRatesUpdated(true);
       setTimeout(() => setRatesUpdated(false), 3000);
+      if (onReload) onReload();
     } catch (e) {
     } finally {
       setRatesUpdating(false);
@@ -103,12 +93,21 @@ export default function Dashboard({ summary, accounts, moneyflow, onReload }) {
 
   const balances = summary.accountBalancesRub || {};
 
-  const expenses = moneyflow.filter(
-    (t) => t.type === "expense" && t.category !== "Transfer",
+  // Расходы/доходы текущего месяца
+  const now = new Date();
+  const curMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  const isCurrentMonth = (t) => {
+    const d = String(t.date || "").split(" ")[0];
+    const parts = d.split("/");
+    if (parts.length !== 3) return false;
+    return `${parts[2]}-${String(parts[0]).padStart(2, "0")}` === curMonth;
+  };
+
+  const monthFlow = moneyflow.filter(
+    (t) => t.category !== "Transfer" && isCurrentMonth(t),
   );
-  const income = moneyflow.filter(
-    (t) => t.type === "income" && t.category !== "Transfer",
-  );
+  const expenses = monthFlow.filter((t) => t.type === "expense");
+  const income = monthFlow.filter((t) => t.type === "income");
 
   const totalExpenses = expenses.reduce(
     (s, t) => s + parseFloat(t["amount RUB"] || 0),
@@ -131,31 +130,32 @@ export default function Dashboard({ summary, accounts, moneyflow, onReload }) {
     .sort((a, b) => b.value - a.value)
     .slice(0, 8);
 
-  // Балансы теперь из summary.accountBalancesRub
   const assets = accounts
     .filter((a) => !a["acc.type"]?.includes("Credit"))
     .reduce(
-      (s, a) => s + (balances[a.account] ?? parseRub(a["balance in RUB"])),
+      (s, a) => s + (balances[a.account] ?? parseAmount(a["balance in RUB"])),
       0,
     );
 
-  const debts = accounts
+  const debtsRaw = accounts
     .filter((a) => a["acc.type"]?.includes("Credit"))
     .reduce(
-      (s, a) => s + (balances[a.account] ?? parseRub(a["balance in RUB"])),
+      (s, a) => s + (balances[a.account] ?? parseAmount(a["balance in RUB"])),
       0,
     );
+  // Долги отображаем как положительное число
+  const debts = Math.abs(debtsRaw);
 
   const nonZero = accounts.filter(
     (a) =>
-      Math.abs(balances[a.account] ?? parseRub(a["balance in RUB"])) > 0.01,
+      Math.abs(balances[a.account] ?? parseAmount(a["balance in RUB"])) > 0.01,
   );
 
   return (
     <div
       style={{ display: "flex", flexDirection: "column", gap: "var(--sp-4)" }}
     >
-      {/* ── HERO CARD ── */}
+      {/* HERO CARD */}
       <div className="card" style={{ padding: "var(--sp-6)" }}>
         <div
           style={{
@@ -178,7 +178,7 @@ export default function Dashboard({ summary, accounts, moneyflow, onReload }) {
             marginBottom: "var(--sp-5)",
           }}
         >
-          {fmt(summary.totalBalance)}
+          {fmtRub(summary.totalBalance, 2)}
         </div>
         <div
           style={{
@@ -195,8 +195,12 @@ export default function Dashboard({ summary, accounts, moneyflow, onReload }) {
           }}
         >
           {[
-            { label: "Активы", value: fmt(assets), color: "var(--success)" },
-            { label: "Долги", value: fmt(debts), color: "var(--error)" },
+            {
+              label: "Активы",
+              value: fmtRub(assets, 2),
+              color: "var(--success)",
+            },
+            { label: "Долги", value: fmtRub(debts, 2), color: "var(--error)" },
             {
               label: "Runway",
               value: `${summary.runway ?? "—"} мес.`,
@@ -223,7 +227,7 @@ export default function Dashboard({ summary, accounts, moneyflow, onReload }) {
         </div>
       </div>
 
-      {/* ── MONTH STATS ── */}
+      {/* MONTH STATS */}
       <div
         style={{
           display: "grid",
@@ -234,32 +238,32 @@ export default function Dashboard({ summary, accounts, moneyflow, onReload }) {
         <StatCard
           icon="trending_up"
           label="Доходы"
-          value={fmt(totalIncome)}
+          value={fmtRub(totalIncome, 2)}
           sub="этот месяц"
           color="var(--success)"
         />
         <StatCard
           icon="trending_down"
           label="Расходы"
-          value={fmt(totalExpenses)}
+          value={fmtRub(totalExpenses, 2)}
           sub="этот месяц"
           color="var(--error)"
         />
         <StatCard
           icon="balance"
           label="Сальдо"
-          value={fmt(saldo)}
+          value={fmtRub(saldo, 2)}
           color={saldo >= 0 ? "var(--success)" : "var(--error)"}
         />
         <StatCard
           icon="event_note"
           label="План минимум"
-          value={fmt(summary.monthlyObligatory)}
+          value={fmtRub(summary.monthlyObligatory, 2)}
           sub="в месяц"
         />
       </div>
 
-      {/* ── ACCOUNTS ── */}
+      {/* ACCOUNTS */}
       <div className="card-flat" style={{ overflow: "hidden" }}>
         <div
           style={{
@@ -321,14 +325,9 @@ export default function Dashboard({ summary, accounts, moneyflow, onReload }) {
         >
           {nonZero.map((acc) => {
             const bal =
-              balances[acc.account] ?? parseRub(acc["balance in RUB"]);
+              balances[acc.account] ?? parseAmount(acc["balance in RUB"]);
             const isCredit = acc["acc.type"]?.includes("Credit");
-
-            // credit_limit — новая колонка в accounts (число, например 110000)
-            const creditLimit = parseFloat(
-              String(acc.credit_limit || "0").replace(/[^0-9.-]/g, ""),
-            );
-            // Доступно = лимит + текущий баланс (баланс отрицательный при долге)
+            const creditLimit = parseAmount(acc.credit_limit || 0);
             const available = creditLimit > 0 ? creditLimit + bal : null;
 
             return (
@@ -345,7 +344,6 @@ export default function Dashboard({ summary, accounts, moneyflow, onReload }) {
                   alignItems: "center",
                 }}
               >
-                {/* LEFT: name + type */}
                 <div
                   style={{
                     display: "flex",
@@ -385,7 +383,6 @@ export default function Dashboard({ summary, accounts, moneyflow, onReload }) {
                   </span>
                 </div>
 
-                {/* RIGHT: balance + credit info */}
                 <div
                   style={{
                     display: "flex",
@@ -396,7 +393,6 @@ export default function Dashboard({ summary, accounts, moneyflow, onReload }) {
                 >
                   {isCredit && creditLimit > 0 ? (
                     <>
-                      {/* Долг (отрицательный баланс — красный) */}
                       <span
                         style={{
                           font: "var(--font-title-small)",
@@ -404,9 +400,8 @@ export default function Dashboard({ summary, accounts, moneyflow, onReload }) {
                           color: "var(--error)",
                         }}
                       >
-                        {fmt(bal)}
+                        {fmtRub(bal, 2)}
                       </span>
-                      {/* Доступно */}
                       <span
                         style={{
                           font: "var(--font-body-small)",
@@ -417,16 +412,15 @@ export default function Dashboard({ summary, accounts, moneyflow, onReload }) {
                               : "var(--warning)",
                         }}
                       >
-                        доступно {fmt(available)}
+                        доступно {fmtRub(available, 2)}
                       </span>
-                      {/* Лимит */}
                       <span
                         style={{
                           font: "var(--font-label-small)",
                           color: "var(--text-muted)",
                         }}
                       >
-                        лимит {fmt(creditLimit)}
+                        лимит {fmtRub(creditLimit, 2)}
                       </span>
                     </>
                   ) : (
@@ -437,7 +431,7 @@ export default function Dashboard({ summary, accounts, moneyflow, onReload }) {
                         color: bal >= 0 ? "var(--text)" : "var(--error)",
                       }}
                     >
-                      {fmt(bal)}
+                      {fmtRub(bal, 2)}
                     </span>
                   )}
                 </div>
@@ -447,7 +441,7 @@ export default function Dashboard({ summary, accounts, moneyflow, onReload }) {
         </div>
       </div>
 
-      {/* ── RATES ── */}
+      {/* RATES */}
       <div
         className="card"
         style={{
@@ -531,7 +525,7 @@ export default function Dashboard({ summary, accounts, moneyflow, onReload }) {
         </button>
       </div>
 
-      {/* ── CHART ── */}
+      {/* CHART */}
       {chartData.length > 0 && (
         <div className="card" style={{ padding: "var(--sp-5)" }}>
           <div
@@ -578,7 +572,7 @@ export default function Dashboard({ summary, accounts, moneyflow, onReload }) {
                   font: "var(--font-body-small)",
                   boxShadow: "var(--elev-3)",
                 }}
-                formatter={(v) => [fmt(v), ""]}
+                formatter={(v) => [fmtRub(v, 2), ""]}
                 cursor={{ fill: "var(--surface-tint)", radius: 4 }}
               />
               <Bar dataKey="value" radius={[4, 4, 0, 0]} maxBarSize={48}>
@@ -591,7 +585,7 @@ export default function Dashboard({ summary, accounts, moneyflow, onReload }) {
         </div>
       )}
 
-      {/* ── RECENT TRANSACTIONS ── */}
+      {/* RECENT TRANSACTIONS */}
       {moneyflow.length > 0 && (
         <div className="card-flat" style={{ overflow: "hidden" }}>
           <div
@@ -699,7 +693,7 @@ export default function Dashboard({ summary, accounts, moneyflow, onReload }) {
                     }}
                   >
                     {isIncome ? "+" : "−"}
-                    {fmt(amt)}
+                    {fmtRub(amt, 2)}
                   </span>
                 </div>
               );
@@ -707,7 +701,7 @@ export default function Dashboard({ summary, accounts, moneyflow, onReload }) {
         </div>
       )}
 
-      {/* ── ADD ACCOUNT MODAL ── */}
+      {/* ADD ACCOUNT MODAL */}
       {showAddAccount && (
         <AddAccount
           onClose={() => setShowAddAccount(false)}
@@ -715,6 +709,7 @@ export default function Dashboard({ summary, accounts, moneyflow, onReload }) {
             setShowAddAccount(false);
             if (onReload) onReload();
           }}
+          existingAccounts={accounts}
         />
       )}
     </div>

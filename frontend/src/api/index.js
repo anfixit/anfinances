@@ -15,6 +15,8 @@ export const addAccount = (data) =>
 // Транзакции
 export const addTransaction = (data) =>
   api.post("/moneyflow", data).then((r) => r.data);
+export const addTransfer = (data) =>
+  api.post("/moneyflow/transfer", data).then((r) => r.data);
 export const updateTransaction = (id, data) =>
   api.put(`/moneyflow/${id}`, data).then((r) => r.data);
 export const deleteTransaction = (id, pair = false) =>

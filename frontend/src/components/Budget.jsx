@@ -6,16 +6,14 @@ import {
   getRecurring,
   savePlanMinItem,
   deletePlanMinItem,
+  getReference,
 } from "../api";
+import { fmtRub, CATEGORY_ICONS } from "../constants";
 
 // ── Утилиты ──────────────────────────────────────────────────────────────────
 
 function fmt(n) {
-  return new Intl.NumberFormat("ru-RU", {
-    style: "currency",
-    currency: "RUB",
-    maximumFractionDigits: 0,
-  }).format(n);
+  return fmtRub(n, 0);
 }
 
 function getCurrentMonth() {
@@ -43,49 +41,6 @@ function getNextMonth(m) {
   const d = new Date(y, mo);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
-
-const CATEGORY_ICONS = {
-  Food: "restaurant",
-  Healthcare: "favorite",
-  Transport: "directions_car",
-  Home: "home",
-  Software: "devices",
-  Auto: "directions_car",
-  Entertainment: "celebration",
-  Communication: "phone",
-  Hardware: "memory",
-  Beauty: "spa",
-  Pets: "pets",
-  Self_Development: "school",
-  Gifts_Charity: "card_giftcard",
-  Taxes: "receipt",
-  Bank: "account_balance",
-  Clothing_Shoes: "checkroom",
-  Travel: "flight",
-  Public_Services: "account_balance",
-  default: "attach_money",
-};
-
-const ALL_CATEGORIES = [
-  "Auto",
-  "Bank",
-  "Beauty",
-  "Clothing_Shoes",
-  "Communication",
-  "Entertainment",
-  "Food",
-  "Gifts_Charity",
-  "Hardware",
-  "Healthcare",
-  "Home",
-  "Self_Development",
-  "Software",
-  "Pets",
-  "Public_Services",
-  "Taxes",
-  "Transport",
-  "Travel",
-];
 
 const CURRENCIES = ["RUB", "USD", "EUR", "UZS", "THB"];
 
@@ -291,17 +246,14 @@ function BudgetEditModal({ item, onSave, onClose }) {
 
 // ── Модалка редактирования строки план минимума ───────────────────────────────
 
-const EMPTY_PLAN_ITEM = {
-  required: "optional",
-  category: "",
-  subcategory: "",
-  monthly_amount: "",
-  currency: "RUB",
-  amount_rub: "",
-  comments: "",
-};
-
-function PlanMinModal({ item, rowIndex, onSave, onClose }) {
+function PlanMinModal({
+  item,
+  rowIndex,
+  allCategories = [],
+  reference = {},
+  onSave,
+  onClose,
+}) {
   const isNew = rowIndex == null;
   const [form, setForm] = useState({
     required: item?.required || "optional",
@@ -459,7 +411,7 @@ function PlanMinModal({ item, rowIndex, onSave, onClose }) {
             onChange={(e) => set("category", e.target.value)}
           >
             <option value="">Выбери категорию</option>
-            {ALL_CATEGORIES.map((c) => (
+            {allCategories.map((c) => (
               <option key={c} value={c}>
                 {c}
               </option>
@@ -621,7 +573,12 @@ function PlanMinModal({ item, rowIndex, onSave, onClose }) {
 
 // ── Вкладка «Прожиточный минимум» ────────────────────────────────────────────
 
-function PlanMinTab({ recurring, onReload }) {
+function PlanMinTab({
+  recurring,
+  onReload,
+  allCategories = [],
+  reference = {},
+}) {
   const [editItem, setEditItem] = useState(null); // { item, rowIndex } | "new"
   const [deleting, setDeleting] = useState(null);
   const [expanded, setExpanded] = useState({});
@@ -630,15 +587,17 @@ function PlanMinTab({ recurring, onReload }) {
   // Группируем по категории, сохраняем rowIndex (1-based от данных)
   const byCategory = useMemo(() => {
     const map = {};
-    recurring.forEach((r, i) => {
-      const cat = r.category || "Другое";
-      if (!map[cat]) map[cat] = { required: 0, optional: 0, items: [] };
-      const amt =
-        parseFloat(String(r.amount_rub || "").replace(/[^0-9.-]/g, "")) || 0;
-      if (r.required === "required") map[cat].required += amt;
-      else map[cat].optional += amt;
-      map[cat].items.push({ ...r, _amt: amt, _rowIndex: i + 2 }); // +2: строка 1 = заголовок
-    });
+    recurring
+      .filter((r) => r.category)
+      .forEach((r, i) => {
+        const cat = r.category;
+        if (!map[cat]) map[cat] = { required: 0, optional: 0, items: [] };
+        const amt =
+          parseFloat(String(r.amount_rub || "").replace(/[^0-9.-]/g, "")) || 0;
+        if (r.required === "required") map[cat].required += amt;
+        else map[cat].optional += amt;
+        map[cat].items.push({ ...r, _amt: amt, _rowIndex: i + 2 }); // +2: строка 1 = заголовок
+      });
     return map;
   }, [recurring]);
 
@@ -1047,6 +1006,8 @@ function PlanMinTab({ recurring, onReload }) {
         <PlanMinModal
           item={editItem.item}
           rowIndex={editItem.rowIndex}
+          allCategories={allCategories}
+          reference={reference}
           onSave={handleSave}
           onClose={() => setEditItem(null)}
         />
@@ -1067,6 +1028,18 @@ export default function Budget({ moneyflow }) {
   const [editItem, setEditItem] = useState(null);
   const [showAddCategory, setShowAddCategory] = useState(false);
   const [newCategory, setNewCategory] = useState("");
+
+  const [reference, setReference] = useState({});
+  useEffect(() => {
+    getReference()
+      .then(setReference)
+      .catch(() => {});
+  }, []);
+
+  const ALL_CATEGORIES = useMemo(
+    () => Object.keys(reference).filter((c) => c !== "Transfer"),
+    [reference],
+  );
 
   const loadData = async () => {
     setLoading(true);
@@ -1239,7 +1212,12 @@ export default function Budget({ moneyflow }) {
 
       {/* ── Вкладка прожиточный минимум ── */}
       {tab === "planmin" && (
-        <PlanMinTab recurring={recurring} onReload={reloadRecurring} />
+        <PlanMinTab
+          recurring={recurring}
+          onReload={reloadRecurring}
+          allCategories={ALL_CATEGORIES}
+          reference={reference}
+        />
       )}
 
       {/* ── Вкладка бюджет ── */}
