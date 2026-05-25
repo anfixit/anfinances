@@ -120,10 +120,33 @@ async function deleteRow(sheetName, sheetRowIndex) {
   });
 }
 
+// Добавляет несколько строк за один API-запрос (атомарно)
+async function appendRows(sheetName, rowsDataArray) {
+  const sheets = getClient();
+  const headerRes = await sheets.spreadsheets.values.get({
+    spreadsheetId: ID(),
+    range: `${sheetName}!1:1`,
+  });
+  const headers = headerRes.data.values?.[0] || [];
+
+  // Мапим массив объектов в массив массивов
+  const values = rowsDataArray.map((rowData) =>
+    headers.map((h) => rowData[h] ?? ""),
+  );
+
+  await sheets.spreadsheets.values.append({
+    spreadsheetId: ID(),
+    range: sheetName,
+    valueInputOption: "USER_ENTERED",
+    requestBody: { values }, // Передаем сразу все строки
+  });
+}
+
 module.exports = {
   getSheet,
   getRawRows,
   appendRow,
+  appendRows,
   updateRange,
   clearRange,
   deleteRow,
