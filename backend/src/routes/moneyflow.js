@@ -8,24 +8,22 @@ const {
 } = require("../services/sheets");
 const router = express.Router();
 
-// Колонки moneyflow в порядке шита:
-// id, date, type, required, amount, amount RUB, account, account_to, currency, category, subcategory, comment
-const COLUMNS = [
-  "id",
-  "date",
-  "type",
-  "required",
-  "amount",
-  "amount RUB",
-  "account",
-  "account_to",
-  "currency",
-  "category",
-  "subcategory",
-  "comment",
-];
+// Колонки moneyflow: id, date, type, required, amount, amount RUB, account, account_to, currency, category, subcategory, comment
 
-// GET /api/moneyflow — все транзакции (id теперь включён автоматически через getSheet)
+// Пересчёт amount RUB из суммы и валюты через текущие курсы
+async function calcAmountRub(amount, currency, sheets_module) {
+  if (!currency || currency === "RUB") return parseFloat(amount) || 0;
+  try {
+    const { getSheet: gs } = sheets_module;
+    const rates = await gs("rates");
+    const row = rates.find((r) => r.currency === currency);
+    if (row && row.rate)
+      return (parseFloat(amount) || 0) * parseFloat(row.rate);
+  } catch (e) {}
+  return parseFloat(amount) || 0;
+}
+
+// GET /api/moneyflow
 router.get("/", async (req, res) => {
   try {
     const data = await getSheet("moneyflow");
@@ -40,15 +38,12 @@ router.get("/", async (req, res) => {
 router.post("/", async (req, res) => {
   try {
     const rows = await getRawRows("moneyflow");
-
-    // Находим max id из существующих строк (строка 0 — заголовки)
     let maxId = 0;
     rows.slice(1).forEach((row) => {
       const id = parseInt(row[0]);
       if (!isNaN(id) && id > maxId) maxId = id;
     });
     const newId = maxId + 1;
-
     await appendRow("moneyflow", { ...req.body, id: newId });
     res.json({ success: true, id: newId });
   } catch (err) {
@@ -57,23 +52,39 @@ router.post("/", async (req, res) => {
   }
 });
 
-// PUT /api/moneyflow/:id — обновить транзакцию по id
+// PUT /api/moneyflow/:id — обновить транзакцию
 router.put("/:id", async (req, res) => {
   try {
     const targetId = parseInt(req.params.id);
     const rows = await getRawRows("moneyflow");
-
-    // Ищем строку с нужным id (строка 0 — заголовки, поэтому шитовая строка = i+1)
     const rowIndex = rows.findIndex(
       (row, i) => i > 0 && parseInt(row[0]) === targetId,
     );
     if (rowIndex < 1)
       return res.status(404).json({ error: "Transaction not found" });
 
-    const sheetRow = rowIndex + 1; // 1-based для Sheets API
+    const sheetRow = rowIndex + 1;
     const body = req.body;
 
-    // Формируем строку в порядке колонок, id не меняем
+    // Пересчитываем amount RUB если поменялась сумма или валюта
+    const currency = body.currency ?? rows[rowIndex][8];
+    const rawAmount = body.amount ?? rows[rowIndex][4];
+    // Вытаскиваем чистое число из строки вида "RUB 48.00" или "48"
+    const numericAmount =
+      parseFloat(String(rawAmount).replace(/[^0-9.-]/g, "")) || 0;
+
+    let amountRub;
+    if (body["amount RUB"] !== undefined) {
+      // Если фронт явно передал — используем
+      amountRub = parseFloat(body["amount RUB"]) || 0;
+    } else if (currency === "RUB") {
+      amountRub = numericAmount;
+    } else {
+      // Пересчитываем через курс
+      const sheetsModule = require("../services/sheets");
+      amountRub = await calcAmountRub(numericAmount, currency, sheetsModule);
+    }
+
     const values = [
       [
         targetId,
@@ -81,10 +92,10 @@ router.put("/:id", async (req, res) => {
         body.type ?? rows[rowIndex][2],
         body.required ?? rows[rowIndex][3],
         body.amount ?? rows[rowIndex][4],
-        body["amount RUB"] ?? rows[rowIndex][5],
+        amountRub,
         body.account ?? rows[rowIndex][6],
         body.account_to ?? rows[rowIndex][7],
-        body.currency ?? rows[rowIndex][8],
+        currency,
         body.category ?? rows[rowIndex][9],
         body.subcategory ?? rows[rowIndex][10],
         body.comment ?? rows[rowIndex][11],
@@ -99,60 +110,52 @@ router.put("/:id", async (req, res) => {
   }
 });
 
-// DELETE /api/moneyflow/:id — физически удалить строку по id
-// Если передан ?pair=true — удалить обе строки пары (по pair_id или совпадению account_to)
+// DELETE /api/moneyflow/:id — физически удалить
+// ?pair=true — удалить обе строки перевода
 router.delete("/:id", async (req, res) => {
   try {
     const targetId = parseInt(req.params.id);
     const deletePair = req.query.pair === "true";
     const rows = await getRawRows("moneyflow");
 
-    if (deletePair) {
-      // Находим строку и её pair (ищем по совпадению даты + комментария + Transfer)
-      const targetRowIndex = rows.findIndex(
-        (row, i) => i > 0 && parseInt(row[0]) === targetId,
-      );
-      if (targetRowIndex < 1)
-        return res.status(404).json({ error: "Transaction not found" });
+    const targetRowIndex = rows.findIndex(
+      (row, i) => i > 0 && parseInt(row[0]) === targetId,
+    );
+    if (targetRowIndex < 1)
+      return res.status(404).json({ error: "Transaction not found" });
 
+    const toDelete = [targetRowIndex + 1]; // sheetRow (1-based)
+
+    if (deletePair) {
       const targetRow = rows[targetRowIndex];
       const targetDate = targetRow[1];
       const targetComment = targetRow[11];
       const targetAccount = targetRow[6];
       const targetAccountTo = targetRow[7];
 
-      // Ищем парную строку: та же дата, тот же комментарий, противоположное направление
+      // Парная строка: та же дата + комментарий + противоположные счета
+      // Если комментарий пустой — ищем только по дате и счетам
       const pairRowIndex = rows.findIndex((row, i) => {
         if (i === 0 || parseInt(row[0]) === targetId) return false;
-        return (
-          row[1] === targetDate &&
-          row[11] === targetComment &&
-          row[6] === targetAccountTo &&
-          row[7] === targetAccount
-        );
+        const sameDate = row[1] === targetDate;
+        const sameComment = targetComment
+          ? row[11] === targetComment
+          : row[11] === "" || row[11] === undefined;
+        const oppositeAccounts =
+          row[6] === targetAccountTo && row[7] === targetAccount;
+        return sameDate && sameComment && oppositeAccounts;
       });
 
-      // Удаляем с конца чтобы индексы не съехали
-      const toDelete = [targetRowIndex + 1]; // sheetRow (1-based)
       if (pairRowIndex > 0) toDelete.push(pairRowIndex + 1);
-      toDelete.sort((a, b) => b - a); // сортируем по убыванию
-
-      for (const sheetRow of toDelete) {
-        await deleteRow("moneyflow", sheetRow);
-      }
-
-      res.json({ success: true, deleted: toDelete.length });
-    } else {
-      // Удаляем только одну строку
-      const rowIndex = rows.findIndex(
-        (row, i) => i > 0 && parseInt(row[0]) === targetId,
-      );
-      if (rowIndex < 1)
-        return res.status(404).json({ error: "Transaction not found" });
-
-      await deleteRow("moneyflow", rowIndex + 1);
-      res.json({ success: true, deleted: 1 });
     }
+
+    // Удаляем с конца чтобы индексы не съехали
+    toDelete.sort((a, b) => b - a);
+    for (const sheetRow of toDelete) {
+      await deleteRow("moneyflow", sheetRow);
+    }
+
+    res.json({ success: true, deleted: toDelete.length });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to delete transaction" });

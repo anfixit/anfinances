@@ -43,22 +43,19 @@ function Field({ label, children }) {
   );
 }
 
-// Парсим строку типа "RUB 1,000.00" или "RUB 48.00" → число
 function parseAmount(str) {
   if (!str) return "";
   return String(str).replace(/[^0-9.-]/g, "");
 }
 
-// Определяем тип UI по данным строки
 function detectUIType(tx) {
   if (tx.category === "Transfer") {
     if (tx.subcategory === "Conversion") return "conversion";
     return "transfer";
   }
-  return tx.type; // "expense" | "income"
+  return tx.type;
 }
 
-// Форма для одной строки (expense или income)
 function SingleRowForm({
   tx,
   accounts,
@@ -69,7 +66,8 @@ function SingleRowForm({
 }) {
   const isExpense = tx.type === "expense";
   const cats = isExpense ? EXPENSE_CATS : INCOME_CATS;
-  const subcats = (tx.category && reference[tx.category]) || [];
+  const subcats =
+    (tx.category && tx.category !== "Transfer" && reference[tx.category]) || [];
 
   return (
     <div
@@ -191,8 +189,6 @@ function SingleRowForm({
 export default function EditTransaction({ tx, accounts, onClose, onSaved }) {
   const isTransfer =
     detectUIType(tx) === "transfer" || detectUIType(tx) === "conversion";
-
-  // Для переводов ищем парную строку в данных родителя через prop
   const pairTx = tx._pair || null;
 
   const [form, setForm] = useState({ ...tx });
@@ -200,11 +196,11 @@ export default function EditTransaction({ tx, accounts, onClose, onSaved }) {
   const [reference, setReference] = useState({});
   const [currencies, setCurrencies] = useState(["RUB", "USD", "UZS", "THB"]);
   const [loading, setLoading] = useState(false);
+  const [showPair, setShowPair] = useState(true);
+  // Состояние подтверждения удаления: null | "single" | "pair"
+  const [confirmDelete, setConfirmDelete] = useState(null);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState("");
-
-  // Показывать ли пару (только для переводов)
-  const [showPair, setShowPair] = useState(true);
 
   useEffect(() => {
     getReference()
@@ -226,52 +222,32 @@ export default function EditTransaction({ tx, accounts, onClose, onSaved }) {
     setLoading(true);
     setError("");
     try {
-      // Пересчитываем amount RUB из amount
-      const amtNum = parseFloat(parseAmount(form.amount)) || 0;
-      const payload = { ...form, "amount RUB": amtNum };
-
-      await updateTransaction(form.id, payload);
-
+      await updateTransaction(form.id, form);
       if (pairTx && pairForm && showPair) {
-        const pairAmtNum = parseFloat(parseAmount(pairForm.amount)) || 0;
-        await updateTransaction(pairForm.id, {
-          ...pairForm,
-          "amount RUB": pairAmtNum,
-        });
+        await updateTransaction(pairForm.id, pairForm);
       }
-
       onSaved();
     } catch (e) {
-      setError("Ошибка сохранения");
-    } finally {
+      setError("Ошибка сохранения: " + (e.message || ""));
       setLoading(false);
     }
   };
 
-  const handleDelete = async () => {
-    if (
-      !confirm(
-        isTransfer && pairTx
-          ? "Удалить обе строки перевода?"
-          : "Удалить транзакцию?",
-      )
-    )
-      return;
+  const handleDeleteConfirmed = async () => {
     setDeleting(true);
     try {
-      await deleteTransaction(form.id, isTransfer && pairTx);
+      const deleteBoth = confirmDelete === "pair";
+      await deleteTransaction(form.id, deleteBoth);
       onSaved();
     } catch (e) {
       setError("Ошибка удаления");
-    } finally {
       setDeleting(false);
+      setConfirmDelete(null);
     }
   };
 
-  // Парсим дату из формата шита в YYYY-MM-DD для <input type="date">
   const parseDateForInput = (dateStr) => {
     if (!dateStr) return new Date().toISOString().split("T")[0];
-    // Формат "5/22/2026 10:54:14" → "2026-05-22"
     const parts = String(dateStr).split(" ")[0].split("/");
     if (parts.length === 3) {
       return `${parts[2]}-${String(parts[0]).padStart(2, "0")}-${String(parts[1]).padStart(2, "0")}`;
@@ -280,7 +256,6 @@ export default function EditTransaction({ tx, accounts, onClose, onSaved }) {
   };
 
   const formatDateForSheet = (dateInput) => {
-    // "2026-05-22" → "5/22/2026 12:00:00"
     const [y, m, d] = dateInput.split("-");
     return `${parseInt(m)}/${parseInt(d)}/${y} 12:00:00`;
   };
@@ -293,7 +268,6 @@ export default function EditTransaction({ tx, accounts, onClose, onSaved }) {
       transfer: "Перевод",
       conversion: "Конвертация",
     }[uiType] || uiType;
-
   const typeColor = {
     expense: "var(--error)",
     income: "var(--success)",
@@ -355,10 +329,9 @@ export default function EditTransaction({ tx, accounts, onClose, onSaved }) {
           <span
             style={{
               flex: 1,
-              font: "var(--font-title-medium)",
+              font: "var(--font-body-small)",
               color: "var(--text-muted)",
               fontFamily: "var(--font-mono)",
-              fontSize: "13px",
             }}
           >
             #{form.id}
@@ -368,7 +341,7 @@ export default function EditTransaction({ tx, accounts, onClose, onSaved }) {
           </button>
         </div>
 
-        {/* Scrollable body */}
+        {/* Body */}
         <div
           style={{
             overflowY: "auto",
@@ -379,7 +352,6 @@ export default function EditTransaction({ tx, accounts, onClose, onSaved }) {
             gap: "var(--sp-4)",
           }}
         >
-          {/* Дата */}
           <Field label="Дата">
             <input
               className="input"
@@ -391,7 +363,6 @@ export default function EditTransaction({ tx, accounts, onClose, onSaved }) {
             />
           </Field>
 
-          {/* Комментарий (общий для переводов) */}
           <Field label="Комментарий">
             <input
               className="input"
@@ -404,7 +375,6 @@ export default function EditTransaction({ tx, accounts, onClose, onSaved }) {
             />
           </Field>
 
-          {/* Основная строка */}
           <SingleRowForm
             tx={form}
             accounts={accounts}
@@ -420,7 +390,6 @@ export default function EditTransaction({ tx, accounts, onClose, onSaved }) {
             }
           />
 
-          {/* Парная строка для переводов */}
           {isTransfer && pairTx && (
             <div>
               <div
@@ -497,6 +466,65 @@ export default function EditTransaction({ tx, accounts, onClose, onSaved }) {
               {error}
             </div>
           )}
+
+          {/* Inline подтверждение удаления */}
+          {confirmDelete && (
+            <div
+              style={{
+                background: "var(--error-container)",
+                borderRadius: "var(--radius-md)",
+                padding: "var(--sp-4)",
+                display: "flex",
+                flexDirection: "column",
+                gap: "var(--sp-3)",
+              }}
+            >
+              <span
+                style={{
+                  font: "var(--font-body-medium)",
+                  color: "var(--error)",
+                }}
+              >
+                {confirmDelete === "pair"
+                  ? "Удалить обе строки перевода? Это действие необратимо."
+                  : "Удалить транзакцию? Это действие необратимо."}
+              </span>
+              <div style={{ display: "flex", gap: "var(--sp-2)" }}>
+                <button
+                  onClick={() => setConfirmDelete(null)}
+                  style={{
+                    flex: 1,
+                    height: "36px",
+                    border: "1px solid var(--border)",
+                    borderRadius: "var(--radius-md)",
+                    background: "transparent",
+                    cursor: "pointer",
+                    font: "var(--font-label-medium)",
+                    color: "var(--text)",
+                  }}
+                >
+                  Отмена
+                </button>
+                <button
+                  onClick={handleDeleteConfirmed}
+                  disabled={deleting}
+                  style={{
+                    flex: 1,
+                    height: "36px",
+                    background: "var(--error)",
+                    color: "#fff",
+                    border: "none",
+                    borderRadius: "var(--radius-md)",
+                    cursor: "pointer",
+                    font: "var(--font-label-medium)",
+                    opacity: deleting ? 0.6 : 1,
+                  }}
+                >
+                  {deleting ? "Удаляем..." : "Да, удалить"}
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Footer */}
@@ -508,38 +536,102 @@ export default function EditTransaction({ tx, accounts, onClose, onSaved }) {
             gap: "var(--sp-3)",
           }}
         >
-          <button
-            onClick={handleDelete}
-            disabled={deleting || loading}
-            style={{
-              background: "none",
-              border: "1.5px solid var(--error)",
-              color: "var(--error)",
-              borderRadius: "var(--radius-md)",
-              height: "44px",
-              padding: "0 var(--sp-4)",
-              cursor: "pointer",
-              font: "var(--font-label-large)",
-              display: "flex",
-              alignItems: "center",
-              gap: "var(--sp-2)",
-              opacity: deleting ? 0.6 : 1,
-            }}
-          >
-            <span
-              className="material-symbols-outlined"
-              style={{ fontSize: "18px" }}
+          {/* Кнопка удаления — если перевод с парой, показываем два варианта */}
+          {isTransfer && pairTx ? (
+            <div
+              style={{
+                display: "flex",
+                gap: "var(--sp-2)",
+                flexDirection: "column",
+              }}
             >
-              {deleting ? "progress_activity" : "delete"}
-            </span>
-            {isTransfer && pairTx ? "Удалить оба" : "Удалить"}
-          </button>
+              <button
+                onClick={() => setConfirmDelete("pair")}
+                disabled={!!confirmDelete || loading}
+                style={{
+                  height: "36px",
+                  padding: "0 var(--sp-3)",
+                  border: "1.5px solid var(--error)",
+                  color: "var(--error)",
+                  borderRadius: "var(--radius-md)",
+                  background: "transparent",
+                  cursor: "pointer",
+                  font: "var(--font-label-medium)",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "var(--sp-2)",
+                  opacity: confirmDelete ? 0.5 : 1,
+                }}
+              >
+                <span
+                  className="material-symbols-outlined"
+                  style={{ fontSize: "16px" }}
+                >
+                  delete_sweep
+                </span>
+                Удалить оба
+              </button>
+              <button
+                onClick={() => setConfirmDelete("single")}
+                disabled={!!confirmDelete || loading}
+                style={{
+                  height: "36px",
+                  padding: "0 var(--sp-3)",
+                  border: "1px solid var(--border)",
+                  color: "var(--text-muted)",
+                  borderRadius: "var(--radius-md)",
+                  background: "transparent",
+                  cursor: "pointer",
+                  font: "var(--font-label-medium)",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "var(--sp-2)",
+                  opacity: confirmDelete ? 0.5 : 1,
+                }}
+              >
+                <span
+                  className="material-symbols-outlined"
+                  style={{ fontSize: "16px" }}
+                >
+                  delete
+                </span>
+                Только эту
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setConfirmDelete("single")}
+              disabled={!!confirmDelete || loading}
+              style={{
+                height: "44px",
+                padding: "0 var(--sp-4)",
+                border: "1.5px solid var(--error)",
+                color: "var(--error)",
+                borderRadius: "var(--radius-md)",
+                background: "transparent",
+                cursor: "pointer",
+                font: "var(--font-label-large)",
+                display: "flex",
+                alignItems: "center",
+                gap: "var(--sp-2)",
+                opacity: confirmDelete ? 0.5 : 1,
+              }}
+            >
+              <span
+                className="material-symbols-outlined"
+                style={{ fontSize: "18px" }}
+              >
+                delete
+              </span>
+              Удалить
+            </button>
+          )}
 
           <button
             className="btn-filled"
             onClick={handleSave}
-            disabled={loading || deleting}
-            style={{ flex: 1, opacity: loading ? 0.7 : 1 }}
+            disabled={loading || deleting || !!confirmDelete}
+            style={{ flex: 1, opacity: loading || !!confirmDelete ? 0.7 : 1 }}
           >
             {loading ? "Сохраняем..." : "Сохранить"}
           </button>

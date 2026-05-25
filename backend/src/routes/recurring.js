@@ -3,12 +3,12 @@ const {
   getSheet,
   getRawRows,
   updateRange,
-  clearRange,
   appendRow,
+  deleteRow,
 } = require("../services/sheets");
 const router = express.Router();
 
-// GET /api/recurring — все строки план минимума
+// GET /api/recurring
 router.get("/", async (req, res) => {
   try {
     const data = await getSheet("plan_min");
@@ -20,7 +20,6 @@ router.get("/", async (req, res) => {
 });
 
 // POST /api/recurring — добавить или обновить строку
-// Если передан rowIndex (1-based, без заголовка) — обновляем, иначе добавляем
 router.post("/", async (req, res) => {
   try {
     const {
@@ -33,12 +32,10 @@ router.post("/", async (req, res) => {
       amount_rub,
       comments,
     } = req.body;
-
-    if (!category || !subcategory) {
+    if (!category || !subcategory)
       return res
         .status(400)
         .json({ error: "category and subcategory required" });
-    }
 
     const values = [
       [
@@ -53,8 +50,7 @@ router.post("/", async (req, res) => {
     ];
 
     if (rowIndex) {
-      // +1 т.к. строка 1 — заголовок, rowIndex 1-based от данных
-      const sheetRow = parseInt(rowIndex) + 1;
+      const sheetRow = parseInt(rowIndex) + 1; // +1 для заголовка
       await updateRange(`plan_min!A${sheetRow}:G${sheetRow}`, values);
     } else {
       await appendRow("plan_min", {
@@ -74,14 +70,14 @@ router.post("/", async (req, res) => {
   }
 });
 
-// DELETE /api/recurring — удалить строку по rowIndex (1-based от данных)
+// DELETE /api/recurring — физически удалить строку по rowIndex (1-based от данных)
 router.delete("/", async (req, res) => {
   try {
     const { rowIndex } = req.body;
     if (!rowIndex) return res.status(400).json({ error: "rowIndex required" });
-
+    // rowIndex 1-based от данных → sheetRow = rowIndex + 1 (строка 1 = заголовок)
     const sheetRow = parseInt(rowIndex) + 1;
-    await clearRange(`plan_min!A${sheetRow}:G${sheetRow}`);
+    await deleteRow("plan_min", sheetRow);
     res.json({ success: true });
   } catch (err) {
     console.error(err);

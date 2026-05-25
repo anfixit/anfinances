@@ -624,46 +624,6 @@ export default function AddTransaction({ accounts, onClose, onSaved }) {
             />
           </Field>
 
-          {form.amount && (
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                background: "var(--primary-container)",
-                borderRadius: "var(--radius-md)",
-                padding: "var(--sp-3) var(--sp-4)",
-              }}
-            >
-              <span
-                style={{
-                  font: "var(--font-label-medium)",
-                  color: "var(--on-primary-container)",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "var(--sp-2)",
-                }}
-              >
-                <span
-                  className="material-symbols-outlined"
-                  style={{ fontSize: "16px" }}
-                >
-                  calculate
-                </span>
-                Примерно в рублях
-              </span>
-              <span
-                style={{
-                  font: "var(--font-title-small)",
-                  fontFamily: "var(--font-mono)",
-                  color: "var(--on-primary-container)",
-                }}
-              >
-                ≈ {toRub(form.amount, form.currency).toLocaleString("ru-RU")} ₽
-              </span>
-            </div>
-          )}
-
           {error && (
             <div
               style={{

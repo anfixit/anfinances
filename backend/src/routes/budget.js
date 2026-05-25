@@ -3,7 +3,8 @@ const {
   getSheet,
   getRawRows,
   updateRange,
-  clearRange,
+  appendRow,
+  deleteRow,
 } = require("../services/sheets");
 const router = express.Router();
 
@@ -29,7 +30,6 @@ router.post("/", async (req, res) => {
     const rowIndex = rows.findIndex(
       (r, i) => i > 0 && r[0] === month && r[1] === category,
     );
-
     const values = [
       [month, category, planned, notes || "", rollover || "false"],
     ];
@@ -37,7 +37,6 @@ router.post("/", async (req, res) => {
     if (rowIndex > 0) {
       await updateRange(`budget!A${rowIndex + 1}:E${rowIndex + 1}`, values);
     } else {
-      const { appendRow } = require("../services/sheets");
       await appendRow("budget", {
         month,
         category,
@@ -53,6 +52,7 @@ router.post("/", async (req, res) => {
   }
 });
 
+// DELETE — физически удаляем строку
 router.delete("/", async (req, res) => {
   try {
     const { month, category } = req.body;
@@ -61,7 +61,7 @@ router.delete("/", async (req, res) => {
       (r, i) => i > 0 && r[0] === month && r[1] === category,
     );
     if (rowIndex < 1) return res.status(404).json({ error: "Not found" });
-    await clearRange(`budget!A${rowIndex + 1}:E${rowIndex + 1}`);
+    await deleteRow("budget", rowIndex + 1); // rowIndex — 0-based в массиве, +1 = sheetRow (1-based)
     res.json({ success: true });
   } catch (err) {
     console.error(err);

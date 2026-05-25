@@ -154,19 +154,23 @@ export default function Transactions({ moneyflow, accounts, onReload }) {
     }, {});
   }, [visible]);
 
-  // Найти парную строку перевода
+  // Найти парную строку перевода (исправлено: пустые комментарии)
   const findPair = (tx) => {
     if (tx.category !== "Transfer") return null;
+    const txComment = String(tx.comment || "").trim();
+    const txDate = String(tx.date || "");
     return (
       moneyflow.find((other) => {
         if (String(other.id) === String(tx.id)) return false;
-        return (
-          other.category === "Transfer" &&
-          String(other.date) === String(tx.date) &&
-          String(other.comment) === String(tx.comment) &&
-          other.account === tx.account_to &&
-          other.account_to === tx.account
-        );
+        if (other.category !== "Transfer") return false;
+        const sameDate = String(other.date || "") === txDate;
+        const oppositeAccounts =
+          other.account === tx.account_to && other.account_to === tx.account;
+        const otherComment = String(other.comment || "").trim();
+        const commentMatch = txComment
+          ? otherComment === txComment
+          : otherComment === "";
+        return sameDate && oppositeAccounts && commentMatch;
       }) || null
     );
   };
