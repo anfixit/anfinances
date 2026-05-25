@@ -319,10 +319,20 @@ export default function Dashboard({ summary, accounts, moneyflow, onReload }) {
             background: "var(--border)",
           }}
         >
+          // ── ПАТЧ для Dashboard.jsx ── // Заменить фрагмент рендера карточки
+          счёта (внутри nonZero.map) на этот код:
           {nonZero.map((acc) => {
             const bal =
               balances[acc.account] ?? parseRub(acc["balance in RUB"]);
             const isCredit = acc["acc.type"]?.includes("Credit");
+
+            // credit_limit — новая колонка в accounts (число, например 110000)
+            const creditLimit = parseFloat(
+              String(acc.credit_limit || "0").replace(/[^0-9.-]/g, ""),
+            );
+            // Доступно = лимит + текущий баланс (баланс отрицательный при долге)
+            const available = creditLimit > 0 ? creditLimit + bal : null;
+
             return (
               <div
                 key={acc.account}
@@ -331,10 +341,13 @@ export default function Dashboard({ summary, accounts, moneyflow, onReload }) {
                   background: "var(--bg-card)",
                   justifyContent: "space-between",
                   padding: "var(--sp-3) var(--sp-5)",
-                  minHeight: "56px",
+                  minHeight: isCredit && creditLimit > 0 ? "72px" : "56px",
                   borderBottom: "none",
+                  flexDirection: "row",
+                  alignItems: "center",
                 }}
               >
+                {/* LEFT: name + type */}
                 <div
                   style={{
                     display: "flex",
@@ -373,15 +386,63 @@ export default function Dashboard({ summary, accounts, moneyflow, onReload }) {
                     {acc["acc.type"]} · {acc.currency}
                   </span>
                 </div>
-                <span
+
+                {/* RIGHT: balance + credit info */}
+                <div
                   style={{
-                    font: "var(--font-title-small)",
-                    fontFamily: "var(--font-mono)",
-                    color: bal >= 0 ? "var(--text)" : "var(--error)",
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "flex-end",
+                    gap: "2px",
                   }}
                 >
-                  {fmt(bal)}
-                </span>
+                  {isCredit && creditLimit > 0 ? (
+                    <>
+                      {/* Долг (отрицательный баланс — красный) */}
+                      <span
+                        style={{
+                          font: "var(--font-title-small)",
+                          fontFamily: "var(--font-mono)",
+                          color: "var(--error)",
+                        }}
+                      >
+                        {fmt(bal)}
+                      </span>
+                      {/* Доступно */}
+                      <span
+                        style={{
+                          font: "var(--font-body-small)",
+                          fontFamily: "var(--font-mono)",
+                          color:
+                            available >= 0
+                              ? "var(--success)"
+                              : "var(--warning)",
+                        }}
+                      >
+                        доступно {fmt(available)}
+                      </span>
+                      {/* Лимит */}
+                      <span
+                        style={{
+                          font: "var(--font-label-small)",
+                          color: "var(--text-muted)",
+                        }}
+                      >
+                        лимит {fmt(creditLimit)}
+                      </span>
+                    </>
+                  ) : (
+                    <span
+                      style={{
+                        font: "var(--font-title-small)",
+                        fontFamily: "var(--font-mono)",
+                        color: bal >= 0 ? "var(--text)" : "var(--error)",
+                      }}
+                    >
+                      {fmt(bal)}
+                    </span>
+                  )}
+                </div>
               </div>
             );
           })}

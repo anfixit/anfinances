@@ -20,3 +20,9 @@ export const saveBudgetItem = (data) =>
   api.post("/budget", data).then((r) => r.data);
 export const deleteBudgetItem = (data) =>
   api.delete("/budget", { data }).then((r) => r.data);
+
+// План минимума
+export const savePlanMinItem = (data) =>
+  api.post("/recurring", data).then((r) => r.data);
+export const deletePlanMinItem = (data) =>
+  api.delete("/recurring", { data }).then((r) => r.data);
