@@ -227,7 +227,13 @@ export default function App() {
                 onReload={loadData}
               />
             )}
-            {page === "transactions" && <Transactions moneyflow={moneyflow} />}
+            {page === "transactions" && (
+              <Transactions
+                moneyflow={moneyflow}
+                accounts={accounts}
+                onReload={loadData}
+              />
+            )}
             {page === "budget" && <Budget moneyflow={moneyflow} />}
           </>
         )}

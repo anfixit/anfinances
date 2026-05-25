@@ -14,6 +14,22 @@ function getClient() {
 
 const ID = () => process.env.SPREADSHEET_ID;
 
+// Кэш sheetId по имени (числовой id нужен для batchUpdate)
+const sheetIdCache = {};
+
+async function getSheetId(sheetName) {
+  if (sheetIdCache[sheetName] != null) return sheetIdCache[sheetName];
+  const sheets = getClient();
+  const res = await sheets.spreadsheets.get({ spreadsheetId: ID() });
+  for (const s of res.data.sheets) {
+    sheetIdCache[s.properties.title] = s.properties.sheetId;
+  }
+  if (sheetIdCache[sheetName] == null) {
+    throw new Error(`Sheet "${sheetName}" not found`);
+  }
+  return sheetIdCache[sheetName];
+}
+
 // Читает лист → массив объектов
 async function getSheet(sheetName) {
   const sheets = getClient();
@@ -60,7 +76,7 @@ async function appendRow(sheetName, rowData) {
   });
 }
 
-// Обновляет конкретную ячейку/диапазон
+// Обновляет конкретный диапазон
 async function updateRange(range, values) {
   const sheets = getClient();
   await sheets.spreadsheets.values.update({
@@ -71,7 +87,7 @@ async function updateRange(range, values) {
   });
 }
 
-// Очищает диапазон
+// Очищает диапазон (оставляет пустую строку)
 async function clearRange(range) {
   const sheets = getClient();
   await sheets.spreadsheets.values.clear({
@@ -80,4 +96,36 @@ async function clearRange(range) {
   });
 }
 
-module.exports = { getSheet, getRawRows, appendRow, updateRange, clearRange };
+// Физически удаляет строку (0-based индекс в шите, включая заголовок)
+// Например: строка 2 в шите (вторая строка данных) → sheetRowIndex = 2
+async function deleteRow(sheetName, sheetRowIndex) {
+  const sheets = getClient();
+  const sheetId = await getSheetId(sheetName);
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId: ID(),
+    requestBody: {
+      requests: [
+        {
+          deleteDimension: {
+            range: {
+              sheetId,
+              dimension: "ROWS",
+              startIndex: sheetRowIndex - 1, // API использует 0-based
+              endIndex: sheetRowIndex, // exclusive
+            },
+          },
+        },
+      ],
+    },
+  });
+}
+
+module.exports = {
+  getSheet,
+  getRawRows,
+  appendRow,
+  updateRange,
+  clearRange,
+  deleteRow,
+  getSheetId,
+};

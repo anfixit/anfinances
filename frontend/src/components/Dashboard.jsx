@@ -319,8 +319,6 @@ export default function Dashboard({ summary, accounts, moneyflow, onReload }) {
             background: "var(--border)",
           }}
         >
-          // ── ПАТЧ для Dashboard.jsx ── // Заменить фрагмент рендера карточки
-          счёта (внутри nonZero.map) на этот код:
           {nonZero.map((acc) => {
             const bal =
               balances[acc.account] ?? parseRub(acc["balance in RUB"]);

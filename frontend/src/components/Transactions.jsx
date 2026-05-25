@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import EditTransaction from "./EditTransaction";
 
 function fmt(n) {
   return new Intl.NumberFormat("ru-RU", {
@@ -27,8 +28,6 @@ const CATEGORY_ICONS = {
   Clothing_Shoes: "checkroom",
   Travel: "flight",
   Income: "payments",
-  Salary: "payments",
-  Freelance: "work",
   Transfer: "sync_alt",
   default: "attach_money",
 };
@@ -43,11 +42,9 @@ function getMonths(txs) {
   const set = new Set();
   txs.forEach((t) => {
     const d = String(t.date || "").split(" ")[0];
-    if (!d) return;
     const parts = d.split("/");
     if (parts.length === 3) {
-      const month = `${parts[2]}-${String(parts[0]).padStart(2, "0")}`;
-      set.add(month);
+      set.add(`${parts[2]}-${String(parts[0]).padStart(2, "0")}`);
     }
   });
   return Array.from(set).sort().reverse();
@@ -62,7 +59,7 @@ function monthLabel(m) {
   });
 }
 
-export default function Transactions({ moneyflow }) {
+export default function Transactions({ moneyflow, accounts, onReload }) {
   const [search, setSearch] = useState("");
   const [showExpenses, setShowExpenses] = useState(false);
   const [showIncome, setShowIncome] = useState(false);
@@ -70,6 +67,7 @@ export default function Transactions({ moneyflow }) {
   const [month, setMonth] = useState("");
   const [category, setCategory] = useState("");
   const [page, setPage] = useState(1);
+  const [editTx, setEditTx] = useState(null); // транзакция для редактирования
 
   const allReal = useMemo(() => [...moneyflow].reverse(), [moneyflow]);
   const months = useMemo(() => getMonths(allReal), [allReal]);
@@ -85,24 +83,18 @@ export default function Transactions({ moneyflow }) {
   }, [allReal]);
 
   const filtered = useMemo(() => {
-    // Ни один тип не выбран → показываем расходы и доходы (без переводов)
     const noneSelected = !showExpenses && !showIncome && !showTransfers;
-
     return allReal.filter((t) => {
       const isTransfer = t.category === "Transfer";
       const isExpense = t.type === "expense" && !isTransfer;
       const isIncome = t.type === "income" && !isTransfer;
-
       if (noneSelected) {
-        // По умолчанию: всё кроме переводов
         if (isTransfer) return false;
       } else {
-        // Проверяем каждый тип по своему чипу
         if (isTransfer && !showTransfers) return false;
         if (isExpense && !showExpenses) return false;
         if (isIncome && !showIncome) return false;
       }
-
       if (month) {
         const d = String(t.date || "").split(" ")[0];
         const parts = d.split("/");
@@ -111,9 +103,7 @@ export default function Transactions({ moneyflow }) {
           if (txMonth !== month) return false;
         }
       }
-
       if (category && t.category !== category) return false;
-
       if (search) {
         const q = search.toLowerCase();
         const hay = [t.comment, t.category, t.subcategory, t.account]
@@ -121,7 +111,6 @@ export default function Transactions({ moneyflow }) {
           .toLowerCase();
         if (!hay.includes(q)) return false;
       }
-
       return true;
     });
   }, [
@@ -137,7 +126,6 @@ export default function Transactions({ moneyflow }) {
   const totalExpenses = filtered
     .filter((t) => t.type === "expense" && t.category !== "Transfer")
     .reduce((s, t) => s + parseFloat(t["amount RUB"] || 0), 0);
-
   const totalIncome = filtered
     .filter((t) => t.type === "income" && t.category !== "Transfer")
     .reduce((s, t) => s + parseFloat(t["amount RUB"] || 0), 0);
@@ -166,362 +154,169 @@ export default function Transactions({ moneyflow }) {
     }, {});
   }, [visible]);
 
-  if (allReal.length === 0) {
+  // Найти парную строку перевода
+  const findPair = (tx) => {
+    if (tx.category !== "Transfer") return null;
     return (
-      <div
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "center",
-          gap: "var(--sp-4)",
-          padding: "var(--sp-12) var(--sp-6)",
-          color: "var(--text-muted)",
-        }}
-      >
-        <div
-          style={{
-            width: "72px",
-            height: "72px",
-            borderRadius: "var(--radius-full)",
-            background: "var(--primary-container)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-        >
-          <span
-            className="material-symbols-outlined"
-            style={{ fontSize: "32px", color: "var(--on-primary-container)" }}
-          >
-            receipt_long
-          </span>
-        </div>
-        <div style={{ textAlign: "center" }}>
-          <div
-            style={{
-              font: "var(--font-title-medium)",
-              color: "var(--text)",
-              marginBottom: "var(--sp-2)",
-            }}
-          >
-            Нет транзакций
-          </div>
-          <div
-            style={{
-              font: "var(--font-body-medium)",
-              color: "var(--text-muted)",
-            }}
-          >
-            Добавь первую операцию через кнопку «Добавить»
-          </div>
-        </div>
-      </div>
+      moneyflow.find((other) => {
+        if (String(other.id) === String(tx.id)) return false;
+        return (
+          other.category === "Transfer" &&
+          String(other.date) === String(tx.date) &&
+          String(other.comment) === String(tx.comment) &&
+          other.account === tx.account_to &&
+          other.account_to === tx.account
+        );
+      }) || null
     );
-  }
+  };
 
-  const chipStyle = (active) => ({
-    minHeight: "unset",
-    minWidth: "unset",
-    ...(active ? {} : {}),
-  });
+  const handleRowClick = (tx) => {
+    const pair = findPair(tx);
+    // Для переводов открываем только expense-сторону чтобы не дублировать
+    if (tx.category === "Transfer" && tx.type === "income" && pair) return;
+    setEditTx({ ...tx, _pair: pair });
+  };
 
   return (
     <div
       style={{ display: "flex", flexDirection: "column", gap: "var(--sp-4)" }}
     >
-      {/* FILTER BAR */}
-      <div
-        className="card"
-        style={{
-          padding: "var(--sp-4)",
-          display: "flex",
-          flexDirection: "column",
-          gap: "var(--sp-3)",
-        }}
-      >
-        <div
+      {/* SEARCH */}
+      <div style={{ position: "relative" }}>
+        <span
+          className="material-symbols-outlined"
           style={{
-            display: "flex",
-            gap: "var(--sp-3)",
-            flexWrap: "wrap",
-            alignItems: "center",
+            position: "absolute",
+            left: "var(--sp-3)",
+            top: "50%",
+            transform: "translateY(-50%)",
+            fontSize: "20px",
+            color: "var(--text-muted)",
+            pointerEvents: "none",
           }}
         >
-          {/* Search */}
-          <div
+          search
+        </span>
+        <input
+          className="input"
+          placeholder="Поиск по описанию, категории, счёту..."
+          value={search}
+          onChange={(e) => {
+            setSearch(e.target.value);
+            setPage(1);
+          }}
+          style={{ paddingLeft: "calc(var(--sp-3) + 28px)" }}
+        />
+      </div>
+
+      {/* FILTERS */}
+      <div
+        style={{
+          display: "flex",
+          gap: "var(--sp-2)",
+          flexWrap: "wrap",
+          alignItems: "center",
+        }}
+      >
+        {[
+          {
+            label: "Расходы",
+            active: showExpenses,
+            toggle: () => {
+              setShowExpenses((v) => !v);
+              setPage(1);
+            },
+          },
+          {
+            label: "Доходы",
+            active: showIncome,
+            toggle: () => {
+              setShowIncome((v) => !v);
+              setPage(1);
+            },
+          },
+          {
+            label: "Переводы",
+            active: showTransfers,
+            toggle: () => {
+              setShowTransfers((v) => !v);
+              setPage(1);
+            },
+          },
+        ].map(({ label, active, toggle }) => (
+          <button
+            key={label}
+            onClick={toggle}
+            className={active ? "chip chip-active" : "chip"}
+          >
+            {label}
+          </button>
+        ))}
+
+        <select
+          className="input"
+          value={month}
+          onChange={(e) => {
+            setMonth(e.target.value);
+            setPage(1);
+          }}
+          style={{
+            height: "32px",
+            minHeight: "unset",
+            font: "var(--font-body-small)",
+            padding: "0 var(--sp-3)",
+          }}
+        >
+          <option value="">Все периоды</option>
+          {months.map((m) => (
+            <option key={m} value={m}>
+              {monthLabel(m)}
+            </option>
+          ))}
+        </select>
+
+        <select
+          className="input"
+          value={category}
+          onChange={(e) => {
+            setCategory(e.target.value);
+            setPage(1);
+          }}
+          style={{
+            height: "32px",
+            minHeight: "unset",
+            font: "var(--font-body-small)",
+            padding: "0 var(--sp-3)",
+          }}
+        >
+          <option value="">Все категории</option>
+          {categories.map((c) => (
+            <option key={c} value={c}>
+              {c}
+            </option>
+          ))}
+        </select>
+
+        {hasFilters && (
+          <button
+            className="btn-text"
+            onClick={resetAll}
             style={{
-              position: "relative",
-              flex: "1 1 200px",
-              minWidth: "180px",
+              minHeight: "unset",
+              height: "32px",
+              font: "var(--font-label-small)",
+              padding: "0 var(--sp-3)",
             }}
           >
             <span
               className="material-symbols-outlined"
-              style={{
-                position: "absolute",
-                left: "12px",
-                top: "50%",
-                transform: "translateY(-50%)",
-                fontSize: "18px",
-                color: "var(--text-muted)",
-                pointerEvents: "none",
-              }}
+              style={{ fontSize: "16px" }}
             >
-              search
+              close
             </span>
-            <input
-              type="text"
-              placeholder="Поиск по комментарию, категории..."
-              value={search}
-              onChange={(e) => {
-                setSearch(e.target.value);
-                setPage(1);
-              }}
-              style={{ paddingLeft: "40px" }}
-            />
-          </div>
-
-          {/* Type chips */}
-          <div
-            style={{ display: "flex", gap: "var(--sp-2)", flexWrap: "wrap" }}
-          >
-            <button
-              className={`chip ${showExpenses ? "active" : ""}`}
-              onClick={() => {
-                setShowExpenses((p) => !p);
-                setPage(1);
-              }}
-              style={chipStyle(showExpenses)}
-            >
-              <span
-                className="material-symbols-outlined"
-                style={{ fontSize: "14px" }}
-              >
-                trending_down
-              </span>
-              Расходы
-            </button>
-            <button
-              className={`chip ${showIncome ? "active" : ""}`}
-              onClick={() => {
-                setShowIncome((p) => !p);
-                setPage(1);
-              }}
-              style={chipStyle(showIncome)}
-            >
-              <span
-                className="material-symbols-outlined"
-                style={{ fontSize: "14px" }}
-              >
-                trending_up
-              </span>
-              Доходы
-            </button>
-            <button
-              className={`chip ${showTransfers ? "active" : ""}`}
-              onClick={() => {
-                setShowTransfers((p) => !p);
-                setPage(1);
-              }}
-              style={chipStyle(showTransfers)}
-            >
-              <span
-                className="material-symbols-outlined"
-                style={{ fontSize: "14px" }}
-              >
-                sync_alt
-              </span>
-              Переводы
-            </button>
-          </div>
-        </div>
-
-        {/* Month + category */}
-        <div style={{ display: "flex", gap: "var(--sp-3)", flexWrap: "wrap" }}>
-          <select
-            value={month}
-            onChange={(e) => {
-              setMonth(e.target.value);
-              setPage(1);
-            }}
-            style={{ flex: "1 1 160px", minWidth: "140px", minHeight: "40px" }}
-          >
-            <option value="">Все периоды</option>
-            {months.map((m) => (
-              <option key={m} value={m}>
-                {monthLabel(m)}
-              </option>
-            ))}
-          </select>
-          <select
-            value={category}
-            onChange={(e) => {
-              setCategory(e.target.value);
-              setPage(1);
-            }}
-            style={{ flex: "1 1 160px", minWidth: "140px", minHeight: "40px" }}
-          >
-            <option value="">Все категории</option>
-            {categories.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        {/* Active tags */}
-        {hasFilters && (
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "var(--sp-2)",
-              flexWrap: "wrap",
-            }}
-          >
-            <span
-              style={{
-                font: "var(--font-label-small)",
-                color: "var(--text-muted)",
-              }}
-            >
-              Активно:
-            </span>
-            {showExpenses && (
-              <span
-                className="badge badge-primary"
-                style={{
-                  cursor: "pointer",
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: "4px",
-                }}
-                onClick={() => setShowExpenses(false)}
-              >
-                Расходы{" "}
-                <span
-                  className="material-symbols-outlined"
-                  style={{ fontSize: "12px" }}
-                >
-                  close
-                </span>
-              </span>
-            )}
-            {showIncome && (
-              <span
-                className="badge badge-primary"
-                style={{
-                  cursor: "pointer",
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: "4px",
-                }}
-                onClick={() => setShowIncome(false)}
-              >
-                Доходы{" "}
-                <span
-                  className="material-symbols-outlined"
-                  style={{ fontSize: "12px" }}
-                >
-                  close
-                </span>
-              </span>
-            )}
-            {showTransfers && (
-              <span
-                className="badge badge-primary"
-                style={{
-                  cursor: "pointer",
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: "4px",
-                }}
-                onClick={() => setShowTransfers(false)}
-              >
-                Переводы{" "}
-                <span
-                  className="material-symbols-outlined"
-                  style={{ fontSize: "12px" }}
-                >
-                  close
-                </span>
-              </span>
-            )}
-            {month && (
-              <span
-                className="badge badge-primary"
-                style={{
-                  cursor: "pointer",
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: "4px",
-                }}
-                onClick={() => setMonth("")}
-              >
-                {monthLabel(month)}{" "}
-                <span
-                  className="material-symbols-outlined"
-                  style={{ fontSize: "12px" }}
-                >
-                  close
-                </span>
-              </span>
-            )}
-            {category && (
-              <span
-                className="badge badge-primary"
-                style={{
-                  cursor: "pointer",
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: "4px",
-                }}
-                onClick={() => setCategory("")}
-              >
-                {category}{" "}
-                <span
-                  className="material-symbols-outlined"
-                  style={{ fontSize: "12px" }}
-                >
-                  close
-                </span>
-              </span>
-            )}
-            {search && (
-              <span
-                className="badge badge-primary"
-                style={{
-                  cursor: "pointer",
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: "4px",
-                }}
-                onClick={() => setSearch("")}
-              >
-                «{search}»{" "}
-                <span
-                  className="material-symbols-outlined"
-                  style={{ fontSize: "12px" }}
-                >
-                  close
-                </span>
-              </span>
-            )}
-            <button
-              className="btn-text"
-              onClick={resetAll}
-              style={{
-                font: "var(--font-label-small)",
-                color: "var(--text-muted)",
-                minHeight: "unset",
-                padding: "2px var(--sp-2)",
-              }}
-            >
-              Сбросить всё
-            </button>
-          </div>
+            Сбросить всё
+          </button>
         )}
       </div>
 
@@ -632,193 +427,210 @@ export default function Transactions({ moneyflow }) {
       )}
 
       {/* LIST */}
-      {Object.entries(grouped).map(([date, txs]) => (
-        <div key={date}>
-          <div
-            style={{
-              font: "var(--font-label-small)",
-              color: "var(--text-muted)",
-              textTransform: "uppercase",
-              letterSpacing: "0.1em",
-              marginBottom: "var(--sp-2)",
-              padding: "0 var(--sp-1)",
-            }}
-          >
-            {date}
-          </div>
-          <div className="card-flat" style={{ overflow: "hidden" }}>
-            {txs.map((t, i) => {
-              const amt = parseFloat(t["amount RUB"] || 0);
-              const isIncome = t.type === "income";
-              const isTransfer = t.category === "Transfer";
+      {Object.entries(grouped).map(([date, txs]) => {
+        const parts = date.split("/");
+        let displayDate = date;
+        if (parts.length === 3) {
+          displayDate = new Date(
+            parseInt(parts[2]),
+            parseInt(parts[0]) - 1,
+            parseInt(parts[1]),
+          ).toLocaleDateString("ru-RU", {
+            day: "numeric",
+            month: "long",
+            weekday: "short",
+          });
+        }
+        return (
+          <div key={date}>
+            <div
+              style={{
+                font: "var(--font-label-small)",
+                color: "var(--text-muted)",
+                textTransform: "uppercase",
+                letterSpacing: "0.1em",
+                marginBottom: "var(--sp-2)",
+                padding: "0 var(--sp-1)",
+              }}
+            >
+              {displayDate}
+            </div>
+            <div className="card-flat" style={{ overflow: "hidden" }}>
+              {txs.map((t, i) => {
+                const amt = parseFloat(t["amount RUB"] || 0);
+                const isIncome = t.type === "income";
+                const isTransfer = t.category === "Transfer";
+                const isPairIncome = isTransfer && isIncome; // скрытая половина перевода
 
-              return (
-                <div
-                  key={i}
-                  className="list-item"
-                  style={{
-                    justifyContent: "space-between",
-                    padding: "var(--sp-3) var(--sp-4)",
-                    borderBottom:
-                      i < txs.length - 1 ? "1px solid var(--border)" : "none",
-                    minHeight: "64px",
-                    opacity: isTransfer ? 0.75 : 1,
-                  }}
-                >
+                return (
                   <div
+                    key={t.id || i}
+                    onClick={() => handleRowClick(t)}
+                    className="list-item"
                     style={{
-                      width: "40px",
-                      height: "40px",
-                      borderRadius: "var(--radius-md)",
-                      flexShrink: 0,
-                      background: isTransfer
-                        ? "var(--secondary-container)"
-                        : isIncome
-                          ? "var(--success-container)"
-                          : "var(--primary-container)",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
+                      justifyContent: "space-between",
+                      padding: "var(--sp-3) var(--sp-4)",
+                      borderBottom:
+                        i < txs.length - 1 ? "1px solid var(--border)" : "none",
+                      minHeight: "64px",
+                      opacity: isPairIncome ? 0.5 : isTransfer ? 0.75 : 1,
+                      cursor: isPairIncome ? "default" : "pointer",
+                      transition: "background 0.12s",
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!isPairIncome)
+                        e.currentTarget.style.background = "var(--hover)";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = "transparent";
                     }}
                   >
-                    <span
-                      className="material-symbols-outlined"
+                    {/* Icon */}
+                    <div
                       style={{
-                        fontSize: "20px",
-                        color: isTransfer
-                          ? "var(--on-secondary-container)"
+                        width: "40px",
+                        height: "40px",
+                        borderRadius: "var(--radius-md)",
+                        flexShrink: 0,
+                        background: isTransfer
+                          ? "var(--secondary-container)"
                           : isIncome
-                            ? "var(--on-success-container)"
-                            : "var(--on-primary-container)",
+                            ? "color-mix(in srgb, var(--success) 15%, transparent)"
+                            : "color-mix(in srgb, var(--error) 15%, transparent)",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
                       }}
                     >
-                      {getIcon(t.category)}
-                    </span>
-                  </div>
+                      <span
+                        className="material-symbols-outlined"
+                        style={{
+                          fontSize: "20px",
+                          color: isTransfer
+                            ? "var(--on-secondary-container)"
+                            : isIncome
+                              ? "var(--success)"
+                              : "var(--error)",
+                        }}
+                      >
+                        {getIcon(t.category)}
+                      </span>
+                    </div>
 
-                  <div
-                    style={{ flex: 1, minWidth: 0, margin: "0 var(--sp-3)" }}
-                  >
+                    {/* Info */}
+                    <div
+                      style={{ flex: 1, minWidth: 0, padding: "0 var(--sp-3)" }}
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "var(--sp-2)",
+                        }}
+                      >
+                        <span
+                          style={{
+                            font: "var(--font-title-small)",
+                            color: "var(--text)",
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {t.category === "Transfer"
+                            ? `${t.account} → ${t.account_to || "?"}`
+                            : t.subcategory || t.category || "—"}
+                        </span>
+                        {!isPairIncome && t.id && (
+                          <span
+                            style={{
+                              font: "var(--font-label-small)",
+                              color: "var(--text-muted)",
+                              opacity: 0.5,
+                              flexShrink: 0,
+                            }}
+                          >
+                            #{t.id}
+                          </span>
+                        )}
+                      </div>
+                      <div
+                        style={{
+                          font: "var(--font-body-small)",
+                          color: "var(--text-muted)",
+                          marginTop: "2px",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {t.comment || t.account}
+                      </div>
+                    </div>
+
+                    {/* Amount */}
                     <div
                       style={{
                         display: "flex",
-                        alignItems: "center",
-                        gap: "var(--sp-2)",
-                        marginBottom: "2px",
+                        flexDirection: "column",
+                        alignItems: "flex-end",
+                        gap: "2px",
+                        flexShrink: 0,
                       }}
                     >
                       <span
                         style={{
                           font: "var(--font-title-small)",
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                          whiteSpace: "nowrap",
+                          fontFamily: "var(--font-mono)",
+                          color: isTransfer
+                            ? "var(--text-muted)"
+                            : isIncome
+                              ? "var(--success)"
+                              : "var(--error)",
                         }}
                       >
-                        {isTransfer
-                          ? `${t.account} → ${t.account_to || "?"}`
-                          : t.subcategory ||
-                            t.category ||
-                            (isIncome ? "Доход" : "Расход")}
+                        {isIncome ? "+" : "−"}
+                        {fmt(amt)}
                       </span>
-                      {t.required === "required" && !isTransfer && (
-                        <span
-                          className="badge badge-error"
-                          style={{ flexShrink: 0 }}
-                        >
-                          обяз.
-                        </span>
-                      )}
-                      {isTransfer && (
-                        <span
-                          className="badge"
-                          style={{
-                            flexShrink: 0,
-                            background: "var(--secondary-container)",
-                            color: "var(--on-secondary-container)",
-                          }}
-                        >
-                          перевод
-                        </span>
-                      )}
-                    </div>
-                    {t.comment && (
-                      <div
+                      <span
                         style={{
                           font: "var(--font-body-small)",
                           color: "var(--text-muted)",
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                          whiteSpace: "nowrap",
                         }}
                       >
-                        {t.comment}
-                      </div>
-                    )}
-                    <div
-                      style={{
-                        font: "var(--font-body-small)",
-                        color: "var(--text-muted)",
-                      }}
-                    >
-                      {t.account}
+                        {t.account}
+                      </span>
                     </div>
                   </div>
-
-                  <div style={{ textAlign: "right", flexShrink: 0 }}>
-                    <div
-                      style={{
-                        font: "var(--font-title-small)",
-                        fontFamily: "var(--font-mono)",
-                        color: isTransfer
-                          ? "var(--text-muted)"
-                          : isIncome
-                            ? "var(--success)"
-                            : "var(--error)",
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      {isTransfer ? "" : isIncome ? "+" : "−"}
-                      {fmt(amt)}
-                    </div>
-                    <div
-                      style={{
-                        font: "var(--font-body-small)",
-                        color: "var(--text-muted)",
-                        marginTop: "2px",
-                      }}
-                    >
-                      {t.currency}
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
 
       {/* LOAD MORE */}
       {hasMore && (
-        <div style={{ textAlign: "center", padding: "var(--sp-2)" }}>
-          <button
-            className="btn-outlined"
-            onClick={() => setPage((p) => p + 1)}
-            style={{
-              minHeight: "44px",
-              font: "var(--font-label-large)",
-              gap: "var(--sp-2)",
-            }}
-          >
-            <span
-              className="material-symbols-outlined"
-              style={{ fontSize: "18px" }}
-            >
-              expand_more
-            </span>
-            Показать ещё ({filtered.length - visible.length})
-          </button>
-        </div>
+        <button
+          className="btn-outlined"
+          onClick={() => setPage((p) => p + 1)}
+          style={{ font: "var(--font-label-large)", height: "44px" }}
+        >
+          Показать ещё ({filtered.length - visible.length})
+        </button>
+      )}
+
+      {/* EDIT MODAL */}
+      {editTx && (
+        <EditTransaction
+          tx={editTx}
+          accounts={accounts}
+          onClose={() => setEditTx(null)}
+          onSaved={() => {
+            setEditTx(null);
+            onReload();
+          }}
+        />
       )}
     </div>
   );
