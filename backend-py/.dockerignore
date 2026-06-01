@@ -1,0 +1,37 @@
+# Никогда не копируем секреты и локальное окружение в image.
+.env
+.env.*
+!.env.example
+
+# Кэши и виртуалки.
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# IDE.
+.vscode/
+.idea/
+*.swp
+
+# Git и CI.
+.git/
+.github/
+
+# Артефакты тестов.
+.coverage
+htmlcov/
+
+# Документация для разработчиков, не нужна рантайму.
+README.md
+*.md
+!alembic/script.py.mako
+
+# Docker-файлы — не нужны внутри образа.
+docker/
+.dockerignore
+.gitignore

@@ -1,0 +1,47 @@
+# Production-окружение: postgres + backend + nginx.
+#
+# Отличия от dev:
+# - postgres не публикует порт наружу
+# - backend без --reload и без volume-маунта кода
+# - nginx терминирует HTTP, проксирует /api/* в backend и (опционально)
+#   раздаёт собранный фронтенд из ./frontend/dist
+#
+# Запуск:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+#
+# Этот файл — overlay поверх docker-compose.yml. Он переопределяет/расширяет
+# сервисы из основного compose-файла.
+
+services:
+  postgres:
+    # Убираем публикацию порта — наружу её в проде не выставляем.
+    ports: !reset []
+    restart: always
+
+  backend:
+    restart: always
+    # В проде не нужен hot-reload и монтаж кода.
+    volumes: !reset []
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    # Внутрь compose-сети, наружу не публикуем — доступ только через nginx.
+    ports: !reset []
+    expose:
+      - "8000"
+
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: anfinances-nginx
+    restart: always
+    depends_on:
+      - backend
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      # Для HTTPS добавь сертификаты и раскомментируй:
+      # - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      # Собранный фронтенд (npm run build → frontend/dist).
+      # Если фронтенд деплоится отдельно — убери эту строку.
+      - ./frontend/dist:/usr/share/nginx/html:ro
+      # SSL-сертификаты (раскомментируй когда понадобится):
+      # - ./nginx/certs:/etc/nginx/certs:ro

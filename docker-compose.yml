@@ -1,0 +1,53 @@
+# Dev-окружение: PostgreSQL + Python backend.
+# Для production используй docker-compose.prod.yml (добавляет nginx).
+#
+# Запуск:   docker compose up -d
+# Логи:     docker compose logs -f backend
+# Остановка: docker compose down
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: anfinances-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-anfinances}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-anfinances}
+      POSTGRES_DB: ${POSTGRES_DB:-anfinances}
+    ports:
+      # Открываем наружу, чтобы можно было подключиться psql/DBeaver-ом с хоста.
+      # В prod-compose этот порт не публикуется.
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-anfinances} -d ${POSTGRES_DB:-anfinances}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend-py
+      dockerfile: docker/Dockerfile
+    container_name: anfinances-backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      # POSTGRES_HOST переопределяется здесь: внутри сети compose БД называется "postgres".
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+    env_file:
+      - ./backend-py/.env
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    # В dev монтируем код для горячей перезагрузки + переопределяем CMD на --reload.
+    volumes:
+      - ./backend-py:/app
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+
+volumes:
+  postgres_data:
+    name: anfinances_postgres_data

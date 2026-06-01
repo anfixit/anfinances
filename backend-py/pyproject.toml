@@ -1,0 +1,71 @@
+[project]
+name = "anfinances-backend"
+version = "0.1.0"
+description = "anfinances — личный финансовый трекер. Backend на FastAPI + PostgreSQL."
+readme = "README.md"
+requires-python = ">=3.13"
+license = { text = "MIT" }
+authors = [{ name = "anfinances" }]
+
+dependencies = [
+    # ── Web framework ──
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+
+    # ── ORM + миграции ──
+    "sqlalchemy[asyncio]>=2.0.36",
+    "asyncpg>=0.30.0",
+    "alembic>=1.14.0",
+
+    # ── Settings + валидация ──
+    "pydantic>=2.9.0",
+    "pydantic-settings>=2.6.0",
+    "email-validator>=2.2.0",  # для EmailStr в pydantic
+
+    # ── Auth (будет использоваться с шага 3) ──
+    "passlib[bcrypt]>=1.7.4",
+    "python-jose[cryptography]>=3.3.0",
+    "python-multipart>=0.0.20",  # для OAuth2PasswordRequestForm
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3.0",
+    "pytest-asyncio>=0.24.0",
+    "httpx>=0.28.0",
+    "ruff>=0.8.0",
+    "mypy>=1.13.0",
+]
+
+[tool.uv]
+package = false  # это приложение, а не библиотека — uv не пакует его в wheel
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+# Базовый набор: pycodestyle, pyflakes, isort, bugbear, simplify, pyupgrade
+select = ["E", "W", "F", "I", "B", "SIM", "UP", "C4"]
+ignore = [
+    "E501",  # длинные строки — пусть formatter сам разбирается
+    "B008",  # FastAPI Depends() в дефолтах — это нормально
+]
+
+[tool.ruff.lint.per-file-ignores]
+"alembic/versions/*" = ["E402", "F401"]  # автогенерированные миграции
+"__init__.py" = ["F401"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.mypy]
+python_version = "3.13"
+strict = true
+plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+module = ["passlib.*", "jose.*"]
+ignore_missing_imports = true
