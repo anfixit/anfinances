@@ -1,16 +1,16 @@
-"""Бизнес-логика переводов между счетами.
+"""Бизнес-логика домена transactions.
 
-Перевод — это пара транзакций (kind=transfer) с общим
-transfer_id: списание с источника и зачисление на получатель.
-Сумму зачисления вводит пользователь (фактический курс банка),
-поэтому рублёвый эквивалент получателя приравнивается к рублёвому
-эквиваленту источника — перевод не создаёт прибыли/убытка, баланс
-не плывёт. Фактический курс получателя запекается как
-amount_rub / amount_to.
+TransactionService — обычные операции (расход/доход): транзакция
+в валюте своего счёта, курс к рублю запекается в exchange_rate,
+amount_rub не плывёт при обновлении курсов.
 
-Комиссия (если задана) — отдельная строка kind=expense в валюте
-счёта-источника, с тем же transfer_id и выбранной пользователем
-expense-категорией.
+TransferService — переводы: пара ног (kind=transfer) с общим
+transfer_id. Рублёвый эквивалент получателя приравнивается к
+источнику (баланс не плывёт), фактический курс банка запекается
+как amount_rub / amount_to. Комиссия (если задана) — отдельная
+строка kind=expense в валюте источника с категорией из запроса.
+
+Удаление обычной транзакции физическое.
 """
 
 import uuid
@@ -26,11 +26,132 @@ from app.domains.categories.repository import CategoryRepository
 from app.domains.currencies.service import CurrencyService
 from app.domains.transactions.models import Transaction, Transfer
 from app.domains.transactions.repository import (
+    TransactionFilter,
     TransactionRepository,
 )
-from app.domains.transactions.schemas import TransferCreate
+from app.domains.transactions.schemas import (
+    TransactionCreate,
+    TransactionUpdate,
+    TransferCreate,
+)
 
-__all__ = ["TransferService"]
+__all__ = ["TransactionService", "TransferService"]
+
+_KIND_TO_CATEGORY = {
+    TransactionKind.EXPENSE: CategoryKind.EXPENSE,
+    TransactionKind.INCOME: CategoryKind.INCOME,
+}
+
+
+class TransactionService:
+    def __init__(
+        self,
+        repo: TransactionRepository,
+        accounts: AccountRepository,
+        categories: CategoryRepository,
+        currencies: CurrencyService,
+    ) -> None:
+        self._repo = repo
+        self._accounts = accounts
+        self._categories = categories
+        self._currencies = currencies
+
+    async def list_transactions(
+        self, user_id: uuid.UUID, flt: TransactionFilter
+    ) -> list[Transaction]:
+        return await self._repo.list_page(user_id, flt)
+
+    async def get_transaction(
+        self, tx_id: uuid.UUID, user_id: uuid.UUID
+    ) -> Transaction:
+        tx = await self._repo.get(tx_id, user_id)
+        if tx is None:
+            raise NotFoundError("Транзакция не найдена.")
+        return tx
+
+    async def create_transaction(
+        self, user_id: uuid.UUID, data: TransactionCreate
+    ) -> Transaction:
+        account = await self._accounts.get(data.account_id, user_id)
+        if account is None:
+            raise NotFoundError("Счёт не найден.")
+
+        await self._validate_category(user_id, data.category_id, data.kind)
+
+        rate = await self._currencies.rate_to_rub(account.currency_code)
+        amount_rub = data.amount * rate
+
+        tx = Transaction(
+            user_id=user_id,
+            account_id=account.id,
+            kind=data.kind,
+            amount=data.amount,
+            currency_code=account.currency_code,
+            amount_rub=amount_rub,
+            exchange_rate=rate,
+            category_id=data.category_id,
+            required=data.required,
+            date=data.date,
+            comment=data.comment,
+        )
+        return await self._repo.add(tx)
+
+    async def update_transaction(
+        self,
+        tx_id: uuid.UUID,
+        user_id: uuid.UUID,
+        data: TransactionUpdate,
+    ) -> Transaction:
+        tx = await self.get_transaction(tx_id, user_id)
+        if tx.transfer_id is not None:
+            raise ValidationFailedError(
+                "Перевод нельзя править как обычную транзакцию."
+            )
+
+        fields = data.model_dump(exclude_unset=True)
+
+        if "category_id" in fields:
+            await self._validate_category(
+                user_id, fields["category_id"], tx.kind
+            )
+
+        for key, value in fields.items():
+            setattr(tx, key, value)
+
+        if "amount" in fields:
+            # курс запечён — пересчитываем только сумму в рублях
+            tx.amount_rub = tx.amount * tx.exchange_rate
+
+        return tx
+
+    async def delete_transaction(
+        self, tx_id: uuid.UUID, user_id: uuid.UUID
+    ) -> None:
+        tx = await self.get_transaction(tx_id, user_id)
+        if tx.transfer_id is not None:
+            raise ValidationFailedError(
+                "Удаляйте перевод целиком через домен переводов."
+            )
+        await self._repo.delete(tx)
+
+    async def _validate_category(
+        self,
+        user_id: uuid.UUID,
+        category_id: uuid.UUID | None,
+        kind: TransactionKind,
+    ) -> None:
+        if category_id is None:
+            return
+        category = await self._categories.get(category_id, user_id)
+        if category is None:
+            raise NotFoundError("Категория не найдена.")
+        if category.is_archived:
+            raise ValidationFailedError("Категория в архиве.")
+        expected = _KIND_TO_CATEGORY.get(kind)
+        if expected is not None and category.kind != expected:
+            raise ValidationFailedError(
+                "Тип категории не совпадает с типом операции (расход/доход)."
+            )
 
 
 class TransferService:
