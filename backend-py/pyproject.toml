@@ -22,9 +22,9 @@ dependencies = [
     "pydantic-settings>=2.6.0",
     "email-validator>=2.2.0",  # для EmailStr в pydantic
 
-    # ── Auth (будет использоваться с шага 3) ──
-    "passlib[bcrypt]>=1.7.4",
-    "python-jose[cryptography]>=3.3.0",
+    # ── Auth (используется с шага 3) ──
+    "argon2-cffi>=23.1.0",       # Argon2id для паролей (§8.1, ADR-015)
+    "pyjwt>=2.10.0",             # JWT (замена python-jose, ADR-015)
     "python-multipart>=0.0.20",  # для OAuth2PasswordRequestForm
 ]
 
@@ -41,14 +41,13 @@ dev = [
 package = false  # это приложение, а не библиотека — uv не пакует его в wheel
 
 [tool.ruff]
-line-length = 100
+line-length = 79
 target-version = "py313"
 
 [tool.ruff.lint]
 # Базовый набор: pycodestyle, pyflakes, isort, bugbear, simplify, pyupgrade
 select = ["E", "W", "F", "I", "B", "SIM", "UP", "C4"]
 ignore = [
-    "E501",  # длинные строки — пусть formatter сам разбирается
     "B008",  # FastAPI Depends() в дефолтах — это нормально
 ]
 
@@ -65,7 +64,3 @@ pythonpath = ["."]
 python_version = "3.13"
 strict = true
 plugins = ["pydantic.mypy"]
-
-[[tool.mypy.overrides]]
-module = ["passlib.*", "jose.*"]
-ignore_missing_imports = true

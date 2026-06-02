@@ -76,7 +76,7 @@ def do_run_migrations(connection: Connection) -> None:
 
 
 async def run_async_migrations() -> None:
-    """Создаёт async engine, открывает соединение и запускает миграции в нём."""
+    """Создаёт async engine, открывает соединение и запускает миграции."""
     connectable = async_engine_from_config(
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",

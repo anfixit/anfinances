@@ -1,7 +1,7 @@
 """FastAPI-приложение: точка входа.
 
 Собирает: настройки → middleware → exception handlers → роуты.
-Бизнес-логика лежит в app/domains/* и подключается роутерами по мере готовности.
+Бизнес-логика лежит в app/domains/* и подключается роутерами
 """
 
 import logging
@@ -45,7 +45,7 @@ async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
         logger.info("Database connection OK")
     except Exception as exc:
         logger.error("Database connection failed at startup: %s", exc)
-        # Не падаем — пусть приложение поднимется, /health/ready покажет не-ready.
+        # Не падаем: приложение поднимется, /health/ready даст не-ready.
         # Это удобнее в docker-compose: контейнер не уходит в restart-loop.
 
     yield
@@ -87,7 +87,8 @@ async def health_ready(db: DbSession) -> dict[str, Any]:
         result.scalar_one()
     except Exception as exc:
         logger.warning("Readiness check failed: %s", exc)
-        # Импорт здесь, чтобы не тащить fastapi.HTTPException в публичный API модуля.
+        # Импорт здесь, чтобы не тащить fastapi.HTTPException
+        # в публичный API модуля.
         from fastapi import HTTPException
 
         raise HTTPException(
@@ -108,13 +109,13 @@ async def health(db: DbSession) -> dict[str, Any]:
 
 
 def create_app() -> FastAPI:
-    """Фабрика приложения. Удобно для тестов: можно создавать с другими settings."""
+    """Фабрика приложения. Удобно для тестов с другими settings."""
     settings = get_settings()
 
     app = FastAPI(
         title=settings.project_name,
         version="0.1.0",
-        description="Личный финансовый трекер. См. ARCHITECTURE.md в корне репозитория.",
+        description="Личный финансовый трекер. См. ARCHITECTURE.md.",
         lifespan=lifespan,
         # OpenAPI прячем в проде, оставляем в dev.
         docs_url="/docs" if settings.environment != "production" else None,
@@ -132,19 +133,12 @@ def create_app() -> FastAPI:
     # Health endpoints — под /api/v1.
     app.include_router(health_router, prefix=settings.api_v1_prefix)
 
-    # Доменные роутеры будут подключаться здесь по мере реализации:
-    # app.include_router(auth_router, prefix=f"{settings.api_v1_prefix}/auth")
-    # app.include_router(accounts_router, prefix=f"{settings.api_v1_prefix}/accounts")
-    # ...
-
     return app
 
 
 # Объект, который запускает uvicorn: `uvicorn app.main:app`.
 app = create_app()
 
-
-# Базовая настройка логирования. В проде заменим на структурное (JSON) при необходимости.
 logging.basicConfig(
     level=get_settings().log_level,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",

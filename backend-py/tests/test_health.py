@@ -15,7 +15,9 @@ async def test_health_live(client: AsyncClient) -> None:
     assert response.json() == {"status": "ok"}
 
 
-@pytest.mark.skip(reason="Требует поднятой БД — запускается в integration suite")
+@pytest.mark.skip(
+    reason="Требует поднятой БД — запускается в integration suite"
+)
 async def test_health_ready(client: AsyncClient) -> None:
     """Readiness-эндпоинт проверяет БД."""
     response = await client.get("/api/v1/health/ready")

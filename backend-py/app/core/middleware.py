@@ -32,7 +32,8 @@ def register_middleware(app: FastAPI, settings: Settings) -> None:
         request_id = str(uuid.uuid4())
         start = time.perf_counter()
 
-        # Прокидываем request_id в request.state — пригодится для логов в сервисах.
+        # Прокидываем request_id в request.state — пригодится
+        # для логов в сервисах.
         request.state.request_id = request_id
 
         response = await call_next(request)

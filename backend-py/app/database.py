@@ -33,7 +33,8 @@ engine: AsyncEngine = create_async_engine(
     echo=_settings.db_echo,
     pool_size=_settings.db_pool_size,
     max_overflow=_settings.db_max_overflow,
-    pool_pre_ping=True,  # проверяет соединение перед использованием (для долгоживущих)
+    # проверяет соединение перед использованием
+    pool_pre_ping=True,
 )
 
 # expire_on_commit=False — после commit() объекты остаются юзабельными.
@@ -46,7 +47,7 @@ AsyncSessionLocal: async_sessionmaker[AsyncSession] = async_sessionmaker(
 )
 
 
-async def get_db() -> AsyncGenerator[AsyncSession, None]:
+async def get_db() -> AsyncGenerator[AsyncSession]:
     """FastAPI-зависимость: даёт сессию БД на время request.
 
     Использование:

@@ -9,7 +9,9 @@
 
 
 def main() -> None:
-    raise NotImplementedError("Сид будет реализован после появления моделей (шаг 2)")
+    raise NotImplementedError(
+        "Сид будет реализован после появления моделей (шаг 2)"
+    )
 
 
 if __name__ == "__main__":
