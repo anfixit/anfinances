@@ -16,6 +16,7 @@ from app.core.dependencies import DbSession
 from app.core.exceptions import register_exception_handlers
 from app.core.middleware import register_middleware
 from app.database import engine
+from app.domains.auth.routes import router as auth_router
 
 logger = logging.getLogger("anfinances")
 
@@ -132,6 +133,8 @@ def create_app() -> FastAPI:
 
     # Health endpoints — под /api/v1.
     app.include_router(health_router, prefix=settings.api_v1_prefix)
+
+    app.include_router(auth_router, prefix=settings.api_v1_prefix)
 
     return app
 

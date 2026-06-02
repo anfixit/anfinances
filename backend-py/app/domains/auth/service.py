@@ -97,11 +97,12 @@ class AuthService:
 
         stored = await self._repo.get_refresh_token(_hash_token(refresh_token))
         now = datetime.now(UTC)
-        if (
-            stored is None
-            or stored.revoked_at is not None
-            or stored.expires_at <= now
-        ):
+        if stored is None or stored.revoked_at is not None:
+            raise UnauthorizedError("Сессия недействительна.")
+        expires_at = stored.expires_at
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=UTC)
+        if expires_at <= now:
             raise UnauthorizedError("Сессия недействительна.")
 
         stored.revoked_at = now
