@@ -11,18 +11,8 @@ from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
     create_async_engine,
 )
-from sqlalchemy.orm import DeclarativeBase
 
 from app.config import get_settings
-
-
-class Base(DeclarativeBase):
-    """Базовый класс для всех ORM-моделей.
-
-    Все модели в app/domains/*/models.py наследуются от него.
-    Alembic использует Base.metadata для автогенерации миграций.
-    """
-
 
 # Engine создаётся один раз на процесс. Импорт этого модуля = создание engine.
 # Если нужно лениво — можно завернуть в функцию, но для FastAPI это норм.
