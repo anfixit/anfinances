@@ -62,6 +62,7 @@ ignore = [
 "tests/test_accounts_service.py" = ["S101"]
 "tests/test_categories_service.py" = ["S101"]
 "tests/test_transactions_service.py" = ["S101"]
+"tests/test_transfer_service.py" = ["S101"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

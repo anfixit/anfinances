@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.enums import TransactionKind
-from app.domains.transactions.models import Transaction
+from app.domains.transactions.models import Transaction, Transfer
 
 __all__ = ["TransactionRepository", "SqlTransactionRepository"]
 
@@ -50,6 +50,16 @@ class TransactionRepository(Protocol):
     async def add(self, tx: Transaction) -> Transaction: ...
 
     async def delete(self, tx: Transaction) -> None: ...
+
+    async def add_transfer(self, transfer: Transfer) -> Transfer: ...
+
+    async def get_transfer(
+        self, transfer_id: uuid.UUID, user_id: uuid.UUID
+    ) -> Transfer | None: ...
+
+    async def list_transfer_legs(
+        self, transfer_id: uuid.UUID
+    ) -> list[Transaction]: ...
 
 
 class SqlTransactionRepository:
@@ -103,3 +113,27 @@ class SqlTransactionRepository:
 
     async def delete(self, tx: Transaction) -> None:
         await self._session.delete(tx)
+
+    async def add_transfer(self, transfer: Transfer) -> Transfer:
+        self._session.add(transfer)
+        await self._session.flush()
+        return transfer
+
+    async def get_transfer(
+        self, transfer_id: uuid.UUID, user_id: uuid.UUID
+    ) -> Transfer | None:
+        result = await self._session.execute(
+            select(Transfer).where(
+                Transfer.id == transfer_id,
+                Transfer.user_id == user_id,
+            )
+        )
+        return result.scalar_one_or_none()
+
+    async def list_transfer_legs(
+        self, transfer_id: uuid.UUID
+    ) -> list[Transaction]:
+        result = await self._session.execute(
+            select(Transaction).where(Transaction.transfer_id == transfer_id)
+        )
+        return list(result.scalars().all())
