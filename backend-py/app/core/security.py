@@ -62,6 +62,7 @@ def _create_token(
     payload: dict[str, Any] = {
         "sub": str(subject),
         "type": token_type,
+        "jti": uuid.uuid4().hex,
         "iat": now,
         "exp": now + expires_delta,
     }
