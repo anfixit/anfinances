@@ -16,6 +16,7 @@ from app.core.dependencies import DbSession
 from app.core.exceptions import register_exception_handlers
 from app.core.middleware import register_middleware
 from app.database import AsyncSessionLocal, engine
+from app.domains.accounts.routes import router as accounts_router
 from app.domains.auth.bootstrap import bootstrap_single_user
 from app.domains.auth.routes import router as auth_router
 from app.domains.currencies.routes import router as currencies_router
@@ -170,6 +171,8 @@ def create_app() -> FastAPI:
     app.include_router(auth_router, prefix=settings.api_v1_prefix)
 
     app.include_router(currencies_router, prefix=settings.api_v1_prefix)
+
+    app.include_router(accounts_router, prefix=settings.api_v1_prefix)
 
     return app
 
