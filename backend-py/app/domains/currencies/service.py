@@ -44,12 +44,13 @@ class CurrencyService:
         if from_code == to_code:
             return amount
 
-        rub = amount * await self._rate_to_rub(from_code)
+        rub = amount * await self.rate_to_rub(from_code)
         if to_code == _BASE:
             return rub
-        return rub / await self._rate_to_rub(to_code)
+        return rub / await self.rate_to_rub(to_code)
 
-    async def _rate_to_rub(self, code: str) -> Decimal:
+    async def rate_to_rub(self, code: str) -> Decimal:
+        """Курс «сколько RUB за 1 единицу валюты». Для RUB = 1."""
         if code == _BASE:
             return Decimal(1)
         rate = await self._repo.get_rate(code, _BASE)
