@@ -15,7 +15,8 @@ from app.config import get_settings
 from app.core.dependencies import DbSession
 from app.core.exceptions import register_exception_handlers
 from app.core.middleware import register_middleware
-from app.database import engine
+from app.database import AsyncSessionLocal, engine
+from app.domains.auth.bootstrap import bootstrap_single_user
 from app.domains.auth.routes import router as auth_router
 
 logger = logging.getLogger("anfinances")
@@ -48,6 +49,12 @@ async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
         logger.error("Database connection failed at startup: %s", exc)
         # Не падаем: приложение поднимется, /health/ready даст не-ready.
         # Это удобнее в docker-compose: контейнер не уходит в restart-loop.
+
+    try:
+        async with AsyncSessionLocal() as session:
+            await bootstrap_single_user(session, settings)
+    except Exception as exc:
+        logger.error("single_user bootstrap failed: %s", exc)
 
     yield
 
