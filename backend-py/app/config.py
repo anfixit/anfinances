@@ -78,6 +78,15 @@ class Settings(BaseSettings):
     argon2_time_cost: int = 2
     argon2_memory_cost: int = 65536
 
+    password_min_length: int = 15
+    password_max_length: int = 128
+    password_min_zxcvbn_score: int = 3
+    hibp_enabled: bool = True
+    # Мягкий фейл: при недоступности HIBP не блокируем регистрацию.
+    # Для публичного SaaS можно ужесточить (false).
+    hibp_fail_open: bool = True
+    hibp_timeout_seconds: float = 3.0
+
     auth_mode: AuthMode = "single_user"
 
     single_user_email: str | None = None

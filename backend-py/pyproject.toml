@@ -11,21 +11,19 @@ dependencies = [
     # ── Web framework ──
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.32.0",
-
     # ── ORM + миграции ──
     "sqlalchemy[asyncio]>=2.0.36",
     "asyncpg>=0.30.0",
     "alembic>=1.14.0",
-
     # ── Settings + валидация ──
     "pydantic>=2.9.0",
     "pydantic-settings>=2.6.0",
     "email-validator>=2.2.0",  # для EmailStr в pydantic
-
     # ── Auth (используется с шага 3) ──
     "argon2-cffi>=23.1.0",       # Argon2id для паролей (§8.1, ADR-015)
     "pyjwt>=2.10.0",             # JWT (замена python-jose, ADR-015)
     "python-multipart>=0.0.20",  # для OAuth2PasswordRequestForm
+    "zxcvbn>=4.5.0",
 ]
 
 [dependency-groups]
@@ -54,6 +52,8 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 "alembic/versions/*" = ["E402", "F401"]  # автогенерированные миграции
 "__init__.py" = ["F401"]
+"tests/test_pwned.py" = ["S101", "S324"]
+"tests/test_password_policy.py" = ["S101"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
@@ -64,3 +64,5 @@ pythonpath = ["."]
 python_version = "3.13"
 strict = true
 plugins = ["pydantic.mypy"]
+
+zxcvbn = 4.4
