@@ -18,6 +18,12 @@ from app.core.password_policy import normalize_password
 from app.core.security import hash_password
 from app.domains.auth.models import User
 from app.domains.auth.repository import SqlAuthRepository
+from app.domains.categories.defaults import (
+    DEFAULT_EXPENSE_TREE,
+    DEFAULT_INCOME,
+)
+from app.domains.categories.repository import SqlCategoryRepository
+from app.domains.categories.service import CategoryService
 
 __all__ = ["bootstrap_single_user"]
 
@@ -53,6 +59,15 @@ async def bootstrap_single_user(
         ),
         is_verified=True,
     )
+
     await repo.add_user(user)
+
+    cat_service = CategoryService(SqlCategoryRepository(session))
+    await cat_service.apply_defaults(
+        user.id,
+        DEFAULT_EXPENSE_TREE,
+        DEFAULT_INCOME,
+    )
+
     await session.commit()
     logger.info("Создан single_user-аккаунт: %s", email)

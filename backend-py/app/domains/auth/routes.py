@@ -22,6 +22,12 @@ from app.domains.auth.schemas import (
     TokenPair,
     UserRead,
 )
+from app.domains.categories.defaults import (
+    DEFAULT_EXPENSE_TREE,
+    DEFAULT_INCOME,
+)
+from app.domains.categories.repository import SqlCategoryRepository
+from app.domains.categories.service import CategoryService
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -39,9 +45,16 @@ async def register(
 ) -> ApiResponse[TokenPair]:
     if settings.auth_mode == "single_user":
         raise ForbiddenError("Регистрация отключена в режиме single_user.")
-    _user, tokens = await service.register(
-        data.email, data.password, data.name
+
+    user, tokens = await service.register(data.email, data.password, data.name)
+
+    cat_service = CategoryService(SqlCategoryRepository(db))
+    await cat_service.apply_defaults(
+        user.id,
+        DEFAULT_EXPENSE_TREE,
+        DEFAULT_INCOME,
     )
+
     await db.commit()
     return ApiResponse(data=tokens)
 
