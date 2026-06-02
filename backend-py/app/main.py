@@ -18,6 +18,7 @@ from app.core.middleware import register_middleware
 from app.database import AsyncSessionLocal, engine
 from app.domains.auth.bootstrap import bootstrap_single_user
 from app.domains.auth.routes import router as auth_router
+from app.domains.currencies.routes import router as currencies_router
 
 logger = logging.getLogger("anfinances")
 
@@ -33,6 +34,7 @@ async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
     На остановке: корректно закрываем пул соединений.
     """
     settings = get_settings()
+
     logger.info(
         "Starting %s in %s mode (auth_mode=%s)",
         settings.project_name,
@@ -55,6 +57,32 @@ async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
             await bootstrap_single_user(session, settings)
     except Exception as exc:
         logger.error("single_user bootstrap failed: %s", exc)
+
+    try:
+        async with AsyncSessionLocal() as session:
+            from app.domains.currencies.providers.er_api import (
+                ErApiRatesProvider,
+            )
+            from app.domains.currencies.repository import (
+                SqlCurrencyRepository,
+            )
+            from app.domains.currencies.service import CurrencyService
+
+            svc = CurrencyService(
+                SqlCurrencyRepository(session),
+                ErApiRatesProvider(settings),
+            )
+
+            await svc.refresh_rates()
+            await session.commit()
+
+            logger.info("Currency rates refreshed on startup")
+
+    except Exception as exc:
+        logger.warning(
+            "Rates refresh on startup failed: %s",
+            exc,
+        )
 
     yield
 
@@ -95,8 +123,7 @@ async def health_ready(db: DbSession) -> dict[str, Any]:
         result.scalar_one()
     except Exception as exc:
         logger.warning("Readiness check failed: %s", exc)
-        # Импорт здесь, чтобы не тащить fastapi.HTTPException
-        # в публичный API модуля.
+
         from fastapi import HTTPException
 
         raise HTTPException(
@@ -125,7 +152,6 @@ def create_app() -> FastAPI:
         version="0.1.0",
         description="Личный финансовый трекер. См. ARCHITECTURE.md.",
         lifespan=lifespan,
-        # OpenAPI прячем в проде, оставляем в dev.
         docs_url="/docs" if settings.environment != "production" else None,
         redoc_url="/redoc" if settings.environment != "production" else None,
         openapi_url=(
@@ -142,6 +168,8 @@ def create_app() -> FastAPI:
     app.include_router(health_router, prefix=settings.api_v1_prefix)
 
     app.include_router(auth_router, prefix=settings.api_v1_prefix)
+
+    app.include_router(currencies_router, prefix=settings.api_v1_prefix)
 
     return app
 
