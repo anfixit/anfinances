@@ -1,7 +1,4 @@
-"""Async SQLAlchemy: engine, session factory и базовый класс моделей.
-
-Модели данных будут добавлены в шаге 2. Сейчас здесь только инфраструктура.
-"""
+"""Async SQLAlchemy: engine, session factory и реэкспорт Base."""
 
 from collections.abc import AsyncGenerator
 
@@ -13,9 +10,8 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from app.config import get_settings
+from app.core.models import Base
 
-# Engine создаётся один раз на процесс. Импорт этого модуля = создание engine.
-# Если нужно лениво — можно завернуть в функцию, но для FastAPI это норм.
 _settings = get_settings()
 
 engine: AsyncEngine = create_async_engine(
@@ -23,12 +19,9 @@ engine: AsyncEngine = create_async_engine(
     echo=_settings.db_echo,
     pool_size=_settings.db_pool_size,
     max_overflow=_settings.db_max_overflow,
-    # проверяет соединение перед использованием
     pool_pre_ping=True,
 )
 
-# expire_on_commit=False — после commit() объекты остаются юзабельными.
-# Это важно для FastAPI: после commit мы часто возвращаем объект в response.
 AsyncSessionLocal: async_sessionmaker[AsyncSession] = async_sessionmaker(
     bind=engine,
     class_=AsyncSession,
@@ -40,11 +33,10 @@ AsyncSessionLocal: async_sessionmaker[AsyncSession] = async_sessionmaker(
 async def get_db() -> AsyncGenerator[AsyncSession]:
     """FastAPI-зависимость: даёт сессию БД на время request.
 
-    Использование:
-        async def my_route(db: AsyncSession = Depends(get_db)):
-            ...
-
-    Сессия закрывается автоматически. Commit делает сервис, не зависимость.
+    Сессия закрывается автоматически. Commit делает сервис.
     """
     async with AsyncSessionLocal() as session:
         yield session
+
+
+__all__ = ["AsyncSessionLocal", "Base", "engine", "get_db"]
