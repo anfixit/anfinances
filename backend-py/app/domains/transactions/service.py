@@ -1,13 +1,21 @@
 """Бизнес-логика домена transactions.
 
+Соглашение знаков (Стратегия А): знак amount и amount_rub
+отражает направление движения денег по счёту.
+- доход / входящая нога перевода:  amount > 0
+- расход / исходящая нога / комиссия: amount < 0
+Тогда баланс счёта = initial_balance + Σ amount (одна сумма,
+без разбора направлений). Пользователь и API всегда оперируют
+положительной суммой — знак проставляет сервис по kind.
+
 TransactionService — обычные операции (расход/доход): транзакция
 в валюте своего счёта, курс к рублю запекается в exchange_rate,
 amount_rub не плывёт при обновлении курсов.
 
 TransferService — переводы: пара ног (kind=transfer) с общим
-transfer_id. Рублёвый эквивалент получателя приравнивается к
+transfer_id. Рублёвый эквивалент получателя по модулю равен
 источнику (баланс не плывёт), фактический курс банка запекается
-как amount_rub / amount_to. Комиссия (если задана) — отдельная
+как |amount_rub| / amount_to. Комиссия (если задана) — отдельная
 строка kind=expense в валюте источника с категорией из запроса.
 
 Удаление обычной транзакции физическое.
@@ -41,6 +49,16 @@ _KIND_TO_CATEGORY = {
     TransactionKind.EXPENSE: CategoryKind.EXPENSE,
     TransactionKind.INCOME: CategoryKind.INCOME,
 }
+
+
+def _signed(amount: Decimal, kind: TransactionKind) -> Decimal:
+    """Применить знак к положительной сумме по типу операции.
+
+    Доход — плюс, расход — минус. Сумма на входе всегда > 0.
+    """
+    if kind == TransactionKind.EXPENSE:
+        return -amount
+    return amount
 
 
 class TransactionService:
@@ -79,13 +97,14 @@ class TransactionService:
         await self._validate_category(user_id, data.category_id, data.kind)
 
         rate = await self._currencies.rate_to_rub(account.currency_code)
-        amount_rub = data.amount * rate
+        amount = _signed(data.amount, data.kind)
+        amount_rub = amount * rate
 
         tx = Transaction(
             user_id=user_id,
             account_id=account.id,
             kind=data.kind,
-            amount=data.amount,
+            amount=amount,
             currency_code=account.currency_code,
             amount_rub=amount_rub,
             exchange_rate=rate,
@@ -116,10 +135,14 @@ class TransactionService:
             )
 
         for key, value in fields.items():
+            if key == "amount":
+                continue
             setattr(tx, key, value)
 
         if "amount" in fields:
-            # курс запечён — пересчитываем только сумму в рублях
+            # на входе положительная сумма — заново проставляем
+            # знак по kind; курс запечён, меняется только модуль
+            tx.amount = _signed(fields["amount"], tx.kind)
             tx.amount_rub = tx.amount * tx.exchange_rate
 
         return tx
@@ -184,7 +207,7 @@ class TransferService:
         transfer = await self._repo.add_transfer(Transfer(user_id=user_id))
         created: list[Transaction] = []
 
-        # Нога-источник: рубли по официальному курсу валюты источника.
+        # Нога-источник: деньги уходят — суммы отрицательные.
         src_rate = await self._currencies.rate_to_rub(src.currency_code)
         src_rub = data.amount_from * src_rate
         created.append(
@@ -194,9 +217,9 @@ class TransferService:
                     transfer_id=transfer.id,
                     account_id=src.id,
                     kind=TransactionKind.TRANSFER,
-                    amount=data.amount_from,
+                    amount=-data.amount_from,
                     currency_code=src.currency_code,
-                    amount_rub=src_rub,
+                    amount_rub=-src_rub,
                     exchange_rate=src_rate,
                     category_id=None,
                     date=data.date,
@@ -205,8 +228,9 @@ class TransferService:
             )
         )
 
-        # Нога-получатель: рублёвый эквивалент = источнику (баланс
-        # не плывёт), фактический курс = src_rub / amount_to.
+        # Нога-получатель: деньги приходят — суммы положительные.
+        # Рублёвый эквивалент по модулю = источнику (баланс не
+        # плывёт), фактический курс = src_rub / amount_to.
         dst_rate = src_rub / data.amount_to
         created.append(
             await self._repo.add(
@@ -226,7 +250,7 @@ class TransferService:
             )
         )
 
-        # Комиссия — расход в валюте источника, с transfer_id.
+        # Комиссия — расход в валюте источника, суммы отрицательные.
         if data.fee_amount is not None:
             fee_rub = data.fee_amount * src_rate
             created.append(
@@ -236,9 +260,9 @@ class TransferService:
                         transfer_id=transfer.id,
                         account_id=src.id,
                         kind=TransactionKind.EXPENSE,
-                        amount=data.fee_amount,
+                        amount=-data.fee_amount,
                         currency_code=src.currency_code,
-                        amount_rub=fee_rub,
+                        amount_rub=-fee_rub,
                         exchange_rate=src_rate,
                         category_id=data.fee_category_id,
                         date=data.date,

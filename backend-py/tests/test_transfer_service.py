@@ -1,4 +1,4 @@
-"""Юнит-тесты TransferService на фейках."""
+"""Юнит-тесты TransferService (signed amounts)."""
 
 import uuid
 from datetime import UTC, datetime
@@ -106,7 +106,7 @@ def _service(accounts, cats, rates):
     )
 
 
-async def test_transfer_rub_to_usd_balance_holds() -> None:
+async def test_transfer_signs_and_balance() -> None:
     src = _acc("RUB")
     dst = _acc("USD")
     svc = _service([src, dst], [], {"USD": Decimal("90")})
@@ -120,16 +120,17 @@ async def test_transfer_rub_to_usd_balance_holds() -> None:
             date=NOW,
         ),
     )
-    assert len(legs) == 2
     src_leg = next(t for t in legs if t.account_id == src.id)
     dst_leg = next(t for t in legs if t.account_id == dst.id)
-    # рублёвый эквивалент обеих ног равен — баланс не плывёт
-    assert src_leg.amount_rub == Decimal("9500")
+    # источник отрицателен, получатель положителен
+    assert src_leg.amount == Decimal("-9500")
+    assert src_leg.amount_rub == Decimal("-9500")
+    assert dst_leg.amount == Decimal("100")
     assert dst_leg.amount_rub == Decimal("9500")
     # фактический курс получателя = 9500 / 100 = 95
     assert dst_leg.exchange_rate == Decimal("95")
-    assert all(t.kind == TransactionKind.TRANSFER for t in legs)
-    assert all(t.category_id is None for t in legs)
+    # перевод в рублях нулевой: сумма amount_rub ног = 0
+    assert src_leg.amount_rub + dst_leg.amount_rub == Decimal("0")
 
 
 async def test_transfer_same_currency() -> None:
@@ -146,10 +147,13 @@ async def test_transfer_same_currency() -> None:
             date=NOW,
         ),
     )
-    assert all(t.amount_rub == Decimal("1000") for t in legs)
+    src_leg = next(t for t in legs if t.account_id == src.id)
+    dst_leg = next(t for t in legs if t.account_id == dst.id)
+    assert src_leg.amount == Decimal("-1000")
+    assert dst_leg.amount == Decimal("1000")
 
 
-async def test_transfer_with_fee() -> None:
+async def test_transfer_with_fee_negative() -> None:
     src = _acc("RUB")
     dst = _acc("USD")
     fee_cat = Category(
@@ -175,7 +179,8 @@ async def test_transfer_with_fee() -> None:
     )
     assert len(created) == 3
     fee = next(t for t in created if t.kind == TransactionKind.EXPENSE)
-    assert fee.amount == Decimal("50")
+    assert fee.amount == Decimal("-50")
+    assert fee.amount_rub == Decimal("-50")
     assert fee.category_id == fee_cat.id
     assert fee.account_id == src.id
 

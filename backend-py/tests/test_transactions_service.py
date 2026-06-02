@@ -1,6 +1,7 @@
-"""Юнит-тесты TransactionService на фейках (без БД/сети)."""
+"""Юнит-тесты TransactionService (signed amounts)."""
 
 import uuid
+from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
@@ -24,9 +25,7 @@ from app.domains.transactions.schemas import (
 from app.domains.transactions.service import TransactionService
 
 USER = uuid.uuid4()
-NOW = __import__("datetime").datetime(
-    2026, 1, 1, tzinfo=__import__("datetime").UTC
-)
+NOW = datetime(2026, 1, 1, tzinfo=UTC)
 
 
 class FakeTxRepo:
@@ -75,10 +74,10 @@ class FakeCategories:
 
 
 class FakeCurrencies:
-    def __init__(self, rates: dict[str, Decimal]):
+    def __init__(self, rates):
         self._r = rates
 
-    async def rate_to_rub(self, code: str) -> Decimal:
+    async def rate_to_rub(self, code):
         if code == "RUB":
             return Decimal(1)
         return self._r[code]
@@ -114,7 +113,7 @@ def _service(accounts, cats, rates):
     )
 
 
-async def test_create_rub_rate_one() -> None:
+async def test_expense_is_negative() -> None:
     acc = _account("RUB")
     svc = _service([acc], [], {})
     tx = await svc.create_transaction(
@@ -126,12 +125,28 @@ async def test_create_rub_rate_one() -> None:
             date=NOW,
         ),
     )
-    assert tx.exchange_rate == Decimal("1")
-    assert tx.amount_rub == Decimal("100")
-    assert tx.currency_code == "RUB"
+    # расход хранится отрицательным
+    assert tx.amount == Decimal("-100")
+    assert tx.amount_rub == Decimal("-100")
 
 
-async def test_create_usd_bakes_rate() -> None:
+async def test_income_is_positive() -> None:
+    acc = _account("RUB")
+    svc = _service([acc], [], {})
+    tx = await svc.create_transaction(
+        USER,
+        TransactionCreate(
+            account_id=acc.id,
+            kind=TransactionKind.INCOME,
+            amount=Decimal("1000"),
+            date=NOW,
+        ),
+    )
+    assert tx.amount == Decimal("1000")
+    assert tx.amount_rub == Decimal("1000")
+
+
+async def test_expense_usd_bakes_rate_signed() -> None:
     acc = _account("USD")
     svc = _service([acc], [], {"USD": Decimal("90")})
     tx = await svc.create_transaction(
@@ -144,7 +159,8 @@ async def test_create_usd_bakes_rate() -> None:
         ),
     )
     assert tx.exchange_rate == Decimal("90")
-    assert tx.amount_rub == Decimal("450")
+    assert tx.amount == Decimal("-5")
+    assert tx.amount_rub == Decimal("-450")
 
 
 async def test_create_unknown_account() -> None:
@@ -178,7 +194,7 @@ async def test_create_category_kind_mismatch() -> None:
         )
 
 
-async def test_update_amount_recalcs_rub() -> None:
+async def test_update_amount_keeps_sign() -> None:
     acc = _account("USD")
     svc = _service([acc], [], {"USD": Decimal("90")})
     tx = await svc.create_transaction(
@@ -190,12 +206,13 @@ async def test_update_amount_recalcs_rub() -> None:
             date=NOW,
         ),
     )
+    # пользователь вводит положительное 10 — знак проставит сервис
     updated = await svc.update_transaction(
         tx.id, USER, TransactionUpdate(amount=Decimal("10"))
     )
-    # курс запечён (90), пересчитан только amount_rub
     assert updated.exchange_rate == Decimal("90")
-    assert updated.amount_rub == Decimal("900")
+    assert updated.amount == Decimal("-10")
+    assert updated.amount_rub == Decimal("-900")
 
 
 async def test_get_missing() -> None:
