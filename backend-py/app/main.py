@@ -30,6 +30,7 @@ from app.domains.transactions.routes import (
 from app.domains.transactions.routes import (
     transfer_router,
 )
+from app.domains.users.routes import router as users_router
 
 logger = logging.getLogger("anfinances")
 
@@ -195,6 +196,8 @@ def create_app() -> FastAPI:
     app.include_router(budgets_router, prefix=settings.api_v1_prefix)
 
     app.include_router(recurring_router, prefix=settings.api_v1_prefix)
+
+    app.include_router(users_router, prefix=settings.api_v1_prefix)
 
     return app
 
