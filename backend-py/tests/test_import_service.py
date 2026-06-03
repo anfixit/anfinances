@@ -10,6 +10,7 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 
 import pytest
+from app.domains.import_.service import ImportService
 
 from app.core.enums import (
     AccountType,
@@ -29,7 +30,6 @@ from app.domains.export.schemas import (
     ExportUser,
     ExportUserCurrency,
 )
-from app.domains.import_.service import ImportService
 
 USER = uuid.uuid4()
 NOW = datetime(2026, 1, 15, 12, 0, tzinfo=UTC)
