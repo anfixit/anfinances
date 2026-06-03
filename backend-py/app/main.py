@@ -22,6 +22,7 @@ from app.domains.auth.routes import router as auth_router
 from app.domains.budgets.routes import router as budgets_router
 from app.domains.categories.routes import router as categories_router
 from app.domains.currencies.routes import router as currencies_router
+from app.domains.recurring.routes import router as recurring_router
 from app.domains.summary.routes import router as summary_router
 from app.domains.transactions.routes import (
     router as transactions_router,
@@ -192,6 +193,8 @@ def create_app() -> FastAPI:
     app.include_router(summary_router, prefix=settings.api_v1_prefix)
 
     app.include_router(budgets_router, prefix=settings.api_v1_prefix)
+
+    app.include_router(recurring_router, prefix=settings.api_v1_prefix)
 
     return app
 
