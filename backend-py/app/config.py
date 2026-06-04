@@ -75,6 +75,11 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 15
     refresh_token_expire_days: int = 30
 
+    # Refresh-cookie: HttpOnly (ADR-024). secure=False — только для
+    # локального http-dev; в проде на https — true.
+    cookie_secure: bool = True
+    cookie_samesite: Literal["lax", "strict", "none"] = "lax"
+
     argon2_time_cost: int = 2
     argon2_memory_cost: int = 65536
 

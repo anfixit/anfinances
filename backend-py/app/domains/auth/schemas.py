@@ -6,8 +6,8 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 __all__ = [
+    "AccessToken",
     "LoginRequest",
-    "RefreshRequest",
     "RegisterRequest",
     "TokenPair",
     "UserRead",
@@ -27,15 +27,22 @@ class LoginRequest(BaseModel):
     password: str
 
 
-class RefreshRequest(BaseModel):
-    refresh_token: str
-
-
 class TokenPair(BaseModel):
-    """Пара токенов. token_type фиксирован для совместимости с OAuth2."""
+    """Пара токенов (внутренняя, между сервисом и роутом).
+
+    Роут кладёт refresh в HttpOnly-cookie, а access — в тело ответа.
+    token_type фиксирован для совместимости с OAuth2.
+    """
 
     access_token: str
     refresh_token: str
+    token_type: str = "bearer"
+
+
+class AccessToken(BaseModel):
+    """Тело ответа auth: только access-токен. Refresh — в cookie."""
+
+    access_token: str
     token_type: str = "bearer"
 
 

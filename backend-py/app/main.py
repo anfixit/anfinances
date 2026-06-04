@@ -21,6 +21,7 @@ from app.domains.auth.bootstrap import bootstrap_single_user
 from app.domains.auth.routes import router as auth_router
 from app.domains.budgets.routes import router as budgets_router
 from app.domains.categories.routes import router as categories_router
+from app.domains.config.routes import router as config_router
 from app.domains.currencies.routes import router as currencies_router
 from app.domains.export.routes import router as export_router
 from app.domains.import_.routes import router as import_router
@@ -204,6 +205,12 @@ def create_app() -> FastAPI:
     app.include_router(export_router, prefix=settings.api_v1_prefix)
 
     app.include_router(import_router, prefix=settings.api_v1_prefix)
+
+    app.include_router(health_router, prefix=settings.api_v1_prefix)
+
+    app.include_router(config_router, prefix=settings.api_v1_prefix)
+
+    app.include_router(auth_router, prefix=settings.api_v1_prefix)
 
     return app
 

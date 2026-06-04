@@ -971,3 +971,31 @@ class TransactionRead(BaseModel):
 - GitHub Actions: tests + Docker image build
 - Issue templates
 - Demo screenshots в README
+
+### ADR-024: Refresh-токен в HttpOnly-cookie
+
+**Контекст:** фронту нужно безопасно хранить refresh; localStorage
+уязвим к XSS.
+
+**Решение:** access — в памяти JS; refresh — в cookie
+(`HttpOnly; Secure; SameSite=Lax; Path=/api/v1/auth`,
+`Max-Age=refresh_token_expire_days`). Сервис auth остаётся
+HTTP-агностичным (ADR-013): cookie ставит/чистит/читает только слой
+`routes`. Тело ответа login/register/refresh — `AccessToken` (без
+refresh). `/refresh` и `/logout` читают refresh из cookie. CSRF:
+`SameSite=Lax` закрывает базовый кейс для self-host; double-submit
+CSRF-токен откладываем до публичного SaaS. `cookie_secure` — env-флаг
+(false только для локального http-dev).
+
+**Отвергнуто:** refresh в теле + localStorage (XSS-риск).
+
+### ADR-025: Публичный GET /config для фронта
+
+**Контекст:** один образ работает в 3 режимах `AUTH_MODE`; фронт
+должен знать режим до логина (показывать ли регистрацию).
+
+**Решение:** публичный (без auth) `GET /api/v1/config` → `{auth_mode}`,
+отдельный мини-домен `config`. Только несекретные поля.
+
+**Отвергнуто:** build-time флаг на фронте — ломает «один образ под
+любой режим» для self-host.
