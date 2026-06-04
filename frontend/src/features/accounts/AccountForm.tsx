@@ -171,22 +171,28 @@ export function AccountForm({
       </label>
 
       <label className="field">
-        <span>Порядок</span>
-        <input
-          type="number"
-          step="1"
-          value={sortOrder}
-          onChange={(e) => setSortOrder(e.target.value)}
-        />
-      </label>
-
-      <label className="field">
         <span>Комментарий</span>
         <input
           value={comments}
           onChange={(e) => setComments(e.target.value)}
         />
       </label>
+
+      <details className="advanced">
+        <summary>Дополнительно</summary>
+        <label className="field">
+          <span>Порядок сортировки</span>
+          <input
+            type="number"
+            step="1"
+            value={sortOrder}
+            onChange={(e) => setSortOrder(e.target.value)}
+          />
+          <span className="hint">
+            Меньше — выше в списке. Обычно проще переставлять стрелками.
+          </span>
+        </label>
+      </details>
 
       {formError && <p className="error">{formError}</p>}
 

@@ -49,3 +49,18 @@ export function useRestoreAccount() {
     onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.accounts }),
   })
 }
+
+// Перестановка: точечный PATCH каждому счёту, у кого изменился
+// sort_order; одна инвалидация после батча.
+export function useReorderAccounts() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (items: { id: string; sort_order: number }[]) =>
+      Promise.all(
+        items.map((i) =>
+          updateAccount(i.id, { sort_order: i.sort_order }),
+        ),
+      ),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.accounts }),
+  })
+}

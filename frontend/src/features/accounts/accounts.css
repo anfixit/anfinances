@@ -31,6 +31,32 @@
   background: var(--surface-container);
 }
 
+.acc-arrows {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.icon-btn {
+  background: transparent;
+  color: var(--on-surface-variant);
+  padding: 2px 8px;
+  border-radius: var(--shape-s);
+  font-size: 0.9rem;
+  line-height: 1.1;
+  box-shadow: none;
+}
+
+.icon-btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--on-surface) 8%, transparent);
+  filter: none;
+}
+
+.icon-btn:disabled {
+  opacity: 0.3;
+}
+
 .color-dot {
   width: 14px;
   height: 14px;
@@ -64,6 +90,28 @@
   padding: 4px;
   height: 44px;
   width: 80px;
+}
+
+/* Раскрывашка «Дополнительно» в форме */
+.advanced {
+  border-top: 1px solid var(--outline-variant);
+  padding-top: 12px;
+}
+
+.advanced summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--on-surface-variant);
+  list-style-position: inside;
+}
+
+.advanced[open] summary {
+  margin-bottom: 12px;
+}
+
+.hint {
+  font-size: 0.8rem;
+  color: var(--on-surface-variant);
 }
 
 @media (max-width: 640px) {

@@ -1,6 +1,10 @@
 import { useState } from "react"
 
-import { useAccounts, useArchiveAccount } from "@/features/accounts/hooks"
+import {
+  useAccounts,
+  useArchiveAccount,
+  useReorderAccounts,
+} from "@/features/accounts/hooks"
 import { AccountForm, TYPE_LABELS } from "@/features/accounts/AccountForm"
 import type { Account } from "@/features/accounts/types"
 import { Sheet } from "@/components/Sheet"
@@ -9,6 +13,7 @@ import { formatMoney } from "@/lib/money"
 export function AccountsPage() {
   const accounts = useAccounts()
   const archive = useArchiveAccount()
+  const reorder = useReorderAccounts()
   const [sheetOpen, setSheetOpen] = useState(false)
   const [editing, setEditing] = useState<Account | null>(null)
 
@@ -30,6 +35,28 @@ export function AccountsPage() {
     }
   }
 
+  const move = (index: number, dir: -1 | 1) => {
+    const list = [...(accounts.data ?? [])]
+    const target = index + dir
+    const a = list[index]
+    const b = list[target]
+    if (!a || !b) {
+      return
+    }
+    list[index] = b
+    list[target] = a
+    // Пересчитываем sort_order = позиция; шлём только изменившимся.
+    const changed = list
+      .map((acc, idx) => ({ acc, idx }))
+      .filter(({ acc, idx }) => acc.sort_order !== idx)
+      .map(({ acc, idx }) => ({ id: acc.id, sort_order: idx }))
+    if (changed.length > 0) {
+      reorder.mutate(changed)
+    }
+  }
+
+  const list = accounts.data ?? []
+
   return (
     <>
       <div className="page-head">
@@ -41,13 +68,33 @@ export function AccountsPage() {
 
       {accounts.isPending && <p>Загрузка…</p>}
       {accounts.isError && <p className="error">Не удалось загрузить счета</p>}
-      {accounts.isSuccess && accounts.data.length === 0 && (
+      {accounts.isSuccess && list.length === 0 && (
         <p>Счетов пока нет. Добавьте первый, чтобы вести операции.</p>
       )}
 
       <ul className="acc-cards">
-        {(accounts.data ?? []).map((a) => (
+        {list.map((a, i) => (
           <li key={a.id} className="acc-card">
+            <span className="acc-arrows">
+              <button
+                type="button"
+                className="icon-btn"
+                aria-label="Выше"
+                disabled={i === 0 || reorder.isPending}
+                onClick={() => move(i, -1)}
+              >
+                ↑
+              </button>
+              <button
+                type="button"
+                className="icon-btn"
+                aria-label="Ниже"
+                disabled={i === list.length - 1 || reorder.isPending}
+                onClick={() => move(i, 1)}
+              >
+                ↓
+              </button>
+            </span>
             <span
               className="color-dot"
               style={{ background: a.color ?? "var(--outline)" }}
