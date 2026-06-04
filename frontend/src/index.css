@@ -150,3 +150,20 @@ button:disabled {
 .row-name {
   min-width: 220px;
 }
+
+.inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.rates {
+  border-collapse: collapse;
+}
+
+.rates th,
+.rates td {
+  text-align: left;
+  padding: 4px 16px 4px 0;
+  border-bottom: 1px solid #e7e3dd;
+}

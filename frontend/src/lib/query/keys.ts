@@ -8,6 +8,7 @@ export const queryKeys = {
   categories: ["categories"] as const,
   currencies: ["currencies"] as const,
   rates: ["currencies", "rates"] as const,
+  myCurrencies: ["users", "me", "currencies"] as const,
   recurring: ["recurring"] as const,
   transactions: (filters: Readonly<Record<string, unknown>>) =>
     ["transactions", filters] as const,

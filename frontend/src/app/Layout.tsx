@@ -12,6 +12,7 @@ export function Layout() {
         <nav className="nav">
           <NavLink to="/">Главная</NavLink>
           <NavLink to="/categories">Категории</NavLink>
+          <NavLink to="/currencies">Валюты</NavLink>
         </nav>
         <span className="spacer" />
         <span className="user">{user?.email}</span>
