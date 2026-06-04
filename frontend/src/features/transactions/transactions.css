@@ -1,0 +1,149 @@
+/* Стили экранов транзакций. Подключается в main.tsx после index.css.
+   Использует токены дизайн-системы из index.css. */
+
+/* ── Sheet: затемнение ──────────────────────────────────────── */
+.sheet-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  justify-content: flex-end;
+  animation: scrim-in 160ms ease-out;
+}
+
+@keyframes scrim-in {
+  from {
+    opacity: 0;
+  }
+}
+
+/* Десктоп: боковая панель справа */
+.sheet {
+  width: min(440px, 100%);
+  height: 100%;
+  background: var(--surface-container-low);
+  box-shadow: var(--elev-3);
+  overflow-y: auto;
+  animation: sheet-in-right var(--spring);
+}
+
+@keyframes sheet-in-right {
+  from {
+    transform: translateX(24px);
+    opacity: 0.6;
+  }
+}
+
+.sheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px 0;
+}
+
+.sheet-head h2 {
+  margin: 0;
+}
+
+.sheet-body {
+  padding: 16px 24px 32px;
+}
+
+.sheet-body .form {
+  max-width: none;
+}
+
+/* Мобилка: нижний лист */
+@media (max-width: 640px) {
+  .sheet-scrim {
+    justify-content: stretch;
+    align-items: flex-end;
+  }
+
+  .sheet {
+    width: 100%;
+    height: auto;
+    max-height: 92vh;
+    border-radius: var(--shape-xl) var(--shape-xl) 0 0;
+    animation: sheet-in-up var(--spring);
+  }
+
+  @keyframes sheet-in-up {
+    from {
+      transform: translateY(32px);
+      opacity: 0.6;
+    }
+  }
+}
+
+/* ── Фильтры ────────────────────────────────────────────────── */
+.filters {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.filters-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.filters-row .field {
+  flex: 1 1 140px;
+}
+
+/* ── Список операций ────────────────────────────────────────── */
+.tx-list {
+  list-style: none;
+  padding: 0;
+  margin: 16px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tx-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 16px;
+  background: var(--surface-container-low);
+  border-radius: var(--shape-m);
+  transition: background var(--spring);
+}
+
+.tx-row:hover {
+  background: var(--surface-container);
+}
+
+.tx-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.tx-label {
+  font-weight: 600;
+}
+
+.tx-sub {
+  font-size: 0.85rem;
+  color: var(--on-surface-variant);
+}
+
+.tx-comment {
+  font-size: 0.85rem;
+  color: var(--on-surface-variant);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tx-row .amount {
+  font-weight: 600;
+  white-space: nowrap;
+}

@@ -1,111 +1,303 @@
-/* База токенов (M0). Полный набор MD3 из v0 переносим на первом
-   экранном милестоуне (M2). */
-:root {
-  --color-bg: #faf8f5;
-  --color-surface: #ffffff;
-  --color-text: #1c1b1f;
-  --color-primary: #4a6741;
-  --color-error: #b3261e;
-  --radius: 12px;
-  --space: 16px;
+/* anfinances — дизайн-система.
+   Material 3 Expressive, seed: Indigo. Светлая + тёмная темы.
+   Containment (контейнеры на каждый элемент), pill-кнопки,
+   пружинная подача. Шрифты: Inter (текст) + JetBrains Mono (цифры). */
 
-  font-family: system-ui, -apple-system, sans-serif;
-  color: var(--color-text);
-  background: var(--color-bg);
+@import url("https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400;14..32,500;14..32,600;14..32,700&family=JetBrains+Mono:wght@400;500;600&display=swap");
+
+/* ── Токены: светлая тема (default) ─────────────────────────── */
+:root {
+  /* Primary (Indigo) */
+  --primary: #4b53c9;
+  --on-primary: #ffffff;
+  --primary-container: #e0e0ff;
+  --on-primary-container: #060764;
+
+  /* Secondary */
+  --secondary: #5b5d72;
+  --on-secondary: #ffffff;
+  --secondary-container: #e0e0f9;
+  --on-secondary-container: #181a2c;
+
+  /* Tertiary (акцент) */
+  --tertiary: #77536c;
+  --on-tertiary: #ffffff;
+  --tertiary-container: #ffd7f0;
+  --on-tertiary-container: #2d1227;
+
+  /* Error */
+  --error: #ba1a1a;
+  --on-error: #ffffff;
+  --error-container: #ffdad6;
+  --on-error-container: #410002;
+
+  /* Поверхности и текст */
+  --background: #fbf8ff;
+  --on-background: #1b1b21;
+  --surface: #fbf8ff;
+  --on-surface: #1b1b21;
+  --surface-variant: #e4e1ec;
+  --on-surface-variant: #46464f;
+
+  /* Тональные контейнеры (механизм containment в M3E) */
+  --surface-container-lowest: #ffffff;
+  --surface-container-low: #f5f2fa;
+  --surface-container: #efedf4;
+  --surface-container-high: #e9e7ef;
+  --surface-container-highest: #e3e1e9;
+
+  /* Контуры */
+  --outline: #777680;
+  --outline-variant: #c7c5d0;
+
+  /* Инверсия (снэкбары и т.п.) */
+  --inverse-surface: #303036;
+  --inverse-on-surface: #f2eff7;
+
+  /* Семантика финансов */
+  --income: #2e6a45;
+  --on-income-container: #00210f;
+  --income-container: #b0f1c2;
+  --expense: #ba1a1a;
+  --transfer: var(--secondary);
+
+  /* Форма (M3 shape scale) */
+  --shape-xs: 4px;
+  --shape-s: 8px;
+  --shape-m: 12px;
+  --shape-l: 16px;
+  --shape-xl: 28px;
+  --shape-full: 999px;
+
+  /* Высоты (мягкие тени) */
+  --elev-1: 0 1px 2px rgba(0, 0, 0, 0.06), 0 1px 3px rgba(0, 0, 0, 0.08);
+  --elev-2: 0 1px 2px rgba(0, 0, 0, 0.06), 0 2px 6px rgba(0, 0, 0, 0.1);
+  --elev-3: 0 2px 4px rgba(0, 0, 0, 0.08), 0 6px 12px rgba(0, 0, 0, 0.12);
+
+  /* Движение: пружинная кривая M3E (лёгкий overshoot) */
+  --spring: 360ms cubic-bezier(0.2, 0.9, 0.25, 1.18);
+  --emphasized: 280ms cubic-bezier(0.2, 0, 0, 1);
+
+  /* Сетка */
+  --space: 16px;
+  --content-max: 720px;
+
+  color-scheme: light;
+  font-family: "Inter", system-ui, sans-serif;
+  font-synthesis: none;
+  -webkit-font-smoothing: antialiased;
 }
 
+/* ── Токены: тёмная тема ────────────────────────────────────── */
+[data-theme="dark"] {
+  --primary: #bfc2ff;
+  --on-primary: #15179a;
+  --primary-container: #3338a0;
+  --on-primary-container: #e0e0ff;
+
+  --secondary: #c4c5dd;
+  --on-secondary: #2d2f42;
+  --secondary-container: #434559;
+  --on-secondary-container: #e0e0f9;
+
+  --tertiary: #e6b9d4;
+  --on-tertiary: #44263b;
+  --tertiary-container: #5d3c52;
+  --on-tertiary-container: #ffd7f0;
+
+  --error: #ffb4ab;
+  --on-error: #690005;
+  --error-container: #93000a;
+  --on-error-container: #ffdad6;
+
+  --background: #121318;
+  --on-background: #e4e1e9;
+  --surface: #121318;
+  --on-surface: #e4e1e9;
+  --surface-variant: #46464f;
+  --on-surface-variant: #c7c5d0;
+
+  --surface-container-lowest: #0d0e13;
+  --surface-container-low: #1b1b21;
+  --surface-container: #1f1f25;
+  --surface-container-high: #292a2f;
+  --surface-container-highest: #34343a;
+
+  --outline: #918f9a;
+  --outline-variant: #46464f;
+
+  --inverse-surface: #e4e1e9;
+  --inverse-on-surface: #303036;
+
+  --income: #95d5ab;
+  --on-income-container: #b0f1c2;
+  --income-container: #14512f;
+  --expense: #ffb4ab;
+  --transfer: var(--secondary);
+
+  --elev-1: 0 1px 2px rgba(0, 0, 0, 0.3), 0 1px 3px rgba(0, 0, 0, 0.4);
+  --elev-2: 0 1px 2px rgba(0, 0, 0, 0.3), 0 2px 6px rgba(0, 0, 0, 0.45);
+  --elev-3: 0 2px 4px rgba(0, 0, 0, 0.4), 0 6px 12px rgba(0, 0, 0, 0.5);
+
+  color-scheme: dark;
+}
+
+/* Без явной темы — следуем системной */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --primary: #bfc2ff;
+    --on-primary: #15179a;
+    --primary-container: #3338a0;
+    --on-primary-container: #e0e0ff;
+    --secondary: #c4c5dd;
+    --on-secondary: #2d2f42;
+    --secondary-container: #434559;
+    --on-secondary-container: #e0e0f9;
+    --tertiary: #e6b9d4;
+    --on-tertiary: #44263b;
+    --tertiary-container: #5d3c52;
+    --on-tertiary-container: #ffd7f0;
+    --error: #ffb4ab;
+    --on-error: #690005;
+    --error-container: #93000a;
+    --on-error-container: #ffdad6;
+    --background: #121318;
+    --on-background: #e4e1e9;
+    --surface: #121318;
+    --on-surface: #e4e1e9;
+    --surface-variant: #46464f;
+    --on-surface-variant: #c7c5d0;
+    --surface-container-lowest: #0d0e13;
+    --surface-container-low: #1b1b21;
+    --surface-container: #1f1f25;
+    --surface-container-high: #292a2f;
+    --surface-container-highest: #34343a;
+    --outline: #918f9a;
+    --outline-variant: #46464f;
+    --inverse-surface: #e4e1e9;
+    --inverse-on-surface: #303036;
+    --income: #95d5ab;
+    --on-income-container: #b0f1c2;
+    --income-container: #14512f;
+    --expense: #ffb4ab;
+    --elev-1: 0 1px 2px rgba(0, 0, 0, 0.3), 0 1px 3px rgba(0, 0, 0, 0.4);
+    --elev-2: 0 1px 2px rgba(0, 0, 0, 0.3), 0 2px 6px rgba(0, 0, 0, 0.45);
+    --elev-3: 0 2px 4px rgba(0, 0, 0, 0.4), 0 6px 12px rgba(0, 0, 0, 0.5);
+    color-scheme: dark;
+  }
+}
+
+/* ── База ───────────────────────────────────────────────────── */
 * {
   box-sizing: border-box;
 }
 
+html {
+  background: var(--background);
+}
+
 body {
   margin: 0;
+  color: var(--on-surface);
+  background: var(--background);
+  font-size: 15px;
+  line-height: 1.5;
+  transition:
+    background var(--emphasized),
+    color var(--emphasized);
 }
 
-.page {
-  max-width: 720px;
-  margin: 0 auto;
-  padding: calc(var(--space) * 2);
+h1,
+h2,
+h3 {
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+  margin: 0 0 0.5em;
 }
 
-.ok {
-  color: var(--color-primary);
+h1 {
+  font-size: 2rem;
+  font-weight: 700;
+}
+
+h2 {
+  font-size: 1.35rem;
   font-weight: 600;
 }
 
-.error {
-  color: var(--color-error);
+h3 {
+  font-size: 1.1rem;
   font-weight: 600;
 }
 
-.form {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space);
-  max-width: 320px;
+a {
+  color: var(--primary);
 }
 
-.field {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+/* Цифры/деньги — моноширинный, табличные цифры */
+.num,
+.mono,
+.rates td:not(:first-child),
+.amount {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
 }
 
-.field input {
-  padding: 10px 12px;
-  border: 1px solid #d6d3ce;
-  border-radius: 8px;
-  font: inherit;
+.amount.income {
+  color: var(--income);
 }
 
-button {
-  padding: 10px 16px;
-  border: none;
-  border-radius: 8px;
-  background: var(--color-primary);
-  color: #fff;
-  font: inherit;
-  font-weight: 600;
-  cursor: pointer;
+.amount.expense {
+  color: var(--expense);
 }
 
-button:disabled {
-  opacity: 0.6;
-  cursor: default;
-}
-
+/* ── Layout / шапка ─────────────────────────────────────────── */
 .layout {
   min-height: 100vh;
+  background: var(--background);
 }
 
 .header {
   display: flex;
   align-items: center;
   gap: var(--space);
-  padding: 12px var(--space);
-  background: var(--color-surface);
-  border-bottom: 1px solid #e7e3dd;
+  padding: 10px 20px;
+  background: var(--surface-container);
+  position: sticky;
+  top: 0;
+  z-index: 10;
 }
 
 .brand {
   font-weight: 700;
+  font-size: 1.15rem;
+  letter-spacing: -0.02em;
+  color: var(--on-surface);
 }
 
 .nav {
   display: flex;
-  gap: 12px;
+  gap: 4px;
 }
 
 .nav a {
-  color: var(--color-text);
+  color: var(--on-surface-variant);
   text-decoration: none;
-  padding: 4px 8px;
-  border-radius: 6px;
+  padding: 8px 16px;
+  border-radius: var(--shape-full);
+  font-weight: 500;
+  transition:
+    background var(--spring),
+    color var(--emphasized);
+}
+
+.nav a:hover {
+  background: color-mix(in srgb, var(--on-surface) 8%, transparent);
 }
 
 .nav a.active {
-  background: var(--color-primary);
-  color: #fff;
+  background: var(--secondary-container);
+  color: var(--on-secondary-container);
 }
 
 .spacer {
@@ -113,27 +305,248 @@ button:disabled {
 }
 
 .user {
-  color: #6b675f;
-  font-size: 0.9em;
+  color: var(--on-surface-variant);
+  font-size: 0.9rem;
 }
 
-.link {
+/* ── Контент ────────────────────────────────────────────────── */
+.page {
+  max-width: var(--content-max);
+  margin: 0 auto;
+  padding: 32px 20px 96px;
+}
+
+.page--wide {
+  --content-max: 1040px;
+}
+
+.ok {
+  color: var(--income);
+  font-weight: 600;
+}
+
+.error {
+  color: var(--error);
+  font-weight: 600;
+}
+
+/* ── Карточка-контейнер (основа containment) ────────────────── */
+.card {
+  background: var(--surface-container-low);
+  border-radius: var(--shape-l);
+  padding: 20px;
+  margin-bottom: var(--space);
+}
+
+.card--inset {
+  background: var(--surface-container);
+}
+
+/* ── Кнопки (pill, M3E) ─────────────────────────────────────── */
+button {
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+  border-radius: var(--shape-full);
+  padding: 11px 22px;
+  background: var(--primary);
+  color: var(--on-primary);
+  transition:
+    box-shadow var(--spring),
+    transform var(--spring),
+    background var(--emphasized),
+    filter var(--emphasized);
+}
+
+button:hover {
+  box-shadow: var(--elev-2);
+  filter: brightness(1.04);
+}
+
+button:active {
+  transform: scale(0.97);
+  box-shadow: none;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+  box-shadow: none;
+  transform: none;
+  filter: none;
+}
+
+/* Тональная (вторичное действие) */
+.btn-tonal {
+  background: var(--secondary-container);
+  color: var(--on-secondary-container);
+}
+
+/* Контурная */
+.btn-outline {
+  background: transparent;
+  color: var(--primary);
+  box-shadow: inset 0 0 0 1px var(--outline-variant);
+}
+
+.btn-outline:hover {
+  background: color-mix(in srgb, var(--primary) 8%, transparent);
+  box-shadow: inset 0 0 0 1px var(--outline);
+  filter: none;
+}
+
+/* Текстовая (ссылка-кнопка) */
+.link,
+.btn-text {
   background: none;
   border: none;
-  color: var(--color-primary);
-  padding: 4px 8px;
+  color: var(--primary);
+  padding: 8px 12px;
   cursor: pointer;
   font: inherit;
+  font-weight: 600;
+  border-radius: var(--shape-full);
+  transition: background var(--spring);
+}
+
+.link:hover,
+.btn-text:hover {
+  background: color-mix(in srgb, var(--primary) 10%, transparent);
+  box-shadow: none;
+  filter: none;
 }
 
 .link.danger {
-  color: var(--color-error);
+  color: var(--error);
 }
 
+.link.danger:hover {
+  background: color-mix(in srgb, var(--error) 10%, transparent);
+}
+
+/* FAB — плавающая кнопка добавления */
+.fab {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 20;
+  height: 56px;
+  padding: 0 22px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: var(--shape-l);
+  background: var(--primary-container);
+  color: var(--on-primary-container);
+  box-shadow: var(--elev-3);
+  font-size: 1rem;
+}
+
+.fab:hover {
+  filter: brightness(1.02);
+}
+
+/* ── Сегментный переключатель (Расход/Доход/Перевод) ────────── */
+.segmented {
+  display: inline-flex;
+  background: var(--surface-container-high);
+  border-radius: var(--shape-full);
+  padding: 4px;
+  gap: 4px;
+}
+
+.segmented button {
+  background: transparent;
+  color: var(--on-surface-variant);
+  padding: 8px 18px;
+  box-shadow: none;
+  font-weight: 600;
+}
+
+.segmented button:hover {
+  filter: none;
+  background: color-mix(in srgb, var(--on-surface) 6%, transparent);
+}
+
+.segmented button[aria-pressed="true"] {
+  background: var(--primary);
+  color: var(--on-primary);
+}
+
+/* ── Чипы (фильтры) ─────────────────────────────────────────── */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border-radius: var(--shape-s);
+  background: transparent;
+  color: var(--on-surface-variant);
+  box-shadow: inset 0 0 0 1px var(--outline-variant);
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.chip[aria-pressed="true"] {
+  background: var(--secondary-container);
+  color: var(--on-secondary-container);
+  box-shadow: none;
+}
+
+/* ── Поля ввода (M3 outlined) ───────────────────────────────── */
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space);
+  max-width: 360px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.field label {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--on-surface-variant);
+}
+
+.field input,
+.field select,
+input[type="text"],
+input[type="email"],
+input[type="password"],
+input[type="number"],
+input[type="date"],
+select {
+  padding: 12px 14px;
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--shape-s);
+  background: var(--surface-container-lowest);
+  color: var(--on-surface);
+  font: inherit;
+  transition:
+    border-color var(--emphasized),
+    box-shadow var(--emphasized);
+}
+
+.field input:focus,
+.field select:focus,
+input:focus,
+select:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: inset 0 0 0 1px var(--primary);
+}
+
+/* ── Списки / строки ────────────────────────────────────────── */
 .tree {
   list-style: none;
   padding-left: 0;
-  margin: 0 0 var(--space);
+  margin: 0;
 }
 
 .tree.sub {
@@ -143,27 +556,84 @@ button:disabled {
 .row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 4px 0;
+  gap: 12px;
+  padding: 12px 16px;
+  background: var(--surface-container-low);
+  border-radius: var(--shape-m);
+  margin-bottom: 8px;
+  transition: background var(--spring);
+}
+
+.row:hover {
+  background: var(--surface-container);
 }
 
 .row-name {
   min-width: 220px;
+  font-weight: 500;
 }
 
 .inline {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
 }
 
+/* ── Таблица курсов ─────────────────────────────────────────── */
 .rates {
   border-collapse: collapse;
+  width: 100%;
+  background: var(--surface-container-low);
+  border-radius: var(--shape-l);
+  overflow: hidden;
 }
 
 .rates th,
 .rates td {
   text-align: left;
-  padding: 4px 16px 4px 0;
-  border-bottom: 1px solid #e7e3dd;
+  padding: 12px 16px;
+}
+
+.rates th {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--on-surface-variant);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.rates tbody tr {
+  border-top: 1px solid var(--outline-variant);
+}
+
+.rates td:not(:first-child) {
+  text-align: right;
+}
+
+/* ── Адаптив ────────────────────────────────────────────────── */
+@media (max-width: 640px) {
+  .header {
+    padding: 8px 12px;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .user {
+    display: none;
+  }
+
+  .page {
+    padding: 20px 12px 96px;
+  }
+
+  .row-name {
+    min-width: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+    animation: none !important;
+  }
 }
