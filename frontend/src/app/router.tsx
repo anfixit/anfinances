@@ -5,7 +5,7 @@ import { Layout } from "@/app/Layout"
 import { CategoriesPage } from "@/features/categories/CategoriesPage"
 import { CurrenciesPage } from "@/features/currencies/CurrenciesPage"
 import { LoginPage } from "@/features/auth/LoginPage"
-import { HomePage } from "@/features/home/HomePage"
+import { DashboardPage } from "@/features/summary/DashboardPage"
 import { TransactionsPage } from "@/features/transactions/TransactionsPage"
 
 export const router = createBrowserRouter([
@@ -19,7 +19,7 @@ export const router = createBrowserRouter([
       {
         element: <Layout />,
         children: [
-          { path: "/", element: <HomePage /> },
+          { path: "/", element: <DashboardPage /> },
           { path: "/transactions", element: <TransactionsPage /> },
           { path: "/categories", element: <CategoriesPage /> },
           { path: "/currencies", element: <CurrenciesPage /> },
