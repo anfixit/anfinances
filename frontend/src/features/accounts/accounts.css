@@ -1,0 +1,77 @@
+/* Экран счетов. Подключается в main.tsx. */
+
+.page-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.acc-cards {
+  list-style: none;
+  padding: 0;
+  margin: 16px 0 96px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.acc-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+  background: var(--surface-container-low);
+  border-radius: var(--shape-m);
+  transition: background var(--spring);
+}
+
+.acc-card:hover {
+  background: var(--surface-container);
+}
+
+.color-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: var(--shape-full);
+  flex-shrink: 0;
+}
+
+.acc-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.acc-title {
+  font-weight: 600;
+}
+
+.acc-meta {
+  font-size: 0.85rem;
+  color: var(--on-surface-variant);
+}
+
+.acc-balance {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.field input[type="color"] {
+  padding: 4px;
+  height: 44px;
+  width: 80px;
+}
+
+@media (max-width: 640px) {
+  .acc-card {
+    flex-wrap: wrap;
+  }
+
+  .acc-balance {
+    order: 3;
+  }
+}

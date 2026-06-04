@@ -13,6 +13,7 @@ export function Layout() {
         <nav className="nav">
           <NavLink to="/">Главная</NavLink>
           <NavLink to="/transactions">Операции</NavLink>
+          <NavLink to="/accounts">Счета</NavLink>
           <NavLink to="/categories">Категории</NavLink>
           <NavLink to="/currencies">Валюты</NavLink>
         </nav>
