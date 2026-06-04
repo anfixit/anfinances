@@ -73,3 +73,80 @@ button:disabled {
   opacity: 0.6;
   cursor: default;
 }
+
+.layout {
+  min-height: 100vh;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: var(--space);
+  padding: 12px var(--space);
+  background: var(--color-surface);
+  border-bottom: 1px solid #e7e3dd;
+}
+
+.brand {
+  font-weight: 700;
+}
+
+.nav {
+  display: flex;
+  gap: 12px;
+}
+
+.nav a {
+  color: var(--color-text);
+  text-decoration: none;
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+
+.nav a.active {
+  background: var(--color-primary);
+  color: #fff;
+}
+
+.spacer {
+  flex: 1;
+}
+
+.user {
+  color: #6b675f;
+  font-size: 0.9em;
+}
+
+.link {
+  background: none;
+  border: none;
+  color: var(--color-primary);
+  padding: 4px 8px;
+  cursor: pointer;
+  font: inherit;
+}
+
+.link.danger {
+  color: var(--color-error);
+}
+
+.tree {
+  list-style: none;
+  padding-left: 0;
+  margin: 0 0 var(--space);
+}
+
+.tree.sub {
+  padding-left: 24px;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+}
+
+.row-name {
+  min-width: 220px;
+}
