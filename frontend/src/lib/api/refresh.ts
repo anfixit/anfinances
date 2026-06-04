@@ -1,5 +1,7 @@
 import axios from "axios"
 
+import { API_BASE_URL } from "@/lib/api/baseUrl"
+
 import { setAccessToken } from "@/auth/tokenStore"
 import type { ApiResponse } from "@/types/api"
 
@@ -11,7 +13,7 @@ interface AccessTokenData {
 // Отдельный инстанс без перехватчиков: сам запрос refresh не должен
 // уходить в рекурсию на 401. Refresh-cookie летит автоматически.
 const refreshClient = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL,
+  baseURL: API_BASE_URL,
   withCredentials: true,
 })
 

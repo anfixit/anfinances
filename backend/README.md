@@ -8,7 +8,7 @@ Backend на FastAPI + PostgreSQL для anfinances. Версия v1.
 ## Быстрый старт через Docker (рекомендуется)
 
 ```bash
-cd backend-py
+cd backend
 cp .env.example .env
 # Открой .env и установи SECRET_KEY:
 #   openssl rand -hex 32
@@ -35,7 +35,7 @@ OpenAPI-документация: <http://localhost:8000/docs>
 Нужен Python 3.13+ и [uv](https://docs.astral.sh/uv/).
 
 ```bash
-cd backend-py
+cd backend
 
 # Установка зависимостей в .venv
 uv sync
@@ -70,7 +70,7 @@ uv run pytest
 ## Структура
 
 ```
-backend-py/
+backend/
 ├── pyproject.toml           # зависимости, ruff, mypy, pytest
 ├── alembic.ini              # настройки Alembic
 ├── alembic/

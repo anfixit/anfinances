@@ -37,3 +37,39 @@ body {
   color: var(--color-error);
   font-weight: 600;
 }
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space);
+  max-width: 320px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.field input {
+  padding: 10px 12px;
+  border: 1px solid #d6d3ce;
+  border-radius: 8px;
+  font: inherit;
+}
+
+button {
+  padding: 10px 16px;
+  border: none;
+  border-radius: 8px;
+  background: var(--color-primary);
+  color: #fff;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}

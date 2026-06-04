@@ -6,11 +6,12 @@ import axios, {
 
 import { getAccessToken, setAccessToken } from "@/auth/tokenStore"
 import { AppError, isApiErrorBody } from "@/lib/api/errors"
+import { API_BASE_URL } from "@/lib/api/baseUrl"
 import { refreshAccessToken } from "@/lib/api/refresh"
 import type { ApiResponse } from "@/types/api"
 
 export const api = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL,
+  baseURL: API_BASE_URL,
   withCredentials: true,
 })
 

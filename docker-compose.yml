@@ -28,7 +28,7 @@ services:
 
   backend:
     build:
-      context: ./backend-py
+      context: ./backend
       dockerfile: docker/Dockerfile
     container_name: anfinances-backend
     restart: unless-stopped
@@ -40,12 +40,12 @@ services:
       POSTGRES_HOST: postgres
       POSTGRES_PORT: 5432
     env_file:
-      - ./backend-py/.env
+      - ./backend/.env
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     # В dev монтируем код для горячей перезагрузки + переопределяем CMD на --reload.
     volumes:
-      - ./backend-py:/app
+      - ./backend:/app
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
 
 volumes:

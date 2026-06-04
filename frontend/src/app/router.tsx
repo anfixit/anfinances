@@ -1,10 +1,21 @@
 import { createBrowserRouter } from "react-router-dom"
 
-import { HealthCheck } from "@/features/health/HealthCheck"
+import { ProtectedRoute } from "@/auth/ProtectedRoute"
+import { LoginPage } from "@/features/auth/LoginPage"
+import { HomePage } from "@/features/home/HomePage"
 
 export const router = createBrowserRouter([
   {
-    path: "/",
-    element: <HealthCheck />,
+    path: "/login",
+    element: <LoginPage />,
+  },
+  {
+    element: <ProtectedRoute />,
+    children: [
+      {
+        path: "/",
+        element: <HomePage />,
+      },
+    ],
   },
 ])

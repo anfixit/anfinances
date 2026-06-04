@@ -32,7 +32,7 @@
 
 ---
 
-## 3. Структура backend-py
+## 3. Структура backend
 
 Domain-driven (feature folders):
 
