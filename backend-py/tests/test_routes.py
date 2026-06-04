@@ -1,4 +1,8 @@
-"""Интеграционные тесты /auth/* через httpx + SQLite in-memory."""
+"""Интеграционные тесты /auth/* и /config через httpx + SQLite.
+
+Refresh-токен ходит в HttpOnly-cookie, поэтому base_url — https
+(иначе httpx не отдаёт Secure-cookie обратно).
+"""
 
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
@@ -53,7 +57,7 @@ async def client_factory():
         app.dependency_overrides[deps.get_pwned_checker] = lambda: FakePwned()
         return AsyncClient(
             transport=ASGITransport(app=app),
-            base_url="http://test",
+            base_url="https://test",
         )
 
     yield make
@@ -67,10 +71,12 @@ async def test_register_login_me_flow(client_factory) -> None:
             json={"email": "a@b.com", "password": STRONG},
         )
         assert r.status_code == 201, r.text
-        tokens = r.json()["data"]
-        assert tokens["access_token"]
+        data = r.json()["data"]
+        access = data["access_token"]
+        assert access
+        assert "refresh_token" not in data  # refresh — только в cookie
+        assert r.cookies.get("refresh_token")
 
-        access = tokens["access_token"]
         r = await ac.get(
             "/api/v1/auth/me",
             headers={"Authorization": f"Bearer {access}"},
@@ -105,25 +111,32 @@ async def test_login_wrong_password(client_factory) -> None:
 
 async def test_refresh_rotation_flow(client_factory) -> None:
     async with client_factory(_settings()) as ac:
-        r = await ac.post(
+        reg = await ac.post(
             "/api/v1/auth/register",
             json={"email": "a@b.com", "password": STRONG},
         )
-        refresh = r.json()["data"]["refresh_token"]
+        old = reg.cookies.get("refresh_token")
+        assert old
 
-        r2 = await ac.post(
-            "/api/v1/auth/refresh",
-            json={"refresh_token": refresh},
-        )
-        assert r2.status_code == 200
-        new_refresh = r2.json()["data"]["refresh_token"]
-        assert new_refresh != refresh
+        # Cookie уходит из jar автоматически.
+        r2 = await ac.post("/api/v1/auth/refresh")
+        assert r2.status_code == 200, r2.text
+        new = r2.cookies.get("refresh_token")
+        assert new and new != old
 
+        # Старый refresh после ротации отозван.
+        ac.cookies.clear()
         r3 = await ac.post(
             "/api/v1/auth/refresh",
-            json={"refresh_token": refresh},
+            headers={"Cookie": f"refresh_token={old}"},
         )
         assert r3.status_code == 401
+
+
+async def test_refresh_without_cookie(client_factory) -> None:
+    async with client_factory(_settings()) as ac:
+        r = await ac.post("/api/v1/auth/refresh")
+        assert r.status_code == 401
 
 
 async def test_me_requires_auth(client_factory) -> None:
@@ -134,17 +147,19 @@ async def test_me_requires_auth(client_factory) -> None:
 
 async def test_logout_invalidates_refresh(client_factory) -> None:
     async with client_factory(_settings()) as ac:
-        r = await ac.post(
+        await ac.post(
             "/api/v1/auth/register",
             json={"email": "a@b.com", "password": STRONG},
         )
-        refresh = r.json()["data"]["refresh_token"]
-        await ac.post(
-            "/api/v1/auth/logout",
-            json={"refresh_token": refresh},
-        )
-        r2 = await ac.post(
-            "/api/v1/auth/refresh",
-            json={"refresh_token": refresh},
-        )
+        out = await ac.post("/api/v1/auth/logout")
+        assert out.status_code == 200
+
+        r2 = await ac.post("/api/v1/auth/refresh")
         assert r2.status_code == 401
+
+
+async def test_config_exposes_auth_mode(client_factory) -> None:
+    async with client_factory(_settings(auth_mode="single_user")) as ac:
+        r = await ac.get("/api/v1/config")
+        assert r.status_code == 200
+        assert r.json()["data"]["auth_mode"] == "single_user"
