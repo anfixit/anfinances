@@ -1,5 +1,8 @@
 # anfinances
 
+Ридми старый, я решила переехать на питон + реакт, сделать селфхост приложение
+
+
 Персональная система управления финансами. Google Sheets как база данных, Node.js бэкенд, React фронтенд.
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
