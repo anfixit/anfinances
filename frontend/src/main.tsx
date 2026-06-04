@@ -6,6 +6,7 @@ import "@/index.css"
 import "@/features/transactions/transactions.css"
 import "@/features/summary/summary.css"
 import "@/features/accounts/accounts.css"
+import "@/features/budgets/budgets.css"
 
 // Применяем сохранённую тему до рендера, чтобы не мигало.
 const storedTheme = localStorage.getItem("anfinances-theme")
