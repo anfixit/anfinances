@@ -1,6 +1,7 @@
 import { useState } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 
+import type { Category } from "@/features/categories/types"
 import { useCategories } from "@/features/categories/hooks"
 import { listBudgets } from "@/features/budgets/budgetsApi"
 import { BudgetForm } from "@/features/budgets/BudgetForm"
@@ -10,6 +11,7 @@ import {
   useImportBudgets,
 } from "@/features/budgets/hooks"
 import type { Budget } from "@/features/budgets/types"
+import { useByCategory } from "@/features/summary/hooks"
 import { Sheet } from "@/components/Sheet"
 import { queryKeys } from "@/lib/query/keys"
 import { formatMoney } from "@/lib/money"
@@ -33,6 +35,10 @@ function monthLabel(month: string): string {
   }).format(new Date(Number(ys), Number(ms) - 1, 1))
 }
 
+function rub(value: number): string {
+  return formatMoney(String(value), "RUB")
+}
+
 interface SheetState {
   categoryId: string
   categoryName: string
@@ -43,18 +49,34 @@ export function BudgetsPage() {
   const qc = useQueryClient()
   const [month, setMonth] = useState<string>(() => currentMonth())
   const [sheet, setSheet] = useState<SheetState | null>(null)
+  const [open, setOpen] = useState<Record<string, boolean>>({})
 
   const categoriesQ = useCategories()
   const budgetsQ = useBudgets(month)
+  const spendingQ = useByCategory(month)
   const del = useDeleteBudget()
   const importMut = useImportBudgets()
 
   const budgets = budgetsQ.data ?? []
   const byCat = new Map(budgets.map((b) => [b.category_id, b]))
+  const spendMap = new Map(
+    (spendingQ.data?.items ?? []).map((i) => [i.category_id, Number(i.amount_rub)]),
+  )
 
-  const expenseCats = (categoriesQ.data ?? [])
-    .filter((c) => c.kind === "expense")
-    .sort((a, b) => a.name.localeCompare(b.name, "ru"))
+  const expense = (categoriesQ.data ?? []).filter((c) => c.kind === "expense")
+  const byName = (a: Category, b: Category) => a.name.localeCompare(b.name, "ru")
+  const parents = expense.filter((c) => c.parent_id === null).sort(byName)
+  const childrenOf = (pid: string) =>
+    expense.filter((c) => c.parent_id === pid).sort(byName)
+
+  const spentOf = (cat: Category): number => {
+    const b = byCat.get(cat.id)
+    return b ? Number(b.spent) : (spendMap.get(cat.id) ?? 0)
+  }
+
+  const toggle = (id: string) => {
+    setOpen((o) => ({ ...o, [id]: !o[id] }))
+  }
 
   const copyPrev = async () => {
     const prev = shiftMonth(month, -1)
@@ -87,6 +109,81 @@ export function BudgetsPage() {
     if (window.confirm(`Удалить лимит по категории «${name}»?`)) {
       del.mutate(b.id)
     }
+  }
+
+  const renderRow = (cat: Category, label: string, indent: boolean) => {
+    const b = byCat.get(cat.id)
+    const cls = `budget-row${indent ? " indent" : ""}`
+    if (!b) {
+      const spent = spendMap.get(cat.id) ?? 0
+      return (
+        <div className={`${cls} budget-row--empty`} key={cat.id}>
+          <span className="budget-name">{label}</span>
+          <span className="budget-hint">
+            {spent > 0 ? `потрачено ${rub(spent)}` : "лимит не задан"}
+          </span>
+          <button
+            type="button"
+            className="link"
+            onClick={() =>
+              setSheet({ categoryId: cat.id, categoryName: cat.name, budget: null })
+            }
+          >
+            Задать лимит
+          </button>
+        </div>
+      )
+    }
+    const available = Number(b.available)
+    const spent = Number(b.spent)
+    const over = Number(b.remaining) < 0
+    const pct =
+      available > 0 ? Math.min(100, (spent / available) * 100) : spent > 0 ? 100 : 0
+    return (
+      <div className={cls} key={cat.id}>
+        <div className="budget-head">
+          <span className="budget-name">{label}</span>
+          <span className="num budget-figures">
+            {rub(spent)} / {rub(available)}
+          </span>
+        </div>
+        <div className="bar">
+          <div
+            className="bar-fill"
+            style={{
+              width: `${String(pct)}%`,
+              background: over ? "var(--expense)" : "var(--income)",
+            }}
+          />
+        </div>
+        <div className="budget-foot">
+          <span className={`num ${over ? "expense" : ""}`}>
+            {over ? "перерасход " : "остаток "}
+            {rub(Number(b.remaining))}
+          </span>
+          {b.rollover && (
+            <span className="chip-static">перенос {rub(Number(b.rollover_amount))}</span>
+          )}
+          <span className="spacer" />
+          <button
+            type="button"
+            className="link"
+            onClick={() =>
+              setSheet({ categoryId: cat.id, categoryName: cat.name, budget: b })
+            }
+          >
+            Изменить
+          </button>
+          <button
+            type="button"
+            className="link danger"
+            onClick={() => removeBudget(b, cat.name)}
+          >
+            Удалить
+          </button>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -123,52 +220,58 @@ export function BudgetsPage() {
       </p>
 
       {(categoriesQ.isPending || budgetsQ.isPending) && <p>Загрузка…</p>}
-      {expenseCats.length === 0 && categoriesQ.isSuccess && (
+      {parents.length === 0 && categoriesQ.isSuccess && (
         <p>Нет расходных категорий. Создайте их в разделе «Категории».</p>
       )}
 
       <ul className="budget-list">
-        {expenseCats.map((cat) => {
-          const b = byCat.get(cat.id)
-          if (!b) {
+        {parents.map((parent) => {
+          const kids = childrenOf(parent.id)
+
+          // Лист без подкатегорий — обычная строка.
+          if (kids.length === 0) {
             return (
-              <li key={cat.id} className="budget-row budget-row--empty">
-                <span className="budget-name">{cat.name}</span>
-                <span className="budget-hint">лимит не задан</span>
-                <button
-                  type="button"
-                  className="link"
-                  onClick={() =>
-                    setSheet({
-                      categoryId: cat.id,
-                      categoryName: cat.name,
-                      budget: null,
-                    })
-                  }
-                >
-                  Задать лимит
-                </button>
+              <li key={parent.id} className="budget-leaf">
+                {renderRow(parent, parent.name, false)}
               </li>
             )
           }
-          const available = Number(b.available)
-          const spent = Number(b.spent)
-          const over = Number(b.remaining) < 0
+
+          // Группа: итог по родителю + детям.
+          const groupCats = [parent, ...kids]
+          let avail = 0
+          let spentTotal = 0
+          for (const c of groupCats) {
+            const b = byCat.get(c.id)
+            if (b) {
+              avail += Number(b.available)
+            }
+            spentTotal += spentOf(c)
+          }
+          const over = avail > 0 && spentTotal > avail
           const pct =
-            available > 0
-              ? Math.min(100, (spent / available) * 100)
-              : spent > 0
+            avail > 0
+              ? Math.min(100, (spentTotal / avail) * 100)
+              : spentTotal > 0
                 ? 100
                 : 0
+          const isOpen = open[parent.id] ?? false
+
           return (
-            <li key={cat.id} className="budget-row">
-              <div className="budget-head">
-                <span className="budget-name">{cat.name}</span>
-                <span className="num budget-figures">
-                  {formatMoney(b.spent, "RUB")} / {formatMoney(b.available, "RUB")}
+            <li key={parent.id} className="budget-group">
+              <button
+                type="button"
+                className="group-head"
+                onClick={() => toggle(parent.id)}
+                aria-expanded={isOpen}
+              >
+                <span className="group-caret">{isOpen ? "▾" : "▸"}</span>
+                <span className="group-name">{parent.name}</span>
+                <span className="num group-figures">
+                  {rub(spentTotal)} / {rub(avail)}
                 </span>
-              </div>
-              <div className="bar">
+              </button>
+              <div className="bar group-bar">
                 <div
                   className="bar-fill"
                   style={{
@@ -177,38 +280,12 @@ export function BudgetsPage() {
                   }}
                 />
               </div>
-              <div className="budget-foot">
-                <span className={`num ${over ? "expense" : ""}`}>
-                  {over ? "перерасход " : "остаток "}
-                  {formatMoney(b.remaining, "RUB")}
-                </span>
-                {b.rollover && (
-                  <span className="chip-static">
-                    перенос {formatMoney(b.rollover_amount, "RUB")}
-                  </span>
-                )}
-                <span className="spacer" />
-                <button
-                  type="button"
-                  className="link"
-                  onClick={() =>
-                    setSheet({
-                      categoryId: cat.id,
-                      categoryName: cat.name,
-                      budget: b,
-                    })
-                  }
-                >
-                  Изменить
-                </button>
-                <button
-                  type="button"
-                  className="link danger"
-                  onClick={() => removeBudget(b, cat.name)}
-                >
-                  Удалить
-                </button>
-              </div>
+              {isOpen && (
+                <div className="group-children">
+                  {renderRow(parent, "Общий лимит (без подкатегории)", true)}
+                  {kids.map((c) => renderRow(c, c.name, true))}
+                </div>
+              )}
             </li>
           )
         })}

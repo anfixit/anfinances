@@ -1,4 +1,4 @@
-/* Экран бюджета. Подключается в main.tsx. */
+/* Экран бюджета (YNAB-стиль: группы-родители + подкатегории). */
 
 .budget-list {
   list-style: none;
@@ -9,6 +9,12 @@
   gap: 8px;
 }
 
+/* Лист без подкатегорий и обычная строка */
+.budget-leaf .budget-row,
+.budget-group .budget-row {
+  background: var(--surface-container-low);
+}
+
 .budget-row {
   display: flex;
   flex-direction: column;
@@ -16,6 +22,10 @@
   padding: 14px 16px;
   background: var(--surface-container-low);
   border-radius: var(--shape-m);
+}
+
+.budget-row.indent {
+  background: var(--surface-container);
 }
 
 .budget-row--empty {
@@ -72,4 +82,59 @@
   background: var(--secondary-container);
   color: var(--on-secondary-container);
   font-size: 0.78rem;
+}
+
+/* ── Группа ─────────────────────────────────────────────────── */
+.budget-group {
+  background: var(--surface-container-low);
+  border-radius: var(--shape-l);
+  padding: 12px 16px;
+}
+
+.group-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  background: transparent;
+  color: var(--on-surface);
+  padding: 4px 0;
+  border-radius: 0;
+  box-shadow: none;
+  font: inherit;
+}
+
+.group-head:hover {
+  background: transparent;
+  box-shadow: none;
+  filter: none;
+}
+
+.group-caret {
+  width: 16px;
+  color: var(--on-surface-variant);
+}
+
+.group-name {
+  font-weight: 700;
+  font-size: 1.05rem;
+  flex: 1;
+  text-align: left;
+}
+
+.group-figures {
+  font-size: 0.9rem;
+  white-space: nowrap;
+  color: var(--on-surface-variant);
+}
+
+.group-bar {
+  margin-top: 8px;
+}
+
+.group-children {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
 }
