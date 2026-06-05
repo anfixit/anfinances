@@ -18,12 +18,11 @@ export function Layout() {
           <NavLink to="/accounts">Счета</NavLink>
           <NavLink to="/categories">Категории</NavLink>
           <NavLink to="/currencies">Валюты</NavLink>
+          <NavLink to="/settings">Настройки</NavLink>
         </nav>
         <span className="spacer" />
         <ThemeToggle />
-        <NavLink to="/settings" className="user">
-          {user?.email}
-        </NavLink>
+        {user?.email && <span className="user">{user.email}</span>}
         <button type="button" className="link" onClick={() => void logout()}>
           Выйти
         </button>
