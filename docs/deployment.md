@@ -1,11 +1,11 @@
 # Deployment
 
-This describes a single-VPS deployment with Docker Compose and Nginx. The production overlay (`docker-compose.prod.yml`) adds Nginx, which terminates HTTP, proxies `/api/*` to the backend, and serves the built frontend from `frontend/dist`. PostgreSQL is not published outside the Docker network.
+Single-VPS deployment with Docker Compose, Nginx, and Let's Encrypt (Certbot). The production overlay (`docker-compose.prod.yml`) runs Nginx (terminates HTTPS, proxies `/api/*` to the backend, serves the built frontend from `frontend/dist`), a Certbot sidecar (issues and auto-renews the TLS certificate), and PostgreSQL (not published outside the Docker network).
 
 ## 1. Prepare the server
 
 - A VPS with Docker + Docker Compose.
-- A domain name pointing (A record) to the server IP.
+- A domain with an A record pointing to the server IP.
 - Open ports 80 and 443.
 
 ## 2. Configure
@@ -31,42 +31,47 @@ SINGLE_USER_PASSWORD=<set-once-then-can-be-removed>
 HTTP_PORT=80
 ```
 
+Set your domain in the Nginx config (replaces all 4 occurrences):
+
+```bash
+sed -i 's/your-domain.tld/anfinances.example.com/g' nginx/nginx.conf
+```
+
 ## 3. Build the frontend
 
 ```bash
-cd frontend
-pnpm install
-pnpm build        # outputs to frontend/dist (served by Nginx)
-cd ..
+cd frontend && pnpm install && pnpm build && cd ..   # → frontend/dist
 ```
 
-## 4. Launch
+## 4. Issue the TLS certificate (first time only)
+
+The bootstrap script puts a temporary self-signed cert in place so Nginx can start, then obtains a real Let's Encrypt certificate over the ACME HTTP challenge:
+
+```bash
+chmod +x scripts/init-letsencrypt.sh
+DOMAIN=anfinances.example.com EMAIL=you@example.com ./scripts/init-letsencrypt.sh
+# Test run against LE staging first (avoids rate limits): prepend STAGING=1
+```
+
+## 5. Launch
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 docker compose exec backend alembic upgrade head
-# seed the currency registry / defaults if applicable:
-docker compose exec backend python scripts/seed.py
+docker compose exec backend python scripts/seed.py   # currencies / defaults
 ```
 
 Verify:
 
 ```bash
-curl https://your-domain.tld/api/v1/health/ready
+curl https://anfinances.example.com/api/v1/health/ready
 ```
 
-## 5. HTTPS / TLS
-
-The bundled `nginx/nginx.conf` serves HTTP and the SPA. To add TLS, terminate it at Nginx with a Let's Encrypt certificate. The common approaches:
-
-- Run [Certbot](https://certbot.eff.org/) on the host (or as a sidecar), obtain a certificate for your domain, mount it into the Nginx container, and add a `443 ssl` server block that redirects `80 → 443`.
-- Or front the stack with a TLS-terminating reverse proxy (Caddy, Traefik, or your provider's load balancer) and keep Nginx on plain HTTP behind it.
-
-Make sure `COOKIE_SECURE=true` and `CORS_ORIGINS` use `https://` once TLS is on.
+Renewal is automatic: the `certbot` service renews every 12h and Nginx reloads every 6h to pick up new certificates.
 
 ## 6. Backups
 
-- **Application data**: use the in-app backup (Settings → Data → full JSON), or `GET /api/v1/export/all.json`.
+- **Application data**: in-app backup (Settings → Data → full JSON), or `GET /api/v1/export/all.json`.
 - **Database**: schedule `pg_dump`:
 
 ```bash
@@ -81,6 +86,10 @@ cd frontend && pnpm install && pnpm build && cd ..
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 docker compose exec backend alembic upgrade head
 ```
+
+## Simpler alternative: Caddy
+
+If you prefer zero-config HTTPS, front the stack with [Caddy](https://caddyserver.com/) instead of Nginx + Certbot — it provisions and renews certificates automatically from just a domain and email. The trade-off is replacing the Nginx config with a `Caddyfile`; the rest of the stack is unchanged.
 
 ## Importing existing data
 
