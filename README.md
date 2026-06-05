@@ -1,144 +1,151 @@
+<div align="center">
+
 # anfinances
 
-Ридми старый, я решила переехать на питон + реакт, сделать селфхост приложение
+**Self-hosted personal finance tracker** — multi-currency accounts, transactions & transfers, YNAB-style budgets, a recurring "plan-minimum", and dashboards. Built to own your data.
 
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](LICENSE)
+![Python](https://img.shields.io/badge/Python-3.13-3776AB?logo=python&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-async-009688?logo=fastapi&logoColor=white)
+![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)
+![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?logo=typescript&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)
+![Code style: Ruff](https://img.shields.io/badge/code%20style-ruff-D7FF64)
 
-Персональная система управления финансами. Google Sheets как база данных, Node.js бэкенд, React фронтенд.
+[Русская версия →](README.ru.md)
 
-![License](https://img.shields.io/badge/license-MIT-blue.svg)
-![Stack](https://img.shields.io/badge/stack-React%20%2B%20Node.js%20%2B%20Google%20Sheets-brightgreen)
+</div>
 
-## Что умеет
+---
 
-- **Дашборд** — net worth, активы, долги, runway, расходы по категориям
-- **Счета** — все счета с балансами в рублях (мультивалюта: RUB, USD, UZS)
-- **Транзакции** — история операций с фильтрами по типу, периоду, категории и поиском
-- **Добавление операций** — расходы, доходы, переводы между счетами, конвертация валюты с комиссией
-- **Бюджет** — YNAB-стиль: лимиты по категориям, прогресс-бары, импорт из плана минимум, rollover остатков
-- **Тёмная / светлая тема** — сохраняется между сессиями
-- **Адаптивный дизайн** — работает на мобилке и десктопе
+## Overview
 
-## Стек
+anfinances is a personal finance manager you run yourself. It tracks money across multiple accounts and currencies, plans monthly budgets in the envelope (YNAB) style with category groups and rollover, and shows where the money goes. No third-party services are required for the core to work — one `docker compose up` and it runs.
 
-| Слой | Технологии |
-|------|-----------|
-| Фронтенд | React 19, Vite, Recharts, Lucide |
-| Бэкенд | Node.js, Express 5 |
-| База данных | Google Sheets API v4 |
-| Дизайн | Material Design 3, Inter + JetBrains Mono |
+It started as a Google Sheets + Apps Script system, became a React + Node.js app, and is now a domain-driven FastAPI backend with a typed React frontend.
 
-## Быстрый старт
+## Features
 
-### 1. Подготовь Google Sheets
+- **Accounts** — cards, cash, credit, savings, investment; per-account currency; manual ordering; soft-archive.
+- **Transactions & transfers** — single entry point with an Expense / Income / Transfer switch. Cross-currency transfers reveal a "received" field and an optional fee — currency conversion without a separate mode.
+- **Multi-currency** — global currency registry, per-user currency set, live rates from `open.er-api.com`, all balances rolled up to a base currency.
+- **Budgets (YNAB-style)** — per month, grouped by parent category, collapsible. Budget a whole parent or individual subcategories. Progress bars, rollover, "copy from previous month".
+- **Plan-minimum (recurring)** — fixed monthly obligations per category; auto-generate from spending history.
+- **Dashboards** — net worth, monthly cashflow (income/expense), spending by category, with a month switcher.
+- **Backup** — export transactions to CSV / XLSX, full backup to JSON, and one-click restore.
+- **Themes** — warm light & dark, Material 3 Expressive design system.
+- **Three auth modes** — `single_user`, `multi_user_no_verify`, `multi_user` via one env var.
+- **Correctness-first** — money as `Decimal` end-to-end (`numeric(18,4)` in DB, string in JSON), soft-delete, fully typed.
 
-1. Создай новую таблицу Google Sheets
-2. Создай листы: `accounts`, `moneyflow`, `plan_min`, `rates`, `reference`, `budget`, `dashboard`
-3. Структура листов — смотри [шаблон таблицы](#шаблон-таблицы)
+## Screenshots
 
-### 2. Настрой Google Cloud
+Drop your screenshots into [`docs/screenshots/`](docs/screenshots/) and they will render here.
 
-1. Создай проект на [console.cloud.google.com](https://console.cloud.google.com)
-2. Включи **Google Sheets API**
-3. Создай **Service Account** → скачай JSON-ключ
-4. Дай сервисному аккаунту доступ **Editor** к твоей таблице (Share → вставь email из JSON)
+| Dashboard | Budget | Transactions |
+| --- | --- | --- |
+| ![Dashboard](docs/screenshots/dashboard.png) | ![Budget](docs/screenshots/budget.png) | ![Transactions](docs/screenshots/transactions.png) |
 
-### 3. Установи зависимости
+## Tech stack
+
+| Layer | Technology |
+| --- | --- |
+| Backend | Python 3.13, FastAPI |
+| ORM | SQLAlchemy 2.0 (async) + asyncpg |
+| Migrations | Alembic (async) |
+| Validation | Pydantic v2 / pydantic-settings |
+| Database | PostgreSQL 16 |
+| Frontend | React 19, Vite, TypeScript (strict), TanStack Query, Recharts |
+| Package managers | uv (backend), pnpm (frontend) |
+| Tests / lint | pytest, ruff, mypy, ESLint |
+| Deployment | Docker Compose, Nginx |
+
+## Quick start (Docker)
+
+Requirements: Docker + Docker Compose.
 
 ```bash
-git clone https://github.com/твой-юзернейм/anfinances.git
+git clone https://github.com/<you>/anfinances.git
 cd anfinances
 
-# Бэкенд
-cd backend
-npm install
-cp .env.example .env
-# Заполни .env своими данными
+cp backend/.env.example backend/.env
+# Generate a secret and put it into backend/.env as SECRET_KEY=...
+openssl rand -hex 32
 
-# Фронтенд
-cd ../frontend
-npm install
+docker compose up -d
 ```
 
-### 4. Настрой .env
-
-```env
-PORT=3001
-GOOGLE_CREDENTIALS_PATH=./credentials.json
-SPREADSHEET_ID=твой_id_таблицы
-```
-
-Положи скачанный JSON-ключ как `backend/credentials.json`
-
-### 5. Запусти
+Verify the backend:
 
 ```bash
-# Терминал 1 — бэкенд
-cd backend && npm run dev
-
-# Терминал 2 — фронтенд
-cd frontend && npm run dev
+curl http://localhost:8000/api/v1/health/live   # {"status":"ok"}
+curl http://localhost:8000/api/v1/health/ready  # {"status":"ok","database":"ok"}
 ```
 
-Открой [http://localhost:5173](http://localhost:5173)
+- API docs (OpenAPI): <http://localhost:8000/docs>
+- For local frontend development, run Vite separately:
 
-## Структура проекта
+```bash
+cd frontend
+pnpm install
+pnpm dev          # http://localhost:5173
+```
+
+In production the frontend is built (`pnpm build`) and served by Nginx — see [docs/deployment.md](docs/deployment.md).
+
+## Configuration
+
+All settings come from environment variables (`backend/.env`). Full reference: [docs/configuration.md](docs/configuration.md).
+
+The most important one is the auth mode:
+
+| `AUTH_MODE` | Use case |
+| --- | --- |
+| `single_user` | Self-host for one person. Registration disabled; the account is seeded from `SINGLE_USER_*`. |
+| `multi_user_no_verify` | Open registration, no email verification (private hosting without SMTP). |
+| `multi_user` | Open registration with email verification (public SaaS; requires `SMTP_*`). |
+
+Money never trusts a hardcoded value — set `SECRET_KEY` (min 32 bytes) before first run.
+
+## Architecture
+
+The backend is domain-driven (`router → service → repository → model`), each domain in its own folder under `app/domains/`. The authoritative design document is [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ```
 anfinances/
-├── backend/
-│   ├── src/
-│   │   ├── routes/          # API эндпоинты
-│   │   │   ├── accounts.js
-│   │   │   ├── moneyflow.js
-│   │   │   ├── budget.js
-│   │   │   ├── rates.js
-│   │   │   ├── recurring.js
-│   │   │   ├── reference.js
-│   │   │   └── summary.js
-│   │   ├── services/
-│   │   │   └── sheets.js    # Google Sheets клиент
-│   │   └── index.js
-│   ├── .env.example
-│   └── package.json
-│
-└── frontend/
-    ├── src/
-    │   ├── api/             # HTTP клиент
-    │   ├── components/
-    │   │   ├── Dashboard.jsx
-    │   │   ├── Transactions.jsx
-    │   │   ├── Budget.jsx
-    │   │   └── AddTransaction.jsx
-    │   ├── App.jsx
-    │   └── index.css        # Design tokens (MD3)
-    └── package.json
+├── backend/            # FastAPI + SQLAlchemy (async) + Alembic
+│   └── app/
+│       ├── core/       # config, db, middleware, exceptions, deps
+│       └── domains/    # auth, accounts, categories, currencies,
+│                       # transactions, budgets, recurring, summary,
+│                       # export, import_, users
+├── frontend/           # React + Vite + TypeScript
+│   └── src/
+│       ├── app/        # router, layout
+│       ├── features/   # one folder per domain (api, hooks, pages)
+│       └── lib/        # api client, query keys, helpers
+├── docker-compose.yml
+├── docker-compose.prod.yml
+└── docs/
 ```
 
-## API эндпоинты
+## Documentation
 
-| Метод | Путь | Описание |
-|-------|------|----------|
-| GET | `/api/health` | Статус сервера |
-| GET | `/api/accounts` | Список счетов |
-| GET | `/api/moneyflow` | Транзакции |
-| POST | `/api/moneyflow` | Добавить транзакцию |
-| GET | `/api/summary` | Агрегированные данные |
-| GET | `/api/rates` | Курсы валют |
-| GET | `/api/recurring` | Регулярные расходы |
-| GET | `/api/reference` | Категории и подкатегории |
-| GET | `/api/budget?month=2026-05` | Бюджет за месяц |
-| POST | `/api/budget` | Сохранить лимит категории |
-| DELETE | `/api/budget` | Удалить категорию из бюджета |
+- [Configuration](docs/configuration.md) — every environment variable.
+- [Development](docs/development.md) — local setup, tests, linting, coding standards.
+- [Deployment](docs/deployment.md) — VPS, Docker Compose prod, Nginx, TLS.
+- [Architecture](ARCHITECTURE.md) — design decisions.
+- [Contributing](CONTRIBUTING.md) — how to propose changes.
 
-## Шаблон таблицы
+## Roadmap
 
-Публичный шаблон Google Sheets: _скоро_
+- [x] Backend (all domains) and frontend (dashboard, transactions, budgets, recurring, accounts, categories, currencies, settings, backup)
+- [ ] List & restore archived accounts (`?include_archived`)
+- [ ] Migration script: Google Sheets → PostgreSQL
+- [ ] Google OAuth (v1.1)
+- [ ] Tags, bank CSV parsers (v2.0)
 
-## Деплой на VPS
+## License
 
-_Инструкция скоро_
+Licensed under the **GNU AGPL-3.0**. See [LICENSE](LICENSE).
 
-## Лицензия
-
-MIT
-делай что хочешь, но звёздочку поставь 🌟
+AGPL is copyleft with a network clause: if you run a modified version as a network service, you must make your source available to its users. This keeps the project and any hosted derivatives open. For a different arrangement (e.g. a closed-source hosted offering), a separate commercial license would be required.
