@@ -1,0 +1,56 @@
+# Deploy-окружение: образы тянутся из GHCR, на сервере ничего не собирается.
+# .env рендерится pipeline'ом из GitHub Secrets (в гит не коммитится).
+#
+# Запуск (делает CI по SSH):
+#   docker compose -f docker-compose.deploy.yml pull
+#   docker compose -f docker-compose.deploy.yml up -d
+#
+# Переменные IMAGE_BACKEND / IMAGE_FRONTEND / HTTP_PORT прокидывает pipeline.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: anfinances-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-anfinances}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-anfinances}
+      POSTGRES_DB: ${POSTGRES_DB:-anfinances}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-anfinances} -d ${POSTGRES_DB:-anfinances}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    image: ${IMAGE_BACKEND}
+    container_name: anfinances-backend
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+    env_file:
+      - ./backend/.env
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    expose:
+      - "8000"
+
+  frontend:
+    image: ${IMAGE_FRONTEND}
+    container_name: anfinances-frontend
+    restart: always
+    depends_on:
+      - backend
+    # На хосте слушаем HTTP_PORT (по умолчанию 8080, чтобы не конфликтовать
+    # с возможным kanban на 80). Внутри контейнера — nginx на 80.
+    ports:
+      - "${HTTP_PORT:-8080}:80"
+
+volumes:
+  postgres_data:
+    name: anfinances_postgres_data
