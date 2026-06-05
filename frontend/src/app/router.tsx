@@ -7,6 +7,7 @@ import { BudgetsPage } from "@/features/budgets/BudgetsPage"
 import { CategoriesPage } from "@/features/categories/CategoriesPage"
 import { CurrenciesPage } from "@/features/currencies/CurrenciesPage"
 import { LoginPage } from "@/features/auth/LoginPage"
+import { RecurringPage } from "@/features/recurring/RecurringPage"
 import { DashboardPage } from "@/features/summary/DashboardPage"
 import { TransactionsPage } from "@/features/transactions/TransactionsPage"
 
@@ -24,6 +25,7 @@ export const router = createBrowserRouter([
           { path: "/", element: <DashboardPage /> },
           { path: "/transactions", element: <TransactionsPage /> },
           { path: "/budgets", element: <BudgetsPage /> },
+          { path: "/recurring", element: <RecurringPage /> },
           { path: "/accounts", element: <AccountsPage /> },
           { path: "/categories", element: <CategoriesPage /> },
           { path: "/currencies", element: <CurrenciesPage /> },

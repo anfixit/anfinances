@@ -14,6 +14,7 @@ export function Layout() {
           <NavLink to="/">Главная</NavLink>
           <NavLink to="/transactions">Операции</NavLink>
           <NavLink to="/budgets">Бюджет</NavLink>
+          <NavLink to="/recurring">План-минимум</NavLink>
           <NavLink to="/accounts">Счета</NavLink>
           <NavLink to="/categories">Категории</NavLink>
           <NavLink to="/currencies">Валюты</NavLink>

@@ -1,0 +1,63 @@
+/* План-минимум. Подключается в main.tsx. */
+
+.rec-help {
+  color: var(--on-surface-variant);
+  margin-top: -8px;
+}
+
+.rec-list {
+  list-style: none;
+  padding: 0;
+  margin: 16px 0 96px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.rec-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+  background: var(--surface-container-low);
+  border-radius: var(--shape-m);
+  transition: background var(--spring);
+}
+
+.rec-row:hover {
+  background: var(--surface-container);
+}
+
+.rec-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.rec-name {
+  font-weight: 600;
+}
+
+.rec-meta {
+  font-size: 0.85rem;
+  color: var(--on-surface-variant);
+}
+
+.rec-amount {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.rec-rub {
+  color: var(--on-surface-variant);
+  font-weight: 400;
+  font-size: 0.85rem;
+}
+
+@media (max-width: 640px) {
+  .rec-row {
+    flex-wrap: wrap;
+  }
+}

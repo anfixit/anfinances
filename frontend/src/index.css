@@ -7,23 +7,23 @@
 
 /* ── Токены: светлая тема ───────────────────────────────────── */
 :root {
-  /* Primary (синий YNAB) */
-  --primary: #14679c;
+  /* Primary */
+  --primary: #0f719e;
   --on-primary: #ffffff;
-  --primary-container: #cce5f8;
-  --on-primary-container: #00344f;
+  --primary-container: #d3ebf5;
+  --on-primary-container: #06364c;
 
-  /* Secondary (прохладный сине-серый) */
-  --secondary: #4e616d;
+  /* Secondary */
+  --secondary: #5c6f79;
   --on-secondary: #ffffff;
-  --secondary-container: #d6e7f2;
-  --on-secondary-container: #0b1f2b;
+  --secondary-container: #dde4e8;
+  --on-secondary-container: #25333a;
 
-  /* Tertiary (лаймово-зелёный акцент YNAB) */
-  --tertiary: #4c7a00;
+  /* Tertiary (YNAB green) */
+  --tertiary: #8fbf2d;
   --on-tertiary: #ffffff;
-  --tertiary-container: #d3ed9a;
-  --on-tertiary-container: #142000;
+  --tertiary-container: #e4f1bd;
+  --on-tertiary-container: #273600;
 
   /* Error */
   --error: #ba1a1a;
@@ -31,41 +31,45 @@
   --error-container: #ffdad6;
   --on-error-container: #410002;
 
-  /* Поверхности и текст — прохладно-белые */
-  --background: #f4f8fb;
-  --on-background: #16242c;
-  --surface: #f4f8fb;
-  --on-surface: #16242c;
-  --surface-variant: #dde4e9;
-  --on-surface-variant: #41484d;
+  /* Background */
+  --background: #e7ecef;
+  --on-background: #24313a;
 
-  /* Тональные контейнеры (светло-голубые, как строки YNAB) */
+  /* Surface */
+  --surface: #e7ecef;
+  --on-surface: #24313a;
+
+  --surface-variant: #d5dde2;
+  --on-surface-variant: #55636c;
+
+  /* Material containers */
   --surface-container-lowest: #ffffff;
-  --surface-container-low: #eef4f9;
-  --surface-container: #e6eff6;
-  --surface-container-high: #dce8f1;
-  --surface-container-highest: #d2e1ec;
+  --surface-container-low: #f3f5f6;
+  --surface-container: #e9edef;
+  --surface-container-high: #dde4e8;
+  --surface-container-highest: #d1dbe1;
 
-  /* Контуры */
-  --outline: #6f7c84;
-  --outline-variant: #c2ced6;
+  /* Borders */
+  --outline: #8898a1;
+  --outline-variant: #c4ced4;
 
-  /* Инверсия */
-  --inverse-surface: #2b363d;
-  --inverse-on-surface: #eef4f9;
+  /* Inverse */
+  --inverse-surface: #2d3941;
+  --inverse-on-surface: #eef3f5;
 
-  /* Семантика финансов */
-  --income: #4c7a00;
-  --on-income-container: #142000;
-  --income-container: #d3ed9a;
-  --expense: #b3261e;
+  /* Finance */
+  --income: #8fbf2d;
+  --income-container: #e4f1bd;
+  --on-income-container: #273600;
+
+  --expense: #d45f4c;
   --transfer: var(--secondary);
 
-  /* Верхняя панель приложения (синяя, как боковая в YNAB) */
-  --app-bar: #14679c;
+  /* App bar */
+  --app-bar: #0f719e;
   --on-app-bar: #ffffff;
 
-  /* Форма */
+  /* Shape */
   --shape-xs: 4px;
   --shape-s: 8px;
   --shape-m: 12px;
@@ -73,20 +77,23 @@
   --shape-xl: 28px;
   --shape-full: 999px;
 
-  /* Высоты */
-  --elev-1: 0 1px 2px rgba(10, 30, 50, 0.06), 0 1px 3px rgba(10, 30, 50, 0.08);
-  --elev-2: 0 1px 2px rgba(10, 30, 50, 0.06), 0 2px 6px rgba(10, 30, 50, 0.1);
-  --elev-3: 0 2px 4px rgba(10, 30, 50, 0.08), 0 6px 12px rgba(10, 30, 50, 0.12);
+  /* Elevation */
+  --elev-1: 0 1px 2px rgba(20, 30, 40, 0.06), 0 1px 3px rgba(20, 30, 40, 0.08);
 
-  /* Движение */
+  --elev-2: 0 1px 2px rgba(20, 30, 40, 0.06), 0 2px 6px rgba(20, 30, 40, 0.1);
+
+  --elev-3: 0 2px 4px rgba(20, 30, 40, 0.08), 0 6px 12px rgba(20, 30, 40, 0.12);
+
+  /* Motion */
   --spring: 360ms cubic-bezier(0.2, 0.9, 0.25, 1.18);
   --emphasized: 280ms cubic-bezier(0.2, 0, 0, 1);
 
-  /* Сетка */
+  /* Layout */
   --space: 16px;
   --content-max: 720px;
 
   color-scheme: light;
+
   font-family: "Inter", system-ui, sans-serif;
   font-synthesis: none;
   -webkit-font-smoothing: antialiased;
@@ -270,7 +277,9 @@ a {
   align-items: center;
   gap: var(--space);
   padding: 10px 20px;
-  background: var(--app-bar);
+
+  background: linear-gradient(180deg, #1b82b3 0%, #0f719e 100%);
+
   position: sticky;
   top: 0;
   z-index: 10;
@@ -305,8 +314,12 @@ a {
 }
 
 .nav a.active {
-  background: color-mix(in srgb, var(--on-app-bar) 22%, transparent);
+  background: rgba(255, 255, 255, 0.18);
   color: var(--on-app-bar);
+
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25);
+
+  backdrop-filter: blur(8px);
 }
 
 .spacer {
