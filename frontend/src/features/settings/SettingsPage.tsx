@@ -1,4 +1,5 @@
 import { useState } from "react"
+import { Link } from "react-router-dom"
 
 import { useAuth } from "@/auth/useAuth"
 import { ThemeToggle } from "@/components/ThemeToggle"
@@ -121,9 +122,21 @@ export function SettingsPage() {
         </div>
       </div>
 
-      <p className="set-note">
-        Набор валют и порядок настраиваются на странице «Валюты».
-      </p>
+      <div className="card">
+        <h2>Данные</h2>
+        <div className="set-row">
+          <span className="set-label">Экспорт и резервная копия</span>
+          <Link className="link" to="/backup">
+            Открыть
+          </Link>
+        </div>
+        <div className="set-row">
+          <span className="set-label">Набор валют</span>
+          <Link className="link" to="/currencies">
+            Открыть
+          </Link>
+        </div>
+      </div>
     </>
   )
 }

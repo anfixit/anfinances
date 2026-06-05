@@ -9,6 +9,7 @@ import "@/features/accounts/accounts.css"
 import "@/features/budgets/budgets.css"
 import "@/features/recurring/recurring.css"
 import "@/features/settings/settings.css"
+import "@/features/backup/backup.css"
 
 // Применяем сохранённую тему до рендера, чтобы не мигало.
 const storedTheme = localStorage.getItem("anfinances-theme")

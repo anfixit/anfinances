@@ -1,0 +1,32 @@
+/* Бэкап. Подключается в main.tsx. */
+
+.backup-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.backup-hint {
+  color: var(--on-surface-variant);
+  font-size: 0.9rem;
+}
+
+.backup-hint code,
+.restore-result code {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 0.85em;
+  background: var(--surface-container-high);
+  padding: 1px 6px;
+  border-radius: var(--shape-xs);
+}
+
+.restore-result ul {
+  margin: 8px 0 0;
+  padding-left: 20px;
+}
+
+.restore-result li {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 0.9rem;
+}
