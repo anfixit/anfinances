@@ -1,75 +1,71 @@
 /* anfinances — дизайн-система.
-   Material 3 Expressive, палитра YNAB 4: синий primary + синяя верхняя
-   панель, прохладно-белые поверхности, лаймово-зелёный акцент/доход.
+   Material 3 Expressive, палитра «Лён и лес»: тёплая льняная подложка,
+   лесной зелёный primary, янтарный акцент, терракотовый расход.
    Светлая + тёмная темы. Шрифты: Inter + JetBrains Mono. */
 
 @import url("https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400;14..32,500;14..32,600;14..32,700&family=JetBrains+Mono:wght@400;500;600&display=swap");
 
 /* ── Токены: светлая тема ───────────────────────────────────── */
 :root {
-  /* Primary */
-  --primary: #0f719e;
+  /* Primary (лесной зелёный) */
+  --primary: #2e6f52;
   --on-primary: #ffffff;
-  --primary-container: #d3ebf5;
-  --on-primary-container: #06364c;
+  --primary-container: #b8efce;
+  --on-primary-container: #00210f;
 
-  /* Secondary */
-  --secondary: #5c6f79;
+  /* Secondary (приглушённый зелёно-серый) */
+  --secondary: #4f6354;
   --on-secondary: #ffffff;
-  --secondary-container: #dde4e8;
-  --on-secondary-container: #25333a;
+  --secondary-container: #d3e8d7;
+  --on-secondary-container: #0c1f14;
 
-  /* Tertiary (YNAB green) */
-  --tertiary: #8fbf2d;
+  /* Tertiary (янтарь — акцент) */
+  --tertiary: #8a5a16;
   --on-tertiary: #ffffff;
-  --tertiary-container: #e4f1bd;
-  --on-tertiary-container: #273600;
+  --tertiary-container: #ffdeb0;
+  --on-tertiary-container: #2c1600;
 
-  /* Error */
-  --error: #ba1a1a;
+  /* Error / расход (тёплый терракотовый) */
+  --error: #b5462e;
   --on-error: #ffffff;
-  --error-container: #ffdad6;
-  --on-error-container: #410002;
+  --error-container: #ffdbcf;
+  --on-error-container: #3a0a00;
 
-  /* Background */
-  --background: #e7ecef;
-  --on-background: #24313a;
+  /* Поверхности и текст — тёплый лён */
+  --background: #faf6ef;
+  --on-background: #2a2620;
+  --surface: #faf6ef;
+  --on-surface: #2a2620;
+  --surface-variant: #e4e0d3;
+  --on-surface-variant: #49473c;
 
-  /* Surface */
-  --surface: #e7ecef;
-  --on-surface: #24313a;
-
-  --surface-variant: #d5dde2;
-  --on-surface-variant: #55636c;
-
-  /* Material containers */
+  /* Тональные контейнеры */
   --surface-container-lowest: #ffffff;
-  --surface-container-low: #f3f5f6;
-  --surface-container: #e9edef;
-  --surface-container-high: #dde4e8;
-  --surface-container-highest: #d1dbe1;
+  --surface-container-low: #f4eee2;
+  --surface-container: #eee8da;
+  --surface-container-high: #e8e2d3;
+  --surface-container-highest: #e2dccd;
 
-  /* Borders */
-  --outline: #8898a1;
-  --outline-variant: #c4ced4;
+  /* Контуры */
+  --outline: #797667;
+  --outline-variant: #c9c5b4;
 
-  /* Inverse */
-  --inverse-surface: #2d3941;
-  --inverse-on-surface: #eef3f5;
+  /* Инверсия */
+  --inverse-surface: #2f2c25;
+  --inverse-on-surface: #f4eee2;
 
-  /* Finance */
-  --income: #8fbf2d;
-  --income-container: #e4f1bd;
-  --on-income-container: #273600;
-
-  --expense: #d45f4c;
+  /* Семантика финансов */
+  --income: #2e6f52;
+  --on-income-container: #00210f;
+  --income-container: #b8efce;
+  --expense: #b5462e;
   --transfer: var(--secondary);
 
-  /* App bar */
-  --app-bar: #0f719e;
-  --on-app-bar: #ffffff;
+  /* Верхняя панель приложения (лесная зелёная) */
+  --app-bar: #2e6f52;
+  --on-app-bar: #eaf3ea;
 
-  /* Shape */
+  /* Форма */
   --shape-xs: 4px;
   --shape-s: 8px;
   --shape-m: 12px;
@@ -77,77 +73,74 @@
   --shape-xl: 28px;
   --shape-full: 999px;
 
-  /* Elevation */
-  --elev-1: 0 1px 2px rgba(20, 30, 40, 0.06), 0 1px 3px rgba(20, 30, 40, 0.08);
+  /* Высоты (тёплые тени) */
+  --elev-1: 0 1px 2px rgba(50, 40, 20, 0.06), 0 1px 3px rgba(50, 40, 20, 0.08);
+  --elev-2: 0 1px 2px rgba(50, 40, 20, 0.06), 0 2px 6px rgba(50, 40, 20, 0.1);
+  --elev-3: 0 2px 4px rgba(50, 40, 20, 0.08), 0 6px 12px rgba(50, 40, 20, 0.12);
 
-  --elev-2: 0 1px 2px rgba(20, 30, 40, 0.06), 0 2px 6px rgba(20, 30, 40, 0.1);
-
-  --elev-3: 0 2px 4px rgba(20, 30, 40, 0.08), 0 6px 12px rgba(20, 30, 40, 0.12);
-
-  /* Motion */
+  /* Движение */
   --spring: 360ms cubic-bezier(0.2, 0.9, 0.25, 1.18);
   --emphasized: 280ms cubic-bezier(0.2, 0, 0, 1);
 
-  /* Layout */
+  /* Сетка */
   --space: 16px;
   --content-max: 720px;
 
   color-scheme: light;
-
   font-family: "Inter", system-ui, sans-serif;
   font-synthesis: none;
   -webkit-font-smoothing: antialiased;
 }
 
-/* ── Токены: тёмная тема (сине-стальная) ────────────────────── */
+/* ── Токены: тёмная тема (тёплый лес) ───────────────────────── */
 [data-theme="dark"] {
-  --primary: #99ccf2;
-  --on-primary: #00344f;
-  --primary-container: #114b71;
-  --on-primary-container: #cce5f8;
+  --primary: #9dd5b0;
+  --on-primary: #00391f;
+  --primary-container: #16513a;
+  --on-primary-container: #b8efce;
 
-  --secondary: #b6c9d6;
-  --on-secondary: #21333d;
-  --secondary-container: #374955;
-  --on-secondary-container: #d6e7f2;
+  --secondary: #b7cabb;
+  --on-secondary: #233428;
+  --secondary-container: #394b3e;
+  --on-secondary-container: #d3e8d7;
 
-  --tertiary: #b6d56a;
-  --on-tertiary: #243600;
-  --tertiary-container: #374f00;
-  --on-tertiary-container: #d3ed9a;
+  --tertiary: #f0c07a;
+  --on-tertiary: #472a00;
+  --tertiary-container: #663d00;
+  --on-tertiary-container: #ffdeb0;
 
-  --error: #ffb4ab;
-  --on-error: #690005;
-  --error-container: #93000a;
-  --on-error-container: #ffdad6;
+  --error: #ffb4a3;
+  --on-error: #5f1300;
+  --error-container: #842110;
+  --on-error-container: #ffdbcf;
 
-  --background: #101820;
-  --on-background: #dee3e8;
-  --surface: #101820;
-  --on-surface: #dee3e8;
-  --surface-variant: #41484d;
-  --on-surface-variant: #c2ced6;
+  --background: #1a1813;
+  --on-background: #ece5d8;
+  --surface: #1a1813;
+  --on-surface: #ece5d8;
+  --surface-variant: #49473c;
+  --on-surface-variant: #c9c5b4;
 
-  --surface-container-lowest: #0b121a;
-  --surface-container-low: #161f27;
-  --surface-container: #1a242c;
-  --surface-container-high: #242e37;
-  --surface-container-highest: #2f3942;
+  --surface-container-lowest: #14120d;
+  --surface-container-low: #221f18;
+  --surface-container: #26231b;
+  --surface-container-high: #312d25;
+  --surface-container-highest: #3c382f;
 
-  --outline: #899298;
-  --outline-variant: #41484d;
+  --outline: #928f80;
+  --outline-variant: #49473c;
 
-  --inverse-surface: #dee3e8;
-  --inverse-on-surface: #2b363d;
+  --inverse-surface: #ece5d8;
+  --inverse-on-surface: #2f2c25;
 
-  --income: #b6d56a;
-  --on-income-container: #d3ed9a;
-  --income-container: #2b4500;
-  --expense: #ffb4ab;
+  --income: #9dd5b0;
+  --on-income-container: #b8efce;
+  --income-container: #16513a;
+  --expense: #ffb4a3;
   --transfer: var(--secondary);
 
-  --app-bar: #0f2e44;
-  --on-app-bar: #e6eef4;
+  --app-bar: #163a29;
+  --on-app-bar: #d9ecdf;
 
   --elev-1: 0 1px 2px rgba(0, 0, 0, 0.3), 0 1px 3px rgba(0, 0, 0, 0.4);
   --elev-2: 0 1px 2px rgba(0, 0, 0, 0.3), 0 2px 6px rgba(0, 0, 0, 0.45);
@@ -159,43 +152,43 @@
 /* Без явной темы — следуем системной */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --primary: #99ccf2;
-    --on-primary: #00344f;
-    --primary-container: #114b71;
-    --on-primary-container: #cce5f8;
-    --secondary: #b6c9d6;
-    --on-secondary: #21333d;
-    --secondary-container: #374955;
-    --on-secondary-container: #d6e7f2;
-    --tertiary: #b6d56a;
-    --on-tertiary: #243600;
-    --tertiary-container: #374f00;
-    --on-tertiary-container: #d3ed9a;
-    --error: #ffb4ab;
-    --on-error: #690005;
-    --error-container: #93000a;
-    --on-error-container: #ffdad6;
-    --background: #101820;
-    --on-background: #dee3e8;
-    --surface: #101820;
-    --on-surface: #dee3e8;
-    --surface-variant: #41484d;
-    --on-surface-variant: #c2ced6;
-    --surface-container-lowest: #0b121a;
-    --surface-container-low: #161f27;
-    --surface-container: #1a242c;
-    --surface-container-high: #242e37;
-    --surface-container-highest: #2f3942;
-    --outline: #899298;
-    --outline-variant: #41484d;
-    --inverse-surface: #dee3e8;
-    --inverse-on-surface: #2b363d;
-    --income: #b6d56a;
-    --on-income-container: #d3ed9a;
-    --income-container: #2b4500;
-    --expense: #ffb4ab;
-    --app-bar: #0f2e44;
-    --on-app-bar: #e6eef4;
+    --primary: #9dd5b0;
+    --on-primary: #00391f;
+    --primary-container: #16513a;
+    --on-primary-container: #b8efce;
+    --secondary: #b7cabb;
+    --on-secondary: #233428;
+    --secondary-container: #394b3e;
+    --on-secondary-container: #d3e8d7;
+    --tertiary: #f0c07a;
+    --on-tertiary: #472a00;
+    --tertiary-container: #663d00;
+    --on-tertiary-container: #ffdeb0;
+    --error: #ffb4a3;
+    --on-error: #5f1300;
+    --error-container: #842110;
+    --on-error-container: #ffdbcf;
+    --background: #1a1813;
+    --on-background: #ece5d8;
+    --surface: #1a1813;
+    --on-surface: #ece5d8;
+    --surface-variant: #49473c;
+    --on-surface-variant: #c9c5b4;
+    --surface-container-lowest: #14120d;
+    --surface-container-low: #221f18;
+    --surface-container: #26231b;
+    --surface-container-high: #312d25;
+    --surface-container-highest: #3c382f;
+    --outline: #928f80;
+    --outline-variant: #49473c;
+    --inverse-surface: #ece5d8;
+    --inverse-on-surface: #2f2c25;
+    --income: #9dd5b0;
+    --on-income-container: #b8efce;
+    --income-container: #16513a;
+    --expense: #ffb4a3;
+    --app-bar: #163a29;
+    --on-app-bar: #d9ecdf;
     --elev-1: 0 1px 2px rgba(0, 0, 0, 0.3), 0 1px 3px rgba(0, 0, 0, 0.4);
     --elev-2: 0 1px 2px rgba(0, 0, 0, 0.3), 0 2px 6px rgba(0, 0, 0, 0.45);
     --elev-3: 0 2px 4px rgba(0, 0, 0, 0.4), 0 6px 12px rgba(0, 0, 0, 0.5);
@@ -266,7 +259,7 @@ a {
   color: var(--expense);
 }
 
-/* ── Layout / шапка (синяя панель YNAB) ─────────────────────── */
+/* ── Layout / шапка (лесная панель) ─────────────────────────── */
 .layout {
   min-height: 100vh;
   background: var(--background);
@@ -277,9 +270,7 @@ a {
   align-items: center;
   gap: var(--space);
   padding: 10px 20px;
-
-  background: linear-gradient(180deg, #1b82b3 0%, #0f719e 100%);
-
+  background: var(--app-bar);
   position: sticky;
   top: 0;
   z-index: 10;
@@ -314,12 +305,8 @@ a {
 }
 
 .nav a.active {
-  background: rgba(255, 255, 255, 0.18);
+  background: color-mix(in srgb, var(--on-app-bar) 22%, transparent);
   color: var(--on-app-bar);
-
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25);
-
-  backdrop-filter: blur(8px);
 }
 
 .spacer {
@@ -331,7 +318,6 @@ a {
   font-size: 0.9rem;
 }
 
-/* Кнопки-ссылки в шапке (тема, выход) — на синем фоне */
 .header .link {
   color: var(--on-app-bar);
 }
