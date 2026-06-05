@@ -1,29 +1,29 @@
 /* anfinances — дизайн-система.
-   Material 3 Expressive, seed: Indigo. Светлая + тёмная темы.
-   Containment (контейнеры на каждый элемент), pill-кнопки,
-   пружинная подача. Шрифты: Inter (текст) + JetBrains Mono (цифры). */
+   Material 3 Expressive, палитра YNAB 4: синий primary + синяя верхняя
+   панель, прохладно-белые поверхности, лаймово-зелёный акцент/доход.
+   Светлая + тёмная темы. Шрифты: Inter + JetBrains Mono. */
 
 @import url("https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400;14..32,500;14..32,600;14..32,700&family=JetBrains+Mono:wght@400;500;600&display=swap");
 
-/* ── Токены: светлая тема (default) ─────────────────────────── */
+/* ── Токены: светлая тема ───────────────────────────────────── */
 :root {
-  /* Primary (Indigo) */
-  --primary: #4b53c9;
+  /* Primary (синий YNAB) */
+  --primary: #14679c;
   --on-primary: #ffffff;
-  --primary-container: #e0e0ff;
-  --on-primary-container: #060764;
+  --primary-container: #cce5f8;
+  --on-primary-container: #00344f;
 
-  /* Secondary */
-  --secondary: #5b5d72;
+  /* Secondary (прохладный сине-серый) */
+  --secondary: #4e616d;
   --on-secondary: #ffffff;
-  --secondary-container: #e0e0f9;
-  --on-secondary-container: #181a2c;
+  --secondary-container: #d6e7f2;
+  --on-secondary-container: #0b1f2b;
 
-  /* Tertiary (акцент) */
-  --tertiary: #77536c;
+  /* Tertiary (лаймово-зелёный акцент YNAB) */
+  --tertiary: #4c7a00;
   --on-tertiary: #ffffff;
-  --tertiary-container: #ffd7f0;
-  --on-tertiary-container: #2d1227;
+  --tertiary-container: #d3ed9a;
+  --on-tertiary-container: #142000;
 
   /* Error */
   --error: #ba1a1a;
@@ -31,37 +31,41 @@
   --error-container: #ffdad6;
   --on-error-container: #410002;
 
-  /* Поверхности и текст */
-  --background: #fbf8ff;
-  --on-background: #1b1b21;
-  --surface: #fbf8ff;
-  --on-surface: #1b1b21;
-  --surface-variant: #e4e1ec;
-  --on-surface-variant: #46464f;
+  /* Поверхности и текст — прохладно-белые */
+  --background: #f4f8fb;
+  --on-background: #16242c;
+  --surface: #f4f8fb;
+  --on-surface: #16242c;
+  --surface-variant: #dde4e9;
+  --on-surface-variant: #41484d;
 
-  /* Тональные контейнеры (механизм containment в M3E) */
+  /* Тональные контейнеры (светло-голубые, как строки YNAB) */
   --surface-container-lowest: #ffffff;
-  --surface-container-low: #f5f2fa;
-  --surface-container: #efedf4;
-  --surface-container-high: #e9e7ef;
-  --surface-container-highest: #e3e1e9;
+  --surface-container-low: #eef4f9;
+  --surface-container: #e6eff6;
+  --surface-container-high: #dce8f1;
+  --surface-container-highest: #d2e1ec;
 
   /* Контуры */
-  --outline: #777680;
-  --outline-variant: #c7c5d0;
+  --outline: #6f7c84;
+  --outline-variant: #c2ced6;
 
-  /* Инверсия (снэкбары и т.п.) */
-  --inverse-surface: #303036;
-  --inverse-on-surface: #f2eff7;
+  /* Инверсия */
+  --inverse-surface: #2b363d;
+  --inverse-on-surface: #eef4f9;
 
   /* Семантика финансов */
-  --income: #2e6a45;
-  --on-income-container: #00210f;
-  --income-container: #b0f1c2;
-  --expense: #ba1a1a;
+  --income: #4c7a00;
+  --on-income-container: #142000;
+  --income-container: #d3ed9a;
+  --expense: #b3261e;
   --transfer: var(--secondary);
 
-  /* Форма (M3 shape scale) */
+  /* Верхняя панель приложения (синяя, как боковая в YNAB) */
+  --app-bar: #14679c;
+  --on-app-bar: #ffffff;
+
+  /* Форма */
   --shape-xs: 4px;
   --shape-s: 8px;
   --shape-m: 12px;
@@ -69,12 +73,12 @@
   --shape-xl: 28px;
   --shape-full: 999px;
 
-  /* Высоты (мягкие тени) */
-  --elev-1: 0 1px 2px rgba(0, 0, 0, 0.06), 0 1px 3px rgba(0, 0, 0, 0.08);
-  --elev-2: 0 1px 2px rgba(0, 0, 0, 0.06), 0 2px 6px rgba(0, 0, 0, 0.1);
-  --elev-3: 0 2px 4px rgba(0, 0, 0, 0.08), 0 6px 12px rgba(0, 0, 0, 0.12);
+  /* Высоты */
+  --elev-1: 0 1px 2px rgba(10, 30, 50, 0.06), 0 1px 3px rgba(10, 30, 50, 0.08);
+  --elev-2: 0 1px 2px rgba(10, 30, 50, 0.06), 0 2px 6px rgba(10, 30, 50, 0.1);
+  --elev-3: 0 2px 4px rgba(10, 30, 50, 0.08), 0 6px 12px rgba(10, 30, 50, 0.12);
 
-  /* Движение: пружинная кривая M3E (лёгкий overshoot) */
+  /* Движение */
   --spring: 360ms cubic-bezier(0.2, 0.9, 0.25, 1.18);
   --emphasized: 280ms cubic-bezier(0.2, 0, 0, 1);
 
@@ -88,52 +92,55 @@
   -webkit-font-smoothing: antialiased;
 }
 
-/* ── Токены: тёмная тема ────────────────────────────────────── */
+/* ── Токены: тёмная тема (сине-стальная) ────────────────────── */
 [data-theme="dark"] {
-  --primary: #bfc2ff;
-  --on-primary: #15179a;
-  --primary-container: #3338a0;
-  --on-primary-container: #e0e0ff;
+  --primary: #99ccf2;
+  --on-primary: #00344f;
+  --primary-container: #114b71;
+  --on-primary-container: #cce5f8;
 
-  --secondary: #c4c5dd;
-  --on-secondary: #2d2f42;
-  --secondary-container: #434559;
-  --on-secondary-container: #e0e0f9;
+  --secondary: #b6c9d6;
+  --on-secondary: #21333d;
+  --secondary-container: #374955;
+  --on-secondary-container: #d6e7f2;
 
-  --tertiary: #e6b9d4;
-  --on-tertiary: #44263b;
-  --tertiary-container: #5d3c52;
-  --on-tertiary-container: #ffd7f0;
+  --tertiary: #b6d56a;
+  --on-tertiary: #243600;
+  --tertiary-container: #374f00;
+  --on-tertiary-container: #d3ed9a;
 
   --error: #ffb4ab;
   --on-error: #690005;
   --error-container: #93000a;
   --on-error-container: #ffdad6;
 
-  --background: #121318;
-  --on-background: #e4e1e9;
-  --surface: #121318;
-  --on-surface: #e4e1e9;
-  --surface-variant: #46464f;
-  --on-surface-variant: #c7c5d0;
+  --background: #101820;
+  --on-background: #dee3e8;
+  --surface: #101820;
+  --on-surface: #dee3e8;
+  --surface-variant: #41484d;
+  --on-surface-variant: #c2ced6;
 
-  --surface-container-lowest: #0d0e13;
-  --surface-container-low: #1b1b21;
-  --surface-container: #1f1f25;
-  --surface-container-high: #292a2f;
-  --surface-container-highest: #34343a;
+  --surface-container-lowest: #0b121a;
+  --surface-container-low: #161f27;
+  --surface-container: #1a242c;
+  --surface-container-high: #242e37;
+  --surface-container-highest: #2f3942;
 
-  --outline: #918f9a;
-  --outline-variant: #46464f;
+  --outline: #899298;
+  --outline-variant: #41484d;
 
-  --inverse-surface: #e4e1e9;
-  --inverse-on-surface: #303036;
+  --inverse-surface: #dee3e8;
+  --inverse-on-surface: #2b363d;
 
-  --income: #95d5ab;
-  --on-income-container: #b0f1c2;
-  --income-container: #14512f;
+  --income: #b6d56a;
+  --on-income-container: #d3ed9a;
+  --income-container: #2b4500;
   --expense: #ffb4ab;
   --transfer: var(--secondary);
+
+  --app-bar: #0f2e44;
+  --on-app-bar: #e6eef4;
 
   --elev-1: 0 1px 2px rgba(0, 0, 0, 0.3), 0 1px 3px rgba(0, 0, 0, 0.4);
   --elev-2: 0 1px 2px rgba(0, 0, 0, 0.3), 0 2px 6px rgba(0, 0, 0, 0.45);
@@ -145,41 +152,43 @@
 /* Без явной темы — следуем системной */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --primary: #bfc2ff;
-    --on-primary: #15179a;
-    --primary-container: #3338a0;
-    --on-primary-container: #e0e0ff;
-    --secondary: #c4c5dd;
-    --on-secondary: #2d2f42;
-    --secondary-container: #434559;
-    --on-secondary-container: #e0e0f9;
-    --tertiary: #e6b9d4;
-    --on-tertiary: #44263b;
-    --tertiary-container: #5d3c52;
-    --on-tertiary-container: #ffd7f0;
+    --primary: #99ccf2;
+    --on-primary: #00344f;
+    --primary-container: #114b71;
+    --on-primary-container: #cce5f8;
+    --secondary: #b6c9d6;
+    --on-secondary: #21333d;
+    --secondary-container: #374955;
+    --on-secondary-container: #d6e7f2;
+    --tertiary: #b6d56a;
+    --on-tertiary: #243600;
+    --tertiary-container: #374f00;
+    --on-tertiary-container: #d3ed9a;
     --error: #ffb4ab;
     --on-error: #690005;
     --error-container: #93000a;
     --on-error-container: #ffdad6;
-    --background: #121318;
-    --on-background: #e4e1e9;
-    --surface: #121318;
-    --on-surface: #e4e1e9;
-    --surface-variant: #46464f;
-    --on-surface-variant: #c7c5d0;
-    --surface-container-lowest: #0d0e13;
-    --surface-container-low: #1b1b21;
-    --surface-container: #1f1f25;
-    --surface-container-high: #292a2f;
-    --surface-container-highest: #34343a;
-    --outline: #918f9a;
-    --outline-variant: #46464f;
-    --inverse-surface: #e4e1e9;
-    --inverse-on-surface: #303036;
-    --income: #95d5ab;
-    --on-income-container: #b0f1c2;
-    --income-container: #14512f;
+    --background: #101820;
+    --on-background: #dee3e8;
+    --surface: #101820;
+    --on-surface: #dee3e8;
+    --surface-variant: #41484d;
+    --on-surface-variant: #c2ced6;
+    --surface-container-lowest: #0b121a;
+    --surface-container-low: #161f27;
+    --surface-container: #1a242c;
+    --surface-container-high: #242e37;
+    --surface-container-highest: #2f3942;
+    --outline: #899298;
+    --outline-variant: #41484d;
+    --inverse-surface: #dee3e8;
+    --inverse-on-surface: #2b363d;
+    --income: #b6d56a;
+    --on-income-container: #d3ed9a;
+    --income-container: #2b4500;
     --expense: #ffb4ab;
+    --app-bar: #0f2e44;
+    --on-app-bar: #e6eef4;
     --elev-1: 0 1px 2px rgba(0, 0, 0, 0.3), 0 1px 3px rgba(0, 0, 0, 0.4);
     --elev-2: 0 1px 2px rgba(0, 0, 0, 0.3), 0 2px 6px rgba(0, 0, 0, 0.45);
     --elev-3: 0 2px 4px rgba(0, 0, 0, 0.4), 0 6px 12px rgba(0, 0, 0, 0.5);
@@ -234,7 +243,6 @@ a {
   color: var(--primary);
 }
 
-/* Цифры/деньги — моноширинный, табличные цифры */
 .num,
 .mono,
 .rates td:not(:first-child),
@@ -251,7 +259,7 @@ a {
   color: var(--expense);
 }
 
-/* ── Layout / шапка ─────────────────────────────────────────── */
+/* ── Layout / шапка (синяя панель YNAB) ─────────────────────── */
 .layout {
   min-height: 100vh;
   background: var(--background);
@@ -262,7 +270,7 @@ a {
   align-items: center;
   gap: var(--space);
   padding: 10px 20px;
-  background: var(--surface-container);
+  background: var(--app-bar);
   position: sticky;
   top: 0;
   z-index: 10;
@@ -272,7 +280,7 @@ a {
   font-weight: 700;
   font-size: 1.15rem;
   letter-spacing: -0.02em;
-  color: var(--on-surface);
+  color: var(--on-app-bar);
 }
 
 .nav {
@@ -281,7 +289,7 @@ a {
 }
 
 .nav a {
-  color: var(--on-surface-variant);
+  color: color-mix(in srgb, var(--on-app-bar) 80%, transparent);
   text-decoration: none;
   padding: 8px 16px;
   border-radius: var(--shape-full);
@@ -292,12 +300,13 @@ a {
 }
 
 .nav a:hover {
-  background: color-mix(in srgb, var(--on-surface) 8%, transparent);
+  background: color-mix(in srgb, var(--on-app-bar) 14%, transparent);
+  color: var(--on-app-bar);
 }
 
 .nav a.active {
-  background: var(--secondary-container);
-  color: var(--on-secondary-container);
+  background: color-mix(in srgb, var(--on-app-bar) 22%, transparent);
+  color: var(--on-app-bar);
 }
 
 .spacer {
@@ -305,8 +314,17 @@ a {
 }
 
 .user {
-  color: var(--on-surface-variant);
+  color: color-mix(in srgb, var(--on-app-bar) 75%, transparent);
   font-size: 0.9rem;
+}
+
+/* Кнопки-ссылки в шапке (тема, выход) — на синем фоне */
+.header .link {
+  color: var(--on-app-bar);
+}
+
+.header .link:hover {
+  background: color-mix(in srgb, var(--on-app-bar) 14%, transparent);
 }
 
 /* ── Контент ────────────────────────────────────────────────── */
@@ -330,7 +348,7 @@ a {
   font-weight: 600;
 }
 
-/* ── Карточка-контейнер (основа containment) ────────────────── */
+/* ── Карточка-контейнер ─────────────────────────────────────── */
 .card {
   background: var(--surface-container-low);
   border-radius: var(--shape-l);
@@ -377,13 +395,11 @@ button:disabled {
   filter: none;
 }
 
-/* Тональная (вторичное действие) */
 .btn-tonal {
   background: var(--secondary-container);
   color: var(--on-secondary-container);
 }
 
-/* Контурная */
 .btn-outline {
   background: transparent;
   color: var(--primary);
@@ -396,7 +412,6 @@ button:disabled {
   filter: none;
 }
 
-/* Текстовая (ссылка-кнопка) */
 .link,
 .btn-text {
   background: none;
@@ -425,7 +440,6 @@ button:disabled {
   background: color-mix(in srgb, var(--error) 10%, transparent);
 }
 
-/* FAB — плавающая кнопка добавления */
 .fab {
   position: fixed;
   right: 24px;
@@ -437,17 +451,17 @@ button:disabled {
   align-items: center;
   gap: 8px;
   border-radius: var(--shape-l);
-  background: var(--primary-container);
-  color: var(--on-primary-container);
+  background: var(--primary);
+  color: var(--on-primary);
   box-shadow: var(--elev-3);
   font-size: 1rem;
 }
 
 .fab:hover {
-  filter: brightness(1.02);
+  filter: brightness(1.04);
 }
 
-/* ── Сегментный переключатель (Расход/Доход/Перевод) ────────── */
+/* ── Сегментный переключатель ───────────────────────────────── */
 .segmented {
   display: inline-flex;
   background: var(--surface-container-high);
@@ -474,7 +488,7 @@ button:disabled {
   color: var(--on-primary);
 }
 
-/* ── Чипы (фильтры) ─────────────────────────────────────────── */
+/* ── Чипы ───────────────────────────────────────────────────── */
 .chip {
   display: inline-flex;
   align-items: center;
@@ -494,7 +508,7 @@ button:disabled {
   box-shadow: none;
 }
 
-/* ── Поля ввода (M3 outlined) ───────────────────────────────── */
+/* ── Поля ввода ─────────────────────────────────────────────── */
 .form {
   display: flex;
   flex-direction: column;
