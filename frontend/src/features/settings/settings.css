@@ -1,0 +1,35 @@
+/* Настройки. Подключается в main.tsx. */
+
+.set-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 0;
+  border-top: 1px solid var(--outline-variant);
+}
+
+.set-row:first-of-type {
+  border-top: none;
+}
+
+.set-label {
+  color: var(--on-surface-variant);
+}
+
+.set-note {
+  color: var(--on-surface-variant);
+  font-size: 0.9rem;
+}
+
+/* Email-ссылка в шапке ведёт в настройки */
+.header a.user {
+  text-decoration: none;
+  border-radius: var(--shape-full);
+  padding: 6px 10px;
+  transition: background var(--spring);
+}
+
+.header a.user:hover {
+  background: color-mix(in srgb, var(--on-app-bar) 14%, transparent);
+}

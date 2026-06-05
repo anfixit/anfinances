@@ -21,7 +21,9 @@ export function Layout() {
         </nav>
         <span className="spacer" />
         <ThemeToggle />
-        <span className="user">{user?.email}</span>
+        <NavLink to="/settings" className="user">
+          {user?.email}
+        </NavLink>
         <button type="button" className="link" onClick={() => void logout()}>
           Выйти
         </button>
