@@ -57,7 +57,7 @@ Settings → Secrets and variables → Actions → **Variables**:
 
 ## Access the app
 
-While there's no domain, the app is at `http://<SSH_HOST>:<HTTP_PORT>` (e.g. `http://213.171.28.210:8080`). `COOKIE_SECURE` is `false` because the connection is plain HTTP.
+While there's no domain, the app is at `http://<SSH_HOST>:<HTTP_PORT>` (e.g. `http://203.0.113.10:8080`). `COOKIE_SECURE` is `false` because the connection is plain HTTP.
 
 ## When you get a domain
 
@@ -68,4 +68,4 @@ While there's no domain, the app is at `http://<SSH_HOST>:<HTTP_PORT>` (e.g. `ht
 
 - The deploy uses [`appleboy/ssh-action`](https://github.com/appleboy/ssh-action). Secrets are passed via `envs:` (kept out of the shell history) and interpolated into the `.env` heredoc on the server.
 - Pin actions to a commit SHA instead of a tag if you want stricter supply-chain guarantees.
-- Because you posted the server IP/user publicly, rotate the SSH key after first setup.
+- If the server IP/user was ever exposed publicly, rotate the SSH key.

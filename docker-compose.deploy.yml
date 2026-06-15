@@ -14,7 +14,9 @@ services:
     restart: always
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-anfinances}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-anfinances}
+      # Без дефолта: если секрет не дорендерился — compose упадёт громко,
+      # а не поднимет прод с предсказуемым паролем "anfinances".
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
       POSTGRES_DB: ${POSTGRES_DB:-anfinances}
     volumes:
       - postgres_data:/var/lib/postgresql/data

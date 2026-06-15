@@ -140,7 +140,6 @@ anfinances/
 
 - [x] Backend (all domains) and frontend (dashboard, transactions, budgets, recurring, accounts, categories, currencies, settings, backup)
 - [ ] List & restore archived accounts (`?include_archived`)
-- [ ] Migration script: Google Sheets → PostgreSQL
 - [ ] Google OAuth (v1.1)
 - [ ] Tags, bank CSV parsers (v2.0)
 

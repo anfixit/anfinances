@@ -93,4 +93,4 @@ If you prefer zero-config HTTPS, front the stack with [Caddy](https://caddyserve
 
 ## Importing existing data
 
-To bring data from the old Google Sheets system, use the backend migration script (`scripts/migrate_from_sheets.py`) or restore a JSON backup via Settings → Data → Restore (`POST /api/v1/import/all`).
+To restore data, use a JSON backup via Settings → Data → Restore (`POST /api/v1/import/all`).

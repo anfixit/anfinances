@@ -16,6 +16,10 @@ services:
   postgres:
     ports: !reset []
     restart: always
+    environment:
+      # В проде пароль обязателен: без него compose падает (а не берёт
+      # дефолт "anfinances" из базового docker-compose.yml).
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
 
   backend:
     restart: always

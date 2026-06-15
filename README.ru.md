@@ -64,7 +64,7 @@ anfinances — менеджер личных финансов, который т
 Нужно: Docker + Docker Compose.
 
 ```bash
-git clone https://github.com/< you >/anfinances.git
+git clone https://github.com/<you>/anfinances.git
 cd anfinances
 
 cp backend/.env.example backend/.env
@@ -140,7 +140,6 @@ anfinances/
 
 - [x] Бэкенд (все домены) и фронтенд (дашборд, операции, бюджет, план-минимум, счета, категории, валюты, настройки, бэкап)
 - [ ] Просмотр и восстановление архивных счетов (`?include_archived`)
-- [ ] Скрипт миграции: Google Sheets → PostgreSQL
 - [ ] Google OAuth (v1.1)
 - [ ] Теги, парсеры банковских CSV (v2.0)
 
