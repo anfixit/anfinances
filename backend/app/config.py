@@ -7,7 +7,7 @@
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field, PostgresDsn, SecretStr, computed_field
+from pydantic import Field, PostgresDsn, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 AuthMode = Literal["single_user", "multi_user_no_verify", "multi_user"]
@@ -37,34 +37,24 @@ class Settings(BaseSettings):
     postgres_host: str = "localhost"
     postgres_port: int = 5432
     postgres_user: str = "anfinances"
-    postgres_password: str = "anfinances"
+    postgres_password: SecretStr = SecretStr("anfinances")
     postgres_db: str = "anfinances"
 
     db_pool_size: int = 5
     db_max_overflow: int = 10
     db_echo: bool = False
 
-    @computed_field  # type: ignore[prop-decorator]
     @property
     def database_url(self) -> PostgresDsn:
-        """Async URL для SQLAlchemy (драйвер asyncpg)."""
-        return PostgresDsn.build(  # type: ignore[return-value]
-            scheme="postgresql+asyncpg",
-            username=self.postgres_user,
-            password=self.postgres_password,
-            host=self.postgres_host,
-            port=self.postgres_port,
-            path=self.postgres_db,
-        )
+        """Async URL для SQLAlchemy (драйвер asyncpg).
 
-    @computed_field  # type: ignore[prop-decorator]
-    @property
-    def database_url_sync(self) -> PostgresDsn:
-        """URL для Alembic (env.py работает в async-режиме)."""
+        Обычный property (не computed_field): DSN с паролем НЕ должен
+        попадать в model_dump()/JSON-схему и, как следствие, в логи.
+        """
         return PostgresDsn.build(  # type: ignore[return-value]
             scheme="postgresql+asyncpg",
             username=self.postgres_user,
-            password=self.postgres_password,
+            password=self.postgres_password.get_secret_value(),
             host=self.postgres_host,
             port=self.postgres_port,
             path=self.postgres_db,

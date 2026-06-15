@@ -134,6 +134,7 @@ def register_exception_handlers(app: FastAPI) -> None:
             405: "METHOD_NOT_ALLOWED",
             409: "ALREADY_EXISTS",
             422: "VALIDATION_ERROR",
+            503: "SERVICE_UNAVAILABLE",
         }
         return _error_response(
             code_map.get(exc.status_code, "INTERNAL_ERROR"),

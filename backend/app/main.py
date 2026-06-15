@@ -35,6 +35,13 @@ from app.domains.transactions.routes import (
 )
 from app.domains.users.routes import router as users_router
 
+# Конфигурируем логирование до создания приложения, чтобы стартовые
+# сообщения lifespan шли уже в нужном формате/уровне.
+logging.basicConfig(
+    level=get_settings().log_level,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
+
 logger = logging.getLogger("anfinances")
 
 
@@ -62,16 +69,16 @@ async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
         async with engine.connect() as conn:
             await conn.execute(text("SELECT 1"))
         logger.info("Database connection OK")
-    except Exception as exc:
-        logger.error("Database connection failed at startup: %s", exc)
+    except Exception:
+        logger.error("Database connection failed at startup", exc_info=True)
         # Не падаем: приложение поднимется, /health/ready даст не-ready.
         # Это удобнее в docker-compose: контейнер не уходит в restart-loop.
 
     try:
         async with AsyncSessionLocal() as session:
             await bootstrap_single_user(session, settings)
-    except Exception as exc:
-        logger.error("single_user bootstrap failed: %s", exc)
+    except Exception:
+        logger.error("single_user bootstrap failed", exc_info=True)
 
     try:
         async with AsyncSessionLocal() as session:
@@ -87,17 +94,11 @@ async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
                 SqlCurrencyRepository(session),
                 ErApiRatesProvider(settings),
             )
-
             await svc.refresh_rates()
             await session.commit()
-
             logger.info("Currency rates refreshed on startup")
-
-    except Exception as exc:
-        logger.warning(
-            "Rates refresh on startup failed: %s",
-            exc,
-        )
+    except Exception:
+        logger.warning("Rates refresh on startup failed", exc_info=True)
 
     yield
 
@@ -133,14 +134,13 @@ async def health_ready(db: DbSession) -> dict[str, Any]:
 
     Делает SELECT 1 к БД. Если БД лежит — возвращает 503.
     """
+    from fastapi import HTTPException
+
     try:
         result = await db.execute(text("SELECT 1"))
         result.scalar_one()
     except Exception as exc:
         logger.warning("Readiness check failed: %s", exc)
-
-        from fastapi import HTTPException
-
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Database is not available",
@@ -179,46 +179,26 @@ def create_app() -> FastAPI:
     register_middleware(app, settings)
     register_exception_handlers(app)
 
-    # Health endpoints — под /api/v1.
-    app.include_router(health_router, prefix=settings.api_v1_prefix)
+    prefix = settings.api_v1_prefix
 
-    app.include_router(auth_router, prefix=settings.api_v1_prefix)
-
-    app.include_router(currencies_router, prefix=settings.api_v1_prefix)
-
-    app.include_router(accounts_router, prefix=settings.api_v1_prefix)
-
-    app.include_router(categories_router, prefix=settings.api_v1_prefix)
-
-    app.include_router(transactions_router, prefix=settings.api_v1_prefix)
-
-    app.include_router(transfer_router, prefix=settings.api_v1_prefix)
-
-    app.include_router(summary_router, prefix=settings.api_v1_prefix)
-
-    app.include_router(budgets_router, prefix=settings.api_v1_prefix)
-
-    app.include_router(recurring_router, prefix=settings.api_v1_prefix)
-
-    app.include_router(users_router, prefix=settings.api_v1_prefix)
-
-    app.include_router(export_router, prefix=settings.api_v1_prefix)
-
-    app.include_router(import_router, prefix=settings.api_v1_prefix)
-
-    app.include_router(health_router, prefix=settings.api_v1_prefix)
-
-    app.include_router(config_router, prefix=settings.api_v1_prefix)
-
-    app.include_router(auth_router, prefix=settings.api_v1_prefix)
+    # Каждый роутер подключается РОВНО один раз.
+    app.include_router(health_router, prefix=prefix)
+    app.include_router(config_router, prefix=prefix)
+    app.include_router(auth_router, prefix=prefix)
+    app.include_router(currencies_router, prefix=prefix)
+    app.include_router(accounts_router, prefix=prefix)
+    app.include_router(categories_router, prefix=prefix)
+    app.include_router(transactions_router, prefix=prefix)
+    app.include_router(transfer_router, prefix=prefix)
+    app.include_router(summary_router, prefix=prefix)
+    app.include_router(budgets_router, prefix=prefix)
+    app.include_router(recurring_router, prefix=prefix)
+    app.include_router(users_router, prefix=prefix)
+    app.include_router(export_router, prefix=prefix)
+    app.include_router(import_router, prefix=prefix)
 
     return app
 
 
 # Объект, который запускает uvicorn: `uvicorn app.main:app`.
 app = create_app()
-
-logging.basicConfig(
-    level=get_settings().log_level,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-)

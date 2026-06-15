@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "anfinances — личный финансовый трекер. Backend на FastAPI + PostgreSQL."
 readme = "README.md"
 requires-python = ">=3.13"
-license = { text = "MIT" }
+license = "AGPL-3.0-or-later"
 authors = [{ name = "anfinances" }]
 
 dependencies = [
@@ -75,5 +75,3 @@ pythonpath = ["."]
 python_version = "3.13"
 strict = true
 plugins = ["pydantic.mypy"]
-
-zxcvbn = 4.4

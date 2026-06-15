@@ -13,8 +13,10 @@ from app.config import Settings
 from app.core.exceptions import (
     AlreadyExistsError,
     UnauthorizedError,
+    ValidationFailedError,
 )
 from app.core.password_policy import (
+    PasswordPolicyError,
     normalize_password,
     validate_password,
 )
@@ -58,11 +60,18 @@ class AuthService:
         if await self._repo.get_user_by_email(email):
             raise AlreadyExistsError("Email уже зарегистрирован.")
 
-        validate_password(password, self._settings, user_inputs=[email])
+        # Нарушение парольной политики — это ошибка ввода (422),
+        # а не конфликт ресурса. Переводим в доменное исключение,
+        # которое единый handler отдаст как VALIDATION_ERROR.
+        try:
+            validate_password(password, self._settings, user_inputs=[email])
+        except PasswordPolicyError as exc:
+            raise ValidationFailedError(str(exc)) from exc
+
         try:
             await self._pwned.assert_not_pwned(normalize_password(password))
         except PwnedError as exc:
-            raise AlreadyExistsError(str(exc)) from exc
+            raise ValidationFailedError(str(exc)) from exc
 
         user = User(
             email=email,

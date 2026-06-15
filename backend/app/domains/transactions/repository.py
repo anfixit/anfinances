@@ -61,6 +61,8 @@ class TransactionRepository(Protocol):
         self, transfer_id: uuid.UUID
     ) -> list[Transaction]: ...
 
+    async def delete_transfer(self, transfer: Transfer) -> None: ...
+
 
 class SqlTransactionRepository:
     def __init__(self, session: AsyncSession) -> None:
@@ -137,3 +139,6 @@ class SqlTransactionRepository:
             select(Transaction).where(Transaction.transfer_id == transfer_id)
         )
         return list(result.scalars().all())
+
+    async def delete_transfer(self, transfer: Transfer) -> None:
+        await self._session.delete(transfer)

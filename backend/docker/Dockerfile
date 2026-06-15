@@ -14,10 +14,12 @@ ENV UV_PROJECT_ENVIRONMENT=/opt/venv \
 WORKDIR /app
 COPY pyproject.toml uv.lock ./
 
-# Ставим только зависимости (не сам проект): слой кешируется по lock-файлу
-# и не пересобирается при изменении кода приложения.
+# Ставим только прод-зависимости (без dev-группы и без самого проекта):
+# слой кешируется по lock-файлу и не пересобирается при изменении кода.
+# --no-dev убирает из образа pytest/ruff/mypy/aiosqlite — меньше размер
+# и поверхность атаки.
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-install-project
+    uv sync --frozen --no-dev --no-install-project
 
 # ── runtime: тонкий образ только с venv и кодом ────────────────────────
 FROM python:3.13-slim AS runtime
