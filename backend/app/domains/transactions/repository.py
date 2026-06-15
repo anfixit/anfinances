@@ -84,11 +84,12 @@ class SqlTransactionRepository:
             stmt = stmt.where(Transaction.kind == flt.kind)
 
         # Курсор: (date, id) строго меньше предыдущей страницы.
+        # SQLAlchemy перегружает сравнение кортежей колонок в SQL row
+        # value; mypy этого не знает — точечный ignore на одной строке.
         if flt.cursor_date is not None and flt.cursor_id is not None:
-            stmt = stmt.where(
-                (Transaction.date, Transaction.id)
-                < (flt.cursor_date, flt.cursor_id)
-            )
+            row = (Transaction.date, Transaction.id)
+            cursor = (flt.cursor_date, flt.cursor_id)
+            stmt = stmt.where(row < cursor)  # type: ignore[operator]
 
         stmt = stmt.order_by(
             Transaction.date.desc(), Transaction.id.desc()

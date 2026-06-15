@@ -75,3 +75,9 @@ pythonpath = ["."]
 python_version = "3.13"
 strict = true
 plugins = ["pydantic.mypy"]
+
+# У zxcvbn и openpyxl нет официальных type-stubs — глушим только
+# missing-imports для них, не ослабляя strict для своего кода.
+[[tool.mypy.overrides]]
+module = ["zxcvbn", "zxcvbn.*", "openpyxl", "openpyxl.*"]
+ignore_missing_imports = true

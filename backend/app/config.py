@@ -51,7 +51,7 @@ class Settings(BaseSettings):
         Обычный property (не computed_field): DSN с паролем НЕ должен
         попадать в model_dump()/JSON-схему и, как следствие, в логи.
         """
-        return PostgresDsn.build(  # type: ignore[return-value]
+        return PostgresDsn.build(
             scheme="postgresql+asyncpg",
             username=self.postgres_user,
             password=self.postgres_password.get_secret_value(),
@@ -105,4 +105,4 @@ def get_settings() -> Settings:
     создаётся один раз, .env читается один раз. В тестах можно
     переопределить через app.dependency_overrides.
     """
-    return Settings()  # type: ignore[call-arg]
+    return Settings()

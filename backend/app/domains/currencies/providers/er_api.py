@@ -5,6 +5,7 @@
 За Protocol, чтобы в тестах подменять без сети.
 """
 
+from collections.abc import Callable
 from decimal import Decimal
 from typing import Protocol
 
@@ -13,6 +14,8 @@ import httpx
 from app.config import Settings
 
 __all__ = ["ErApiRatesProvider", "RatesProvider", "RatesProviderError"]
+
+ClientFactory = Callable[[], httpx.AsyncClient]
 
 
 class RatesProviderError(Exception):
@@ -31,7 +34,7 @@ class ErApiRatesProvider:
     def __init__(
         self,
         settings: Settings,
-        client_factory: object | None = None,
+        client_factory: ClientFactory | None = None,
     ) -> None:
         self._url = settings.exchange_rate_api_url
         self._timeout = 10.0
@@ -39,7 +42,7 @@ class ErApiRatesProvider:
 
     def _make_client(self) -> httpx.AsyncClient:
         if self._client_factory is not None:
-            return self._client_factory()  # type: ignore[operator]
+            return self._client_factory()
         return httpx.AsyncClient(timeout=self._timeout)
 
     async def fetch_rates(self, base: str) -> dict[str, Decimal]:
