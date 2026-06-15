@@ -19,7 +19,10 @@ PW = "fluffy-zebra-canyon-marble-97"
 def _settings(**over: object) -> Settings:
     base: dict[str, object] = {"secret_key": "x" * 64}
     base.update(over)
-    return Settings(**base)  # type: ignore[arg-type]
+    return Settings(
+        _env_file=None,
+        **base,
+    )
 
 
 @pytest_asyncio.fixture

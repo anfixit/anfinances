@@ -63,8 +63,10 @@ class RecurringService:
     ) -> RecurringExpense:
         await self._validate_category(user_id, data.category_id)
         code = data.currency_code.upper()
-        amount_rub = await self._currencies.convert(
-            data.monthly_amount, code, _RUB
+        amount_rub = (
+            await self._currencies.convert(data.monthly_amount, code, _RUB)
+            if data.monthly_amount is not None
+            else None
         )
         item = RecurringExpense(
             user_id=user_id,
@@ -98,8 +100,12 @@ class RecurringService:
         # Пересчёт рублёвого эквивалента, если изменилась сумма
         # или валюта.
         if "monthly_amount" in fields or "currency_code" in fields:
-            item.amount_rub = await self._currencies.convert(
-                item.monthly_amount, item.currency_code or _RUB, _RUB
+            item.amount_rub = (
+                await self._currencies.convert(
+                    item.monthly_amount, item.currency_code or _RUB, _RUB
+                )
+                if item.monthly_amount is not None
+                else None
             )
         return item
 

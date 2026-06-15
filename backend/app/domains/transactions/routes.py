@@ -20,6 +20,7 @@ from app.domains.currencies.providers.er_api import (
 )
 from app.domains.currencies.repository import SqlCurrencyRepository
 from app.domains.currencies.service import CurrencyService
+from app.domains.transactions.models import Transaction
 from app.domains.transactions.repository import (
     SqlTransactionRepository,
     TransactionFilter,
@@ -167,7 +168,9 @@ async def delete_transaction(
 # ── /transfers ───────────────────────────────────────────────
 
 
-def _transfer_to_read(transfer_id: uuid.UUID, legs: list) -> TransferRead:
+def _transfer_to_read(
+    transfer_id: uuid.UUID, legs: list[Transaction]
+) -> TransferRead:
     return TransferRead.from_legs(
         transfer_id,
         [TransactionRead.model_validate(t) for t in legs],

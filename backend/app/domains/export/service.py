@@ -146,7 +146,11 @@ class ExportService:
                     "account": account_names.get(tx.account_id, ""),
                     "category": category,
                     "kind": _KIND_RU.get(tx.kind, str(tx.kind)),
-                    "required": _REQUIRED_RU.get(tx.required, ""),
+                    "required": (
+                        _REQUIRED_RU.get(tx.required, "")
+                        if tx.required is not None
+                        else ""
+                    ),
                     "amount": tx.amount,
                     "currency": tx.currency_code,
                     "amount_rub": tx.amount_rub,

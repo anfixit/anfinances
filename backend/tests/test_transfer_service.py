@@ -54,6 +54,9 @@ class FakeTxRepo:
     async def list_transfer_legs(self, transfer_id):
         return [t for t in self.txs if t.transfer_id == transfer_id]
 
+    async def delete_transfer(self, transfer):
+        self.transfers.pop(transfer.id, None)
+
 
 class FakeAccounts:
     def __init__(self, accounts):
@@ -231,7 +234,9 @@ async def test_transfer_unknown_account() -> None:
 async def test_delete_transfer_removes_legs() -> None:
     src = _acc("RUB")
     dst = _acc("USD")
+
     svc = _service([src, dst], [], {"USD": Decimal("90")})
+
     transfer, _ = await svc.create_transfer(
         USER,
         TransferCreate(
@@ -242,6 +247,8 @@ async def test_delete_transfer_removes_legs() -> None:
             date=NOW,
         ),
     )
+
     await svc.delete_transfer(transfer.id, USER)
-    _, legs = await svc.get_transfer(transfer.id, USER)
-    assert legs == []
+
+    with pytest.raises(NotFoundError):
+        await svc.get_transfer(transfer.id, USER)

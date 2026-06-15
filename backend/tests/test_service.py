@@ -5,7 +5,11 @@ import uuid
 import pytest
 
 from app.config import Settings
-from app.core.exceptions import AlreadyExistsError, UnauthorizedError
+from app.core.exceptions import (
+    AlreadyExistsError,
+    UnauthorizedError,
+    ValidationFailedError,
+)
 from app.core.pwned import PwnedError
 from app.domains.auth.models import RefreshToken, User
 from app.domains.auth.service import AuthService, _hash_token
@@ -30,6 +34,7 @@ class FakeRepo:
             user.id = uuid.uuid4()
         if user.is_active is None:
             user.is_active = True
+
         self.users[user.id] = user
         self.by_email[user.email] = user
         return user
@@ -54,96 +59,151 @@ class FakePwnedHit:
 
 @pytest.fixture
 def settings() -> Settings:
-    return Settings(secret_key="x" * 64)  # type: ignore[call-arg]
+    return Settings(
+        _env_file=None,
+        secret_key="x" * 64,
+    )  # type: ignore[call-arg]
 
 
 def _service(
-    settings: Settings, repo: FakeRepo, pwned: object = None
+    settings: Settings,
+    repo: FakeRepo,
+    pwned: object = None,
 ) -> AuthService:
-    return AuthService(repo, settings, pwned or FakePwnedOk())
+    return AuthService(
+        repo,
+        settings,
+        pwned or FakePwnedOk(),
+    )
 
 
 async def test_register_ok(settings: Settings) -> None:
     repo = FakeRepo()
+
     user, tokens = await _service(settings, repo).register(
-        "a@b.com", STRONG, "Аня"
+        "a@b.com",
+        STRONG,
+        "Аня",
     )
+
     assert user.email == "a@b.com"
-    assert tokens.access_token and tokens.refresh_token
+    assert tokens.access_token
+    assert tokens.refresh_token
     assert len(repo.tokens) == 1
 
 
-async def test_register_duplicate_email(settings: Settings) -> None:
+async def test_register_duplicate_email(
+    settings: Settings,
+) -> None:
     repo = FakeRepo()
     svc = _service(settings, repo)
+
     await svc.register("a@b.com", STRONG)
+
     with pytest.raises(AlreadyExistsError):
         await svc.register("a@b.com", STRONG)
 
 
-async def test_register_weak_password(settings: Settings) -> None:
+async def test_register_weak_password(
+    settings: Settings,
+) -> None:
     repo = FakeRepo()
-    from app.core.password_policy import PasswordPolicyError
 
-    with pytest.raises(PasswordPolicyError):
-        await _service(settings, repo).register("a@b.com", "short")
+    with pytest.raises(ValidationFailedError):
+        await _service(settings, repo).register(
+            "a@b.com",
+            "short",
+        )
 
 
-async def test_register_pwned_password(settings: Settings) -> None:
+async def test_register_pwned_password(
+    settings: Settings,
+) -> None:
     repo = FakeRepo()
     svc = _service(settings, repo, FakePwnedHit())
-    with pytest.raises(AlreadyExistsError):
+
+    with pytest.raises(ValidationFailedError):
         await svc.register("a@b.com", STRONG)
 
 
 async def test_login_ok(settings: Settings) -> None:
     repo = FakeRepo()
     svc = _service(settings, repo)
+
     await svc.register("a@b.com", STRONG)
+
     user, tokens = await svc.login("a@b.com", STRONG)
+
     assert user.email == "a@b.com"
     assert tokens.access_token
 
 
-async def test_login_wrong_password(settings: Settings) -> None:
+async def test_login_wrong_password(
+    settings: Settings,
+) -> None:
     repo = FakeRepo()
     svc = _service(settings, repo)
+
     await svc.register("a@b.com", STRONG)
+
     with pytest.raises(UnauthorizedError):
-        await svc.login("a@b.com", "wrong-password-xyz")
+        await svc.login(
+            "a@b.com",
+            "wrong-password-xyz",
+        )
 
 
-async def test_login_unknown_email(settings: Settings) -> None:
+async def test_login_unknown_email(
+    settings: Settings,
+) -> None:
     repo = FakeRepo()
+
     with pytest.raises(UnauthorizedError):
-        await _service(settings, repo).login("no@b.com", STRONG)
+        await _service(settings, repo).login(
+            "no@b.com",
+            STRONG,
+        )
 
 
-async def test_refresh_rotation(settings: Settings) -> None:
+async def test_refresh_rotation(
+    settings: Settings,
+) -> None:
     repo = FakeRepo()
     svc = _service(settings, repo)
+
     _, tokens = await svc.register("a@b.com", STRONG)
 
     new_pair = await svc.refresh(tokens.refresh_token)
+
     assert new_pair.refresh_token != tokens.refresh_token
 
     old = repo.tokens[_hash_token(tokens.refresh_token)]
     assert old.revoked_at is not None
 
 
-async def test_refresh_revoked_rejected(settings: Settings) -> None:
+async def test_refresh_revoked_rejected(
+    settings: Settings,
+) -> None:
     repo = FakeRepo()
     svc = _service(settings, repo)
+
     _, tokens = await svc.register("a@b.com", STRONG)
+
     await svc.refresh(tokens.refresh_token)
+
     with pytest.raises(UnauthorizedError):
         await svc.refresh(tokens.refresh_token)
 
 
-async def test_logout_revokes(settings: Settings) -> None:
+async def test_logout_revokes(
+    settings: Settings,
+) -> None:
     repo = FakeRepo()
     svc = _service(settings, repo)
+
     _, tokens = await svc.register("a@b.com", STRONG)
+
     await svc.logout(tokens.refresh_token)
+
     with pytest.raises(UnauthorizedError):
         await svc.refresh(tokens.refresh_token)
