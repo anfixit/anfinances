@@ -5,12 +5,16 @@
 """
 
 from functools import lru_cache
-from typing import Literal
+from typing import Literal, Self
 
-from pydantic import Field, PostgresDsn, SecretStr
+from pydantic import Field, PostgresDsn, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 AuthMode = Literal["single_user", "multi_user_no_verify", "multi_user"]
+
+# Значения-заглушки из .env.example: в проде их быть не должно.
+_PLACEHOLDER_SECRET = "change-me-use-openssl-rand-hex-32-to-generate"
+_DEFAULT_DB_PASSWORD = "anfinances"
 
 
 class Settings(BaseSettings):
@@ -95,6 +99,43 @@ class Settings(BaseSettings):
 
     exchange_rate_api_url: str = "https://open.er-api.com/v6/latest"
     exchange_rate_api_key: str | None = None
+
+    @model_validator(mode="after")
+    def _enforce_production_safety(self) -> Self:
+        """В production громко падаем на небезопасной конфигурации.
+
+        Философия §0: корректность и безопасность важнее доступности.
+        Лучше не подняться, чем тихо работать с debug-режимом, cookie
+        без Secure, дефолтным секретом/паролем или (для single_user)
+        без учётных данных — тогда войти было бы некем и нельзя.
+        """
+        if self.environment != "production":
+            return self
+
+        problems: list[str] = []
+
+        if self.debug:
+            problems.append("DEBUG должен быть false")
+        if not self.cookie_secure:
+            problems.append("COOKIE_SECURE должен быть true (нужен HTTPS)")
+        if self.secret_key.get_secret_value() == _PLACEHOLDER_SECRET:
+            problems.append(
+                "SECRET_KEY не сгенерирован (openssl rand -hex 32)"
+            )
+        if self.postgres_password.get_secret_value() == _DEFAULT_DB_PASSWORD:
+            problems.append("POSTGRES_PASSWORD не должен быть дефолтным")
+        if self.auth_mode == "single_user" and (
+            not self.single_user_email or self.single_user_password is None
+        ):
+            problems.append(
+                "single_user требует SINGLE_USER_EMAIL и SINGLE_USER_PASSWORD"
+            )
+
+        if problems:
+            raise ValueError(
+                "Небезопасная production-конфигурация: " + "; ".join(problems)
+            )
+        return self
 
 
 @lru_cache

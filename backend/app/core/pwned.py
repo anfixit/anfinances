@@ -58,7 +58,12 @@ class HibpChecker:
         if not self._enabled:
             return
 
-        digest = hashlib.sha1(plain.encode("utf-8")).hexdigest()
+        # HIBP range API работает по SHA-1 (k-anonymity): шлём первые
+        # 5 символов хэша, сверяем суффикс. Это не хранение пароля —
+        # SHA-1 здесь обязателен протоколом, не выбор криптостойкости.
+        digest = hashlib.sha1(  # noqa: S324
+            plain.encode("utf-8")
+        ).hexdigest()
         prefix, suffix = digest[:5].upper(), digest[5:].upper()
 
         try:

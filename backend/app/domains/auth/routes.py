@@ -10,7 +10,7 @@ Refresh-токен живёт в HttpOnly-cookie (ADR-024): сервис отд�
 
 from typing import Annotated
 
-from fastapi import APIRouter, Cookie, Response, status
+from fastapi import APIRouter, Cookie, Request, Response, status
 
 from app.config import Settings
 from app.core.dependencies import (
@@ -20,6 +20,7 @@ from app.core.dependencies import (
     SettingsDep,
 )
 from app.core.exceptions import ForbiddenError, UnauthorizedError
+from app.core.rate_limit import limiter, login_limit, register_limit
 from app.core.schemas import ApiResponse
 from app.domains.auth.schemas import (
     AccessToken,
@@ -79,7 +80,9 @@ def _clear_refresh_cookie(
     status_code=status.HTTP_201_CREATED,
     response_model=ApiResponse[AccessToken],
 )
+@limiter.limit(register_limit)
 async def register(
+    request: Request,
     data: RegisterRequest,
     service: AuthServiceDep,
     settings: SettingsDep,
@@ -104,7 +107,9 @@ async def register(
 
 
 @router.post("/login", response_model=ApiResponse[AccessToken])
+@limiter.limit(login_limit)
 async def login(
+    request: Request,
     data: LoginRequest,
     service: AuthServiceDep,
     settings: SettingsDep,

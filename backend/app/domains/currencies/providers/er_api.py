@@ -37,7 +37,7 @@ class ErApiRatesProvider:
         client_factory: ClientFactory | None = None,
     ) -> None:
         self._url = settings.exchange_rate_api_url
-        self._timeout = 10.0
+        self._timeout = settings.exchange_rate_timeout_seconds
         self._client_factory = client_factory
 
     def _make_client(self) -> httpx.AsyncClient:

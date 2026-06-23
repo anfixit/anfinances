@@ -1,11 +1,19 @@
 # Deploy-окружение: образы тянутся из GHCR, на сервере ничего не собирается.
 # .env рендерится pipeline'ом из GitHub Secrets (в гит не коммитится).
 #
+# Топология:
+#   caddy (80/443, авто-TLS) → frontend (nginx: SPA + /api proxy) → backend
+#                                                                  → postgres
+# postgres наружу не публикуется; фронт и бэкенд видны только внутри сети,
+# наружу смотрит только Caddy.
+#
 # Запуск (делает CI по SSH):
 #   docker compose -f docker-compose.deploy.yml pull
 #   docker compose -f docker-compose.deploy.yml up -d
+#   docker compose -f docker-compose.deploy.yml exec backend alembic upgrade head
 #
-# Переменные IMAGE_BACKEND / IMAGE_FRONTEND / HTTP_PORT прокидывает pipeline.
+# Переменные IMAGE_BACKEND / IMAGE_FRONTEND прокидывает pipeline.
+# Домен задаётся в caddy/Caddyfile и в CORS_ORIGINS ниже (один sed на оба).
 
 services:
   postgres:
@@ -33,9 +41,18 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    # Прод-тумблеры заданы здесь (перебивают backend/.env): они не секреты
+    # и должны быть под контролем версий. Секреты (SECRET_KEY,
+    # POSTGRES_PASSWORD, SINGLE_USER_*) приходят из env_file.
     environment:
       POSTGRES_HOST: postgres
       POSTGRES_PORT: 5432
+      ENVIRONMENT: production
+      DEBUG: "false"
+      COOKIE_SECURE: "true"
+      # SPA и API на одном origin, так что CORS фактически не задействован,
+      # но в проде держим реальный домен, а не localhost.
+      CORS_ORIGINS: '["https://anfinances.example.com"]'
     env_file:
       - ./backend/.env
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
@@ -48,11 +65,29 @@ services:
     restart: always
     depends_on:
       - backend
-    # На хосте слушаем HTTP_PORT (по умолчанию 8080, чтобы не конфликтовать
-    # с возможным kanban на 80). Внутри контейнера — nginx на 80.
+    # Наружу не публикуется: трафик приходит только через Caddy.
+    expose:
+      - "80"
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: anfinances-caddy
+    restart: always
+    depends_on:
+      - frontend
     ports:
-      - "${HTTP_PORT:-8080}:80"
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      # Персистентность сертификатов между деплоями — иначе LE rate-limit.
+      - caddy_data:/data
+      - caddy_config:/config
 
 volumes:
   postgres_data:
     name: anfinances_postgres_data
+  caddy_data:
+    name: anfinances_caddy_data
+  caddy_config:
+    name: anfinances_caddy_config

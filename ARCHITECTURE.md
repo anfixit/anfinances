@@ -5,7 +5,7 @@
 ## 1. Цели проекта
 
 - **Личный финансовый трекер** для одного человека (приоритет)
-- **Open-source** под MIT, чтобы другие могли self-host
+- **Open-source** под AGPL-3.0, чтобы другие могли self-host
 - **Опциональный SaaS** на твоём хостинге для тех кому лень разворачивать
 
 Из этих целей следует:
@@ -20,12 +20,12 @@
 
 |Слой|Технология|
 |---|---|
-|Backend|Python 3.12+, FastAPI|
+|Backend|Python 3.13, FastAPI|
 |ORM|SQLAlchemy 2.0 (async)|
 |Migrations|Alembic|
 |Validation|Pydantic v2|
 |DB|PostgreSQL 16|
-|Frontend|React 19, Vite, Recharts (без изменений)|
+|Frontend|React 19, Vite, TypeScript (strict), TanStack Query, Recharts|
 |Package manager|uv|
 |Tests|pytest + httpx + pytest-asyncio|
 |Deployment|docker-compose, nginx|
@@ -46,8 +46,7 @@ backend/
 ├── docker/
 │   └── Dockerfile
 ├── scripts/
-│   ├── seed.py              # дефолтные категории, валюты
-│   └── migrate_from_sheets.py
+│   └── seed.py              # дефолтные категории, валюты
 └── app/
     ├── main.py              # FastAPI app
     ├── config.py            # pydantic-settings
@@ -524,7 +523,6 @@ DELETE /api/v1/transactions/{id}
 # Transfers
 POST   /api/v1/transfers
 GET    /api/v1/transfers/{id}
-PATCH  /api/v1/transfers/{id}
 DELETE /api/v1/transfers/{id}
 
 # Budgets
@@ -944,19 +942,14 @@ class TransactionRead(BaseModel):
 
 ---
 
-## 12. Параллельная разработка
+## 12. История версий
 
-**Старая версия (Node.js + Sheets)** продолжает работать как сейчас — для твоего личного учёта.
-
-**Новая версия (Python + Postgres)** разрабатывается в `backend-py/` рядом, без давления "надо завтра". Когда всё готово и протестировано — `scripts/migrate_from_sheets.py` переносит данные.
-
-После полной миграции:
-
-1. Git tag `v0-nodejs-sheets`
-2. Удалить `backend/` (старый Node.js)
-3. Переименовать `backend-py/` → `backend/`
-4. Обновить README, docker-compose
-5. Опубликовать как v1.0
+v0 (Node.js + Google Sheets) сохранён как git-tag `v0-nodejs-sheets`
+и больше не развивается. v1 (Python + PostgreSQL) — текущая версия;
+каталог `backend-py/` переименован в `backend/`. Перенос данных из
+Sheets не выполняется: v1 стартует с чистой БД (fresh start),
+наполнение — обычным вводом или восстановлением JSON-бэкапа
+(`POST /api/v1/import/all`).
 
 ---
 
@@ -966,7 +959,7 @@ class TransactionRead(BaseModel):
 - `.env.example` с понятными комментариями
 - ARCHITECTURE.md (этот документ)
 - CONTRIBUTING.md
-- LICENSE (MIT)
+- LICENSE (AGPL-3.0)
 - CHANGELOG.md
 - GitHub Actions: tests + Docker image build
 - Issue templates

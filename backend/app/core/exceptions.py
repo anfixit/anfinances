@@ -14,6 +14,7 @@ from typing import Any
 from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from slowapi.errors import RateLimitExceeded
 from starlette.exceptions import (
     HTTPException as StarletteHTTPException,
 )
@@ -120,6 +121,16 @@ def register_exception_handlers(app: FastAPI) -> None:
             "Validation failed",
             status.HTTP_422_UNPROCESSABLE_CONTENT,
             details,
+        )
+
+    @app.exception_handler(RateLimitExceeded)
+    async def _rate_limit_handler(
+        request: Request, exc: RateLimitExceeded
+    ) -> JSONResponse:
+        return _error_response(
+            "RATE_LIMITED",
+            "Слишком много запросов. Попробуйте позже.",
+            status.HTTP_429_TOO_MANY_REQUESTS,
         )
 
     @app.exception_handler(StarletteHTTPException)

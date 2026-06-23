@@ -25,6 +25,7 @@ dependencies = [
     "python-multipart>=0.0.20",  # для OAuth2PasswordRequestForm
     "zxcvbn>=4.5.0",
     "openpyxl>=3.1.5",
+    "slowapi>=0.1.9",
 ]
 
 [dependency-groups]
@@ -46,7 +47,7 @@ target-version = "py313"
 
 [tool.ruff.lint]
 # Базовый набор: pycodestyle, pyflakes, isort, bugbear, simplify, pyupgrade
-select = ["E", "W", "F", "I", "B", "SIM", "UP", "C4"]
+select = ["E", "W", "F", "I", "B", "SIM", "UP", "C4", "S"]
 ignore = [
     "B008",  # FastAPI Depends() в дефолтах — это нормально
 ]
@@ -54,17 +55,9 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 "alembic/versions/*" = ["E402", "F401"]  # автогенерированные миграции
 "__init__.py" = ["F401"]
-"tests/test_pwned.py" = ["S101", "S324"]
-"tests/test_password_policy.py" = ["S101"]
-"tests/test_routes.py" = ["S101", "S106"]
-"tests/test_bootstrap.py" = ["S101", "S105", "S106"]
-"tests/test_currencies_service.py" = ["S101"]
-"tests/test_currencies_provider.py" = ["S101"]
-"tests/test_accounts_service.py" = ["S101"]
-"tests/test_categories_service.py" = ["S101"]
-"tests/test_transactions_service.py" = ["S101"]
-"tests/test_transfer_service.py" = ["S101"]
-"tests/test_summary_service.py" = ["S101"]
+# В тестах допустимы assert (S101), тестовые «пароли»/хэши в литералах
+# (S105/S106) и SHA-1 в проверках HIBP (S324).
+"tests/*" = ["S101", "S105", "S106", "S324"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

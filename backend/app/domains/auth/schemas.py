@@ -36,14 +36,14 @@ class TokenPair(BaseModel):
 
     access_token: str
     refresh_token: str
-    token_type: str = "bearer"
+    token_type: str = "bearer"  # noqa: S105 (OAuth-тип, не пароль)
 
 
 class AccessToken(BaseModel):
     """Тело ответа auth: только access-токен. Refresh — в cookie."""
 
     access_token: str
-    token_type: str = "bearer"
+    token_type: str = "bearer"  # noqa: S105 (OAuth-тип, не пароль)
 
 
 class UserRead(BaseModel):

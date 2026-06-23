@@ -17,6 +17,7 @@ from app.core import dependencies as deps
 from app.core.models import Base
 from app.database import get_db
 from app.main import create_app
+from tests.conftest import TEST_DATABASE_URL
 
 STRONG = "fluffy-zebra-canyon-marble-97"
 
@@ -38,8 +39,9 @@ def _settings(**over: object) -> Settings:
 
 @pytest_asyncio.fixture
 async def client_factory():
-    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    engine = create_async_engine(TEST_DATABASE_URL)
     async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
     sessionmaker = async_sessionmaker(
         engine, class_=AsyncSession, expire_on_commit=False
@@ -163,3 +165,33 @@ async def test_config_exposes_auth_mode(client_factory) -> None:
         r = await ac.get("/api/v1/config")
         assert r.status_code == 200
         assert r.json()["data"]["auth_mode"] == "single_user"
+
+
+async def test_login_rate_limited(client_factory) -> None:
+    # Лимитер в тестах выключен глобально (conftest); включаем точечно
+    # уже ПОСЛЕ создания app (create_app сбрасывает enabled из настроек).
+    # Лимит берётся из реальных настроек — дефолт 10/minute.
+    from app.core.rate_limit import limiter
+
+    async with client_factory(_settings()) as ac:
+        limiter.enabled = True
+        limiter.reset()
+        try:
+            codes = []
+            for _ in range(12):
+                r = await ac.post(
+                    "/api/v1/auth/login",
+                    json={"email": "x@y.com", "password": "whatever-123"},
+                )
+                codes.append(r.status_code)
+            # Первые 10 проходят (401 на неверный логин), дальше — 429.
+            assert codes[-1] == 429
+            assert 401 in codes
+            last = await ac.post(
+                "/api/v1/auth/login",
+                json={"email": "x@y.com", "password": "whatever-123"},
+            )
+            assert last.json()["code"] == "RATE_LIMITED"
+        finally:
+            limiter.enabled = False
+            limiter.reset()

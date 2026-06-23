@@ -1,0 +1,24 @@
+# Caddy — TLS-терминатор на краю стека (авто Let's Encrypt + автопродление).
+#
+# Проксирует ВЕСЬ трафик в frontend-контейнер, чей внутренний nginx уже
+# отдаёт SPA, проксирует /api/* в backend и держит rate-limit на /auth/*.
+#
+# Перед первым запуском подставь свой домен и email (2 правки):
+#   sed -i 's/anfinances.example.com/<твой-домен>/g' caddy/Caddyfile \
+#       docker-compose.deploy.yml
+#   sed -i 's/you@example.com/<твой-email>/g' caddy/Caddyfile
+#
+# Email нужен Let's Encrypt только для уведомлений об истечении.
+
+{
+	email you@example.com
+}
+
+anfinances.example.com {
+	encode zstd gzip
+
+	# HSTS — на этом контуре TLS уже есть (на http-контуре его не было).
+	header Strict-Transport-Security "max-age=31536000; includeSubDomains"
+
+	reverse_proxy frontend:80
+}

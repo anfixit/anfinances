@@ -1,96 +1,125 @@
 # Deployment
 
-Single-VPS deployment with Docker Compose, Nginx, and Let's Encrypt (Certbot). The production overlay (`docker-compose.prod.yml`) runs Nginx (terminates HTTPS, proxies `/api/*` to the backend, serves the built frontend from `frontend/dist`), a Certbot sidecar (issues and auto-renews the TLS certificate), and PostgreSQL (not published outside the Docker network).
+Production runs on a single server via Docker Compose. Images are
+built in CI and pushed to GitHub Container Registry (GHCR); the server
+only pulls and runs them — nothing is built on the server. TLS is
+handled by **Caddy** at the edge: it obtains and auto-renews a Let's
+Encrypt certificate from just your domain and email.
 
-## 1. Prepare the server
+Topology:
 
-- A VPS with Docker + Docker Compose.
+```
+caddy (80/443, auto-TLS)
+  └─ frontend (nginx: serves the SPA, proxies /api/* to the backend,
+     rate-limits /auth/*)
+       └─ backend (FastAPI/uvicorn)
+            └─ postgres (not published outside the Docker network)
+```
+
+The compose file for this is `docker-compose.deploy.yml`. The older
+Nginx + Certbot overlay (`docker-compose.prod.yml`,
+`scripts/init-letsencrypt.sh`) is superseded by this Caddy setup and
+kept only for reference.
+
+## 1. Prerequisites
+
+- A server with Docker + the Compose plugin.
 - A domain with an A record pointing to the server IP.
-- Open ports 80 and 443.
+- Ports **80** and **443** open (Caddy needs 80 for the ACME challenge).
 
-## 2. Configure
-
-```bash
-git clone https://github.com/<you>/anfinances.git
-cd anfinances
-cp backend/.env.example backend/.env
-```
-
-Edit `backend/.env` for production:
-
-```ini
-ENVIRONMENT=production
-DEBUG=false
-SECRET_KEY=<openssl rand -hex 32>
-POSTGRES_PASSWORD=<strong-password>
-CORS_ORIGINS=["https://your-domain.tld"]
-COOKIE_SECURE=true
-AUTH_MODE=single_user
-SINGLE_USER_EMAIL=you@example.com
-SINGLE_USER_PASSWORD=<set-once-then-can-be-removed>
-HTTP_PORT=80
-```
-
-Set your domain in the Nginx config (replaces all 4 occurrences):
+One-time server preparation:
 
 ```bash
-sed -i 's/your-domain.tld/anfinances.example.com/g' nginx/nginx.conf
+sudo apt-get update
+sudo apt-get install -y git docker.io docker-compose-plugin
+sudo usermod -aG docker $USER   # re-login afterwards
+git clone https://github.com/<you>/anfinances.git /opt/anfinances
 ```
 
-## 3. Build the frontend
+## 2. Set your domain
+
+In the cloned repo, replace the placeholder domain (Caddyfile + the
+backend `CORS_ORIGINS`) and the ACME email:
 
 ```bash
-cd frontend && pnpm install && pnpm build && cd ..   # → frontend/dist
+cd /opt/anfinances
+sed -i 's/anfinances.example.com/<your-domain>/g' \
+    caddy/Caddyfile docker-compose.deploy.yml
+sed -i 's/you@example.com/<your-email>/g' caddy/Caddyfile
+git commit -am "chore(deploy): set production domain"
+git push
 ```
 
-## 4. Issue the TLS certificate (first time only)
+## 3. Configure CI (GitHub Secrets / Variables)
 
-The bootstrap script puts a temporary self-signed cert in place so Nginx can start, then obtains a real Let's Encrypt certificate over the ACME HTTP challenge:
+Settings → Secrets and variables → Actions.
+
+**Secrets:**
+
+| Secret | What |
+| --- | --- |
+| `SSH_HOST` / `SSH_USER` / `SSH_KEY` / `SSH_PORT` | SSH access to the server. |
+| `DEPLOY_PATH` | Repo path on the server (e.g. `/opt/anfinances`). |
+| `GHCR_PAT` | GitHub PAT with `read:packages` (to pull private images). |
+| `SECRET_KEY` | JWT secret, ≥32 bytes (`openssl rand -hex 32`). |
+| `POSTGRES_PASSWORD` | Strong database password (not `anfinances`). |
+| `SINGLE_USER_EMAIL` | Login email (single-user mode). |
+| `SINGLE_USER_PASSWORD` | Login password (single-user mode). |
+
+The deploy workflow renders `backend/.env` from these secrets. The
+non-secret production toggles (`ENVIRONMENT=production`, `DEBUG=false`,
+`COOKIE_SECURE=true`, `CORS_ORIGINS`) live in `docker-compose.deploy.yml`
+under version control, so the secrets `.env` only needs to carry the
+four secrets above (plus whatever the workflow already writes).
+
+`HTTP_PORT` is no longer used (Caddy owns 80/443) and can be removed
+from the Variables.
+
+## 4. Deploy
+
+Push to `main` (or run the Deploy workflow manually). It builds the
+images, pushes them to GHCR, then over SSH: pulls the images, runs
+`docker compose -f docker-compose.deploy.yml up -d`, and applies
+`alembic upgrade head`.
+
+On first boot the backend:
+
+- fails fast if the production config is unsafe (debug on, insecure
+  cookies, default/placeholder secret, or missing single-user
+  credentials),
+- creates the single-user account and default categories,
+- fetches currency rates.
+
+Caddy requests the certificate on its first start; allow a minute.
+
+## 5. Verify
 
 ```bash
-chmod +x scripts/init-letsencrypt.sh
-DOMAIN=anfinances.example.com EMAIL=you@example.com ./scripts/init-letsencrypt.sh
-# Test run against LE staging first (avoids rate limits): prepend STAGING=1
+curl https://<your-domain>/api/v1/health/ready   # {"status":"ok",...}
 ```
 
-## 5. Launch
+Then open `https://<your-domain>` and log in with `SINGLE_USER_*`.
+
+If currency rates didn't load (external provider was down at boot):
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
-docker compose exec backend alembic upgrade head
-docker compose exec backend python scripts/seed.py   # currencies / defaults
+docker compose -f docker-compose.deploy.yml exec backend \
+    python -m scripts.seed
 ```
-
-Verify:
-
-```bash
-curl https://anfinances.example.com/api/v1/health/ready
-```
-
-Renewal is automatic: the `certbot` service renews every 12h and Nginx reloads every 6h to pick up new certificates.
 
 ## 6. Backups
 
-- **Application data**: in-app backup (Settings → Data → full JSON), or `GET /api/v1/export/all.json`.
-- **Database**: schedule `pg_dump`:
+- **Application data**: in-app backup (Settings → Data → full JSON),
+  or `GET /api/v1/export/all.json`. Restore via Settings → Data →
+  Restore (`POST /api/v1/import/all`).
+- **Database** (`pg_dump`, schedule via cron):
 
 ```bash
-docker compose exec -T postgres pg_dump -U anfinances anfinances > backup-$(date +%F).sql
+docker compose -f docker-compose.deploy.yml exec -T postgres \
+    pg_dump -U anfinances anfinances > backup-$(date +%F).sql
 ```
 
 ## 7. Updates
 
-```bash
-git pull
-cd frontend && pnpm install && pnpm build && cd ..
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
-docker compose exec backend alembic upgrade head
-```
-
-## Simpler alternative: Caddy
-
-If you prefer zero-config HTTPS, front the stack with [Caddy](https://caddyserver.com/) instead of Nginx + Certbot — it provisions and renews certificates automatically from just a domain and email. The trade-off is replacing the Nginx config with a `Caddyfile`; the rest of the stack is unchanged.
-
-## Importing existing data
-
-To restore data, use a JSON backup via Settings → Data → Restore (`POST /api/v1/import/all`).
+Just push to `main` — CI rebuilds, redeploys, and migrates. No manual
+steps on the server. Certificates renew automatically (Caddy).

@@ -9,7 +9,6 @@ import csv
 import io
 import uuid
 from datetime import UTC, datetime
-from decimal import Decimal
 
 from openpyxl import Workbook
 
@@ -51,7 +50,6 @@ _COLUMNS = (
     ("amount_rub", "Сумма в рублях"),
     ("comment", "Комментарий"),
 )
-_NUMERIC_KEYS = frozenset({"amount", "amount_rub"})
 
 
 class ExportService:
@@ -117,7 +115,7 @@ class ExportService:
         sheet.title = "Транзакции"
         sheet.append([label for _, label in _COLUMNS])
         for record in records:
-            sheet.append([_xlsx_cell(key, record[key]) for key, _ in _COLUMNS])
+            sheet.append([_xlsx_cell(record[key]) for key, _ in _COLUMNS])
         buffer = io.BytesIO()
         workbook.save(buffer)
         return buffer.getvalue()
@@ -166,9 +164,9 @@ def _csv_cell(value: object) -> str:
     return str(value)
 
 
-def _xlsx_cell(key: str, value: object) -> object:
+def _xlsx_cell(value: object) -> object:
+    # openpyxl пишет Decimal как число напрямую — конверсия в float
+    # не нужна и теряла бы точность денег.
     if value is None:
         return ""
-    if key in _NUMERIC_KEYS and isinstance(value, Decimal):
-        return float(value)
     return value

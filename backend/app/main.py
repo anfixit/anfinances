@@ -15,7 +15,8 @@ from app.config import get_settings
 from app.core.dependencies import DbSession
 from app.core.exceptions import register_exception_handlers
 from app.core.middleware import register_middleware
-from app.database import AsyncSessionLocal, engine
+from app.core.rate_limit import limiter
+from app.database import create_db_engine, create_sessionmaker
 from app.domains.accounts.routes import router as accounts_router
 from app.domains.auth.bootstrap import bootstrap_single_user
 from app.domains.auth.routes import router as auth_router
@@ -64,6 +65,13 @@ async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
         settings.auth_mode,
     )
 
+    # Engine поднимаем здесь (а не на импорте) и кладём в app.state —
+    # get_db берёт sessionmaker оттуда.
+    engine = create_db_engine(settings)
+    sessionmaker = create_sessionmaker(engine)
+    app.state.engine = engine
+    app.state.sessionmaker = sessionmaker
+
     # Smoke-тест БД на старте.
     try:
         async with engine.connect() as conn:
@@ -75,13 +83,13 @@ async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
         # Это удобнее в docker-compose: контейнер не уходит в restart-loop.
 
     try:
-        async with AsyncSessionLocal() as session:
+        async with sessionmaker() as session:
             await bootstrap_single_user(session, settings)
     except Exception:
         logger.error("single_user bootstrap failed", exc_info=True)
 
     try:
-        async with AsyncSessionLocal() as session:
+        async with sessionmaker() as session:
             from app.domains.currencies.providers.er_api import (
                 ErApiRatesProvider,
             )
@@ -178,6 +186,10 @@ def create_app() -> FastAPI:
 
     register_middleware(app, settings)
     register_exception_handlers(app)
+
+    # Rate limiting (S4): лимитер в app.state, в тестах выключаем.
+    app.state.limiter = limiter
+    limiter.enabled = settings.rate_limit_enabled
 
     prefix = settings.api_v1_prefix
 

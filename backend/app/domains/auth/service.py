@@ -104,9 +104,16 @@ class AuthService:
         except TokenError as exc:
             raise UnauthorizedError("Невалидный токен.") from exc
 
-        stored = await self._repo.get_refresh_token(_hash_token(refresh_token))
+        stored = await self._repo.get_refresh_token(
+            _hash_token(refresh_token), for_update=True
+        )
         now = datetime.now(UTC)
-        if stored is None or stored.revoked_at is not None:
+        if stored is None:
+            raise UnauthorizedError("Сессия недействительна.")
+        if stored.revoked_at is not None:
+            # Токен уже был ротирован, но кто-то предъявил его снова —
+            # классический признак кражи. Отзываем всю сессию юзера.
+            await self._repo.revoke_all_for_user(stored.user_id, now)
             raise UnauthorizedError("Сессия недействительна.")
         expires_at = stored.expires_at
         if expires_at.tzinfo is None:
@@ -135,4 +142,6 @@ class AuthService:
                 expires_at=expires_at,
             )
         )
+        # Подчищаем протухшие токены, чтобы таблица не росла (S6).
+        await self._repo.delete_expired_tokens(datetime.now(UTC))
         return TokenPair(access_token=access, refresh_token=refresh)
