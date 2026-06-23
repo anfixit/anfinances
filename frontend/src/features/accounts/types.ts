@@ -8,6 +8,7 @@ export interface Account {
   type: AccountType
   currency_code: string
   initial_balance: Money
+  current_balance: Money
   credit_limit: Money | null
   color: string | null
   sort_order: number

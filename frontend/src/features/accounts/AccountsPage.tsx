@@ -110,7 +110,7 @@ export function AccountsPage() {
               </span>
             </div>
             <span className="num acc-balance">
-              {formatMoney(a.initial_balance, a.currency_code)}
+              {formatMoney(a.current_balance, a.currency_code)}
             </span>
             <button
               type="button"

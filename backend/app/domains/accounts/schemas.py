@@ -3,10 +3,12 @@
 import uuid
 from datetime import datetime
 from decimal import Decimal
+from typing import Self
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.core.enums import AccountType
+from app.domains.accounts.models import Account
 
 __all__ = [
     "AccountCreate",
@@ -44,6 +46,7 @@ class AccountRead(BaseModel):
     type: AccountType
     currency_code: str
     initial_balance: Decimal
+    current_balance: Decimal
     credit_limit: Decimal | None
     color: str | None
     sort_order: int
@@ -51,3 +54,16 @@ class AccountRead(BaseModel):
     is_archived: bool
     created_at: datetime
     updated_at: datetime
+
+    @classmethod
+    def from_account(
+        cls,
+        account: Account,
+        current_balance: Decimal,
+    ) -> Self:
+        """Собрать API-схему из модели и вычисленного остатка."""
+        values = {
+            **account.__dict__,
+            "current_balance": current_balance,
+        }
+        return cls.model_validate(values)

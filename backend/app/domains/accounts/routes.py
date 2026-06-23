@@ -39,7 +39,15 @@ async def list_accounts(
     user: CurrentUser, service: ServiceDep
 ) -> ApiResponse[list[AccountRead]]:
     items = await service.list_accounts(user.id)
-    return ApiResponse(data=[AccountRead.model_validate(a) for a in items])
+    return ApiResponse(
+        data=[
+            AccountRead.from_account(
+                item.account,
+                item.current_balance,
+            )
+            for item in items
+        ]
+    )
 
 
 @router.post(
@@ -55,7 +63,12 @@ async def create_account(
 ) -> ApiResponse[AccountRead]:
     account = await service.create_account(user.id, data)
     await db.commit()
-    return ApiResponse(data=AccountRead.model_validate(account))
+    return ApiResponse(
+        data=AccountRead.from_account(
+            account,
+            account.initial_balance,
+        )
+    )
 
 
 @router.get("/{account_id}", response_model=ApiResponse[AccountRead])
@@ -64,8 +77,13 @@ async def get_account(
     user: CurrentUser,
     service: ServiceDep,
 ) -> ApiResponse[AccountRead]:
-    account = await service.get_account(account_id, user.id)
-    return ApiResponse(data=AccountRead.model_validate(account))
+    result = await service.get_account_result(account_id, user.id)
+    return ApiResponse(
+        data=AccountRead.from_account(
+            result.account,
+            result.current_balance,
+        )
+    )
 
 
 @router.patch("/{account_id}", response_model=ApiResponse[AccountRead])
@@ -78,7 +96,13 @@ async def update_account(
 ) -> ApiResponse[AccountRead]:
     account = await service.update_account(account_id, user.id, data)
     await db.commit()
-    return ApiResponse(data=AccountRead.model_validate(account))
+    result = await service.get_account_result(account.id, user.id)
+    return ApiResponse(
+        data=AccountRead.from_account(
+            result.account,
+            result.current_balance,
+        )
+    )
 
 
 @router.delete(
@@ -108,4 +132,10 @@ async def restore_account(
 ) -> ApiResponse[AccountRead]:
     account = await service.restore_account(account_id, user.id)
     await db.commit()
-    return ApiResponse(data=AccountRead.model_validate(account))
+    result = await service.get_account_result(account.id, user.id)
+    return ApiResponse(
+        data=AccountRead.from_account(
+            result.account,
+            result.current_balance,
+        )
+    )

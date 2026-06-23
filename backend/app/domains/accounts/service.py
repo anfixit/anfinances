@@ -7,6 +7,8 @@
 """
 
 import uuid
+from dataclasses import dataclass
+from decimal import Decimal
 
 from app.core.exceptions import (
     AlreadyExistsError,
@@ -20,15 +22,30 @@ from app.domains.accounts.schemas import (
     AccountUpdate,
 )
 
-__all__ = ["AccountService"]
+__all__ = ["AccountResult", "AccountService"]
+
+
+@dataclass(frozen=True, slots=True)
+class AccountResult:
+    """Счёт вместе с вычисленным текущим остатком."""
+
+    account: Account
+    current_balance: Decimal
 
 
 class AccountService:
     def __init__(self, repo: AccountRepository) -> None:
         self._repo = repo
 
-    async def list_accounts(self, user_id: uuid.UUID) -> list[Account]:
-        return await self._repo.list_active(user_id)
+    async def list_accounts(self, user_id: uuid.UUID) -> list[AccountResult]:
+        rows = await self._repo.list_active_with_balances(user_id)
+        return [
+            AccountResult(
+                account=account,
+                current_balance=account.initial_balance + transaction_total,
+            )
+            for account, transaction_total in rows
+        ]
 
     async def get_account(
         self, account_id: uuid.UUID, user_id: uuid.UUID
@@ -37,6 +54,19 @@ class AccountService:
         if account is None:
             raise NotFoundError("Счёт не найден.")
         return account
+
+    async def get_account_result(
+        self, account_id: uuid.UUID, user_id: uuid.UUID
+    ) -> AccountResult:
+        account = await self.get_account(account_id, user_id)
+        transaction_total = await self._repo.transaction_total(
+            account_id,
+            user_id,
+        )
+        return AccountResult(
+            account=account,
+            current_balance=account.initial_balance + transaction_total,
+        )
 
     async def create_account(
         self, user_id: uuid.UUID, data: AccountCreate

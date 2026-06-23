@@ -25,10 +25,11 @@ class FakeRepo:
     def __init__(self) -> None:
         self.items: dict[uuid.UUID, Account] = {}
         self.currencies = {"RUB", "USD"}
+        self.transaction_totals: dict[uuid.UUID, Decimal] = {}
 
-    async def list_active(self, user_id):
+    async def list_active_with_balances(self, user_id):
         return [
-            a
+            (a, self.transaction_totals.get(a.id, Decimal("0")))
             for a in self.items.values()
             if a.user_id == user_id and not a.is_archived
         ]
@@ -47,6 +48,12 @@ class FakeRepo:
 
     async def currency_exists(self, code):
         return code in self.currencies
+
+    async def transaction_total(self, account_id, user_id):
+        account = await self.get(account_id, user_id)
+        if account is None:
+            return Decimal("0")
+        return self.transaction_totals.get(account_id, Decimal("0"))
 
     async def add(self, account):
         if account.id is None:
@@ -122,3 +129,26 @@ async def test_restore_conflict(service: AccountService) -> None:
     await service.create_account(USER, _create(name="A"))
     with pytest.raises(AlreadyExistsError):
         await service.restore_account(a.id, USER)
+
+
+async def test_list_accounts_returns_current_balance() -> None:
+    repo = FakeRepo()
+    service = AccountService(repo)
+    account = await service.create_account(USER, _create())
+    repo.transaction_totals[account.id] = Decimal("-30")
+
+    result = await service.list_accounts(USER)
+
+    assert len(result) == 1
+    assert result[0].current_balance == Decimal("70")
+
+
+async def test_get_account_result_returns_current_balance() -> None:
+    repo = FakeRepo()
+    service = AccountService(repo)
+    account = await service.create_account(USER, _create())
+    repo.transaction_totals[account.id] = Decimal("25.50")
+
+    result = await service.get_account_result(account.id, USER)
+
+    assert result.current_balance == Decimal("125.50")
