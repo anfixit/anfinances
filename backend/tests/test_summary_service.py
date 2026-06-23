@@ -7,6 +7,7 @@ from decimal import Decimal
 import pytest
 
 from app.core.enums import AccountType
+from app.core.exceptions import NotFoundError
 from app.domains.accounts.models import Account
 from app.domains.summary.service import SummaryService
 
@@ -40,7 +41,10 @@ class FakeCurrencies:
     async def rate_to_rub(self, code):
         if code == "RUB":
             return Decimal(1)
-        return self._r[code]
+        rate = self._r.get(code)
+        if rate is None:
+            raise NotFoundError(f"Нет курса для валюты {code}.")
+        return rate
 
 
 def _acc(code, initial="0", name=None) -> Account:
@@ -73,6 +77,27 @@ async def test_dashboard_balance_and_capital() -> None:
     assert by_id[usd.id].balance_rub == Decimal("900")
     # капитал = 1500 + 900 = 2400
     assert res.total_capital_rub == Decimal("2400")
+    assert res.is_total_complete is True
+    assert res.missing_rate_currencies == []
+
+
+async def test_dashboard_survives_missing_exchange_rate() -> None:
+    rub = _acc("RUB", initial="1000")
+    usd = _acc("USD", initial="10")
+    svc = SummaryService(
+        FakeRepo([rub, usd], {}, (Decimal(0), Decimal(0)), []),
+        FakeCurrencies({}),
+    )
+
+    result = await svc.dashboard(USER)
+    by_id = {item.account_id: item for item in result.accounts}
+
+    assert by_id[rub.id].balance_rub == Decimal("1000")
+    assert by_id[usd.id].balance == Decimal("10")
+    assert by_id[usd.id].balance_rub is None
+    assert result.total_capital_rub == Decimal("1000")
+    assert result.is_total_complete is False
+    assert result.missing_rate_currencies == ["USD"]
 
 
 async def test_cashflow_expense_as_abs() -> None:

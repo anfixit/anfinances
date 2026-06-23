@@ -20,12 +20,14 @@ class AccountBalance(BaseModel):
     name: str
     currency_code: str
     balance: Decimal  # в валюте счёта
-    balance_rub: Decimal  # по текущему курсу
+    balance_rub: Decimal | None  # по текущему курсу, если доступен
 
 
 class DashboardResult(BaseModel):
     accounts: list[AccountBalance]
     total_capital_rub: Decimal
+    is_total_complete: bool
+    missing_rate_currencies: list[str]
 
 
 class CashflowResult(BaseModel):

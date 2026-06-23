@@ -12,6 +12,7 @@ import uuid
 from datetime import UTC, date, datetime
 from decimal import Decimal
 
+from app.core.exceptions import NotFoundError
 from app.domains.currencies.service import CurrencyService
 from app.domains.summary.repository import SummaryRepository
 from app.domains.summary.schemas import (
@@ -39,23 +40,43 @@ class SummaryService:
         balances = await self._repo.balances_by_account(user_id)
 
         items: list[AccountBalance] = []
+        missing_rate_currencies: set[str] = set()
         total = Decimal(0)
-        for acc in accounts:
-            balance = balances.get(acc.id, Decimal(0)) + acc.initial_balance
-            rate = await self._currencies.rate_to_rub(acc.currency_code)
-            balance_rub = balance * rate
-            total += balance_rub
+
+        for account in accounts:
+            balance = (
+                balances.get(account.id, Decimal(0)) + account.initial_balance
+            )
+            balance_rub: Decimal | None
+
+            try:
+                rate = await self._currencies.rate_to_rub(
+                    account.currency_code
+                )
+            except NotFoundError:
+                balance_rub = None
+                missing_rate_currencies.add(account.currency_code)
+            else:
+                balance_rub = balance * rate
+                total += balance_rub
+
             items.append(
                 AccountBalance(
-                    account_id=acc.id,
-                    name=acc.name,
-                    currency_code=acc.currency_code,
+                    account_id=account.id,
+                    name=account.name,
+                    currency_code=account.currency_code,
                     balance=balance,
                     balance_rub=balance_rub,
                 )
             )
 
-        return DashboardResult(accounts=items, total_capital_rub=total)
+        missing_rates = sorted(missing_rate_currencies)
+        return DashboardResult(
+            accounts=items,
+            total_capital_rub=total,
+            is_total_complete=not missing_rates,
+            missing_rate_currencies=missing_rates,
+        )
 
     async def cashflow(
         self,

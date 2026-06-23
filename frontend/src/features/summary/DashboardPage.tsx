@@ -120,6 +120,12 @@ export function DashboardPage() {
             <span className="capital-value num">
               {formatMoney(dash.data.total_capital_rub, "RUB")}
             </span>
+            {!dash.data.is_total_complete && (
+              <p className="capital-warning" role="status">
+                Итог рассчитан не полностью: нет курса для {" "}
+                {dash.data.missing_rate_currencies.join(", ")}
+              </p>
+            )}
             <ul className="acc-list">
               {dash.data.accounts.map((a) => (
                 <li key={a.account_id} className="acc-row">
@@ -129,7 +135,9 @@ export function DashboardPage() {
                   </span>
                   {a.currency_code !== "RUB" && (
                     <span className="acc-rub num">
-                      {formatMoney(a.balance_rub, "RUB")}
+                      {a.balance_rub === null
+                        ? "Курс недоступен"
+                        : formatMoney(a.balance_rub, "RUB")}
                     </span>
                   )}
                 </li>

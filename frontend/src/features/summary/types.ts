@@ -5,12 +5,14 @@ export interface AccountBalance {
   name: string
   currency_code: string
   balance: Money
-  balance_rub: Money
+  balance_rub: Money | null
 }
 
 export interface Dashboard {
   accounts: AccountBalance[]
   total_capital_rub: Money
+  is_total_complete: boolean
+  missing_rate_currencies: string[]
 }
 
 export interface Cashflow {
