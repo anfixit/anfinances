@@ -9,6 +9,7 @@ export interface Account {
   currency_code: string
   initial_balance: Money
   current_balance: Money
+  has_transactions: boolean
   credit_limit: Money | null
   color: string | null
   sort_order: number

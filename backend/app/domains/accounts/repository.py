@@ -17,7 +17,7 @@ __all__ = ["AccountRepository", "SqlAccountRepository"]
 class AccountRepository(Protocol):
     async def list_active_with_balances(
         self, user_id: uuid.UUID
-    ) -> list[tuple[Account, Decimal]]: ...
+    ) -> list[tuple[Account, Decimal, bool]]: ...
 
     async def get(
         self, account_id: uuid.UUID, user_id: uuid.UUID
@@ -33,6 +33,10 @@ class AccountRepository(Protocol):
         self, account_id: uuid.UUID, user_id: uuid.UUID
     ) -> Decimal: ...
 
+    async def has_transactions(
+        self, account_id: uuid.UUID, user_id: uuid.UUID
+    ) -> bool: ...
+
     async def add(self, account: Account) -> Account: ...
 
 
@@ -42,13 +46,14 @@ class SqlAccountRepository:
 
     async def list_active_with_balances(
         self, user_id: uuid.UUID
-    ) -> list[tuple[Account, Decimal]]:
+    ) -> list[tuple[Account, Decimal, bool]]:
         transaction_total = func.coalesce(
             func.sum(Transaction.amount),
             Decimal("0"),
         )
+        transaction_count = func.count(Transaction.id)
         result = await self._session.execute(
-            select(Account, transaction_total)
+            select(Account, transaction_total, transaction_count)
             .outerjoin(
                 Transaction,
                 (Transaction.account_id == Account.id)
@@ -61,7 +66,7 @@ class SqlAccountRepository:
             .group_by(Account.id)
             .order_by(Account.sort_order, Account.name)
         )
-        return [(row[0], row[1]) for row in result.all()]
+        return [(row[0], row[1], bool(row[2])) for row in result.all()]
 
     async def get(
         self, account_id: uuid.UUID, user_id: uuid.UUID
@@ -107,6 +112,19 @@ class SqlAccountRepository:
             )
         )
         return result.scalar_one()
+
+    async def has_transactions(
+        self, account_id: uuid.UUID, user_id: uuid.UUID
+    ) -> bool:
+        result = await self._session.execute(
+            select(Transaction.id)
+            .where(
+                Transaction.account_id == account_id,
+                Transaction.user_id == user_id,
+            )
+            .limit(1)
+        )
+        return result.scalar_one_or_none() is not None
 
     async def add(self, account: Account) -> Account:
         self._session.add(account)

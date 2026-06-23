@@ -68,7 +68,9 @@ export function AccountForm({
           input: {
             name,
             type,
-            initial_balance: initial || "0",
+            ...(account.has_transactions
+              ? {}
+              : { initial_balance: initial || "0" }),
             credit_limit: limit,
             color,
             sort_order: order,
@@ -138,8 +140,15 @@ export function AccountForm({
           inputMode="decimal"
           step="0.01"
           value={initial}
+          disabled={account?.has_transactions ?? false}
           onChange={(e) => setInitial(e.target.value)}
         />
+        {account?.has_transactions && (
+          <span className="hint">
+            После первой операции начальный баланс нельзя изменить.
+            Измените остаток отдельной операцией дохода или расхода.
+          </span>
+        )}
       </label>
 
       <label className="field">

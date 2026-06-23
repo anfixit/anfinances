@@ -47,6 +47,7 @@ class AccountRead(BaseModel):
     currency_code: str
     initial_balance: Decimal
     current_balance: Decimal
+    has_transactions: bool
     credit_limit: Decimal | None
     color: str | None
     sort_order: int
@@ -60,10 +61,12 @@ class AccountRead(BaseModel):
         cls,
         account: Account,
         current_balance: Decimal,
+        has_transactions: bool,
     ) -> Self:
         """Собрать API-схему из модели и вычисленного остатка."""
         values = {
             **account.__dict__,
             "current_balance": current_balance,
+            "has_transactions": has_transactions,
         }
         return cls.model_validate(values)

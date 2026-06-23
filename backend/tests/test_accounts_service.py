@@ -29,7 +29,11 @@ class FakeRepo:
 
     async def list_active_with_balances(self, user_id):
         return [
-            (a, self.transaction_totals.get(a.id, Decimal("0")))
+            (
+                a,
+                self.transaction_totals.get(a.id, Decimal("0")),
+                a.id in self.transaction_totals,
+            )
             for a in self.items.values()
             if a.user_id == user_id and not a.is_archived
         ]
@@ -54,6 +58,10 @@ class FakeRepo:
         if account is None:
             return Decimal("0")
         return self.transaction_totals.get(account_id, Decimal("0"))
+
+    async def has_transactions(self, account_id, user_id):
+        account = await self.get(account_id, user_id)
+        return account is not None and account_id in self.transaction_totals
 
     async def add(self, account):
         if account.id is None:
@@ -141,6 +149,7 @@ async def test_list_accounts_returns_current_balance() -> None:
 
     assert len(result) == 1
     assert result[0].current_balance == Decimal("70")
+    assert result[0].has_transactions is True
 
 
 async def test_get_account_result_returns_current_balance() -> None:
@@ -152,3 +161,47 @@ async def test_get_account_result_returns_current_balance() -> None:
     result = await service.get_account_result(account.id, USER)
 
     assert result.current_balance == Decimal("125.50")
+    assert result.has_transactions is True
+
+
+async def test_update_initial_balance_without_transactions() -> None:
+    repo = FakeRepo()
+    service = AccountService(repo)
+    account = await service.create_account(USER, _create())
+
+    updated = await service.update_account(
+        account.id,
+        USER,
+        AccountUpdate(initial_balance=Decimal("250")),
+    )
+
+    assert updated.initial_balance == Decimal("250")
+
+
+async def test_update_initial_balance_with_transactions_rejected() -> None:
+    repo = FakeRepo()
+    service = AccountService(repo)
+    account = await service.create_account(USER, _create())
+    repo.transaction_totals[account.id] = Decimal("0")
+
+    with pytest.raises(ValidationFailedError, match="Начальный баланс"):
+        await service.update_account(
+            account.id,
+            USER,
+            AccountUpdate(initial_balance=Decimal("250")),
+        )
+
+
+async def test_update_other_fields_with_transactions_allowed() -> None:
+    repo = FakeRepo()
+    service = AccountService(repo)
+    account = await service.create_account(USER, _create())
+    repo.transaction_totals[account.id] = Decimal("-10")
+
+    updated = await service.update_account(
+        account.id,
+        USER,
+        AccountUpdate(name="Основная карта"),
+    )
+
+    assert updated.name == "Основная карта"

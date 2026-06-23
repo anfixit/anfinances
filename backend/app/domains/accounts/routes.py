@@ -44,6 +44,7 @@ async def list_accounts(
             AccountRead.from_account(
                 item.account,
                 item.current_balance,
+                item.has_transactions,
             )
             for item in items
         ]
@@ -67,6 +68,7 @@ async def create_account(
         data=AccountRead.from_account(
             account,
             account.initial_balance,
+            False,
         )
     )
 
@@ -82,6 +84,7 @@ async def get_account(
         data=AccountRead.from_account(
             result.account,
             result.current_balance,
+            result.has_transactions,
         )
     )
 
@@ -101,6 +104,7 @@ async def update_account(
         data=AccountRead.from_account(
             result.account,
             result.current_balance,
+            result.has_transactions,
         )
     )
 
@@ -137,5 +141,6 @@ async def restore_account(
         data=AccountRead.from_account(
             result.account,
             result.current_balance,
+            result.has_transactions,
         )
     )

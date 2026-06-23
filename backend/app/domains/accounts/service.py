@@ -31,6 +31,7 @@ class AccountResult:
 
     account: Account
     current_balance: Decimal
+    has_transactions: bool
 
 
 class AccountService:
@@ -43,8 +44,9 @@ class AccountService:
             AccountResult(
                 account=account,
                 current_balance=account.initial_balance + transaction_total,
+                has_transactions=has_transactions,
             )
-            for account, transaction_total in rows
+            for account, transaction_total, has_transactions in rows
         ]
 
     async def get_account(
@@ -63,9 +65,14 @@ class AccountService:
             account_id,
             user_id,
         )
+        has_transactions = await self._repo.has_transactions(
+            account_id,
+            user_id,
+        )
         return AccountResult(
             account=account,
             current_balance=account.initial_balance + transaction_total,
+            has_transactions=has_transactions,
         )
 
     async def create_account(
@@ -105,6 +112,26 @@ class AccountService:
     ) -> Account:
         account = await self.get_account(account_id, user_id)
         fields = data.model_dump(exclude_unset=True)
+
+        initial_balance = fields.get("initial_balance")
+        if (
+            initial_balance is not None
+            and initial_balance != account.initial_balance
+            and await self._repo.has_transactions(account_id, user_id)
+        ):
+            raise ValidationFailedError(
+                "Начальный баланс нельзя изменить после появления операций. "
+                "Измените остаток отдельной операцией дохода или расхода.",
+                details=[
+                    {
+                        "field": "initial_balance",
+                        "message": (
+                            "После первой операции начальный баланс "
+                            "заблокирован."
+                        ),
+                    }
+                ],
+            )
 
         new_name = fields.get("name")
         if new_name is not None and new_name != account.name:
