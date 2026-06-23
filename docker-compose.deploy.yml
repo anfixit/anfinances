@@ -29,7 +29,11 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-anfinances} -d ${POSTGRES_DB:-anfinances}"]
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-anfinances} -d ${POSTGRES_DB:-anfinances}",
+        ]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -77,7 +81,7 @@ services:
       - frontend
     ports:
       - "80:80"
-      - "443:443"
+      - "8443:8443"
     volumes:
       - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       # Персистентность сертификатов между деплоями — иначе LE rate-limit.

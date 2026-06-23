@@ -4,21 +4,31 @@
 # отдаёт SPA, проксирует /api/* в backend и держит rate-limit на /auth/*.
 #
 # Перед первым запуском подставь свой домен и email (2 правки):
-#   sed -i 's/anfinances.example.com/<твой-домен>/g' caddy/Caddyfile \
+#   sed -i 's/anfinances.example.com/anfinances.ru/g' caddy/Caddyfile \
 #       docker-compose.deploy.yml
-#   sed -i 's/you@example.com/<твой-email>/g' caddy/Caddyfile
+#   sed -i 's/you@example.com/anfisa.kovganyuk@gmail.com/g' caddy/Caddyfile
 #
 # Email нужен Let's Encrypt только для уведомлений об истечении.
 
 {
-	email you@example.com
+	email anfisa.kovganyuk@gmail.com
+	http_port 80
+	https_port 8443
 }
 
-anfinances.example.com {
+anfinances.ru {
 	encode zstd gzip
 
 	# HSTS — на этом контуре TLS уже есть (на http-контуре его не было).
 	header Strict-Transport-Security "max-age=31536000; includeSubDomains"
 
 	reverse_proxy frontend:80
+
+	# 443 занят VPN → TLS-ALPN недоступен; сертификат берём только
+	# через HTTP-челлендж на порту 80.
+	tls {
+		issuer acme {
+			disable_tlsalpn_challenge
+		}
+	}
 }
