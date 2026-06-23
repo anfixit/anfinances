@@ -7,14 +7,20 @@
 from functools import lru_cache
 from typing import Literal, Self
 
-from pydantic import Field, PostgresDsn, SecretStr, model_validator
+from pydantic import (
+    Field,
+    PostgresDsn,
+    SecretStr,
+    model_validator,
+)
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 AuthMode = Literal["single_user", "multi_user_no_verify", "multi_user"]
 
 # Значения-заглушки из .env.example: в проде их быть не должно.
-_PLACEHOLDER_SECRET = "change-me-use-openssl-rand-hex-32-to-generate"
-_DEFAULT_DB_PASSWORD = "anfinances"
+# Это эталоны для сравнения, а не секреты — отсюда noqa на S105.
+_PLACEHOLDER_SECRET = "change-me-use-openssl-rand-hex-32-to-generate"  # noqa: S105
+_DEFAULT_DB_PASSWORD = "anfinances"  # noqa: S105
 
 
 class Settings(BaseSettings):
@@ -104,7 +110,6 @@ class Settings(BaseSettings):
     def _enforce_production_safety(self) -> Self:
         """В production громко падаем на небезопасной конфигурации.
 
-        Философия §0: корректность и безопасность важнее доступности.
         Лучше не подняться, чем тихо работать с debug-режимом, cookie
         без Secure, дефолтным секретом/паролем или (для single_user)
         без учётных данных — тогда войти было бы некем и нельзя.

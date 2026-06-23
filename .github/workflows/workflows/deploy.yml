@@ -1,0 +1,306 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  # ── Старт: сообщаем в Telegram, что поехали ─────────────────────────
+  notify-start:
+    runs-on: ubuntu-latest
+    steps:
+      - shell: bash
+        env:
+          TG_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TG_CHAT: ${{ secrets.TELEGRAM_CHAT_ID }}
+          MSG: ${{ github.event.head_commit.message }}
+        run: |
+          text="🚀 <b>Деплой anfinances начат</b>
+          commit: <code>${GITHUB_SHA::7}</code>
+          автор: ${GITHUB_ACTOR}
+          ${MSG}"
+          curl -s -X POST \
+            "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
+            -d chat_id="${TG_CHAT}" -d parse_mode=HTML \
+            -d disable_web_page_preview=true \
+            --data-urlencode text="${text}" >/dev/null || true
+
+  # ── Качество кода: lint + типы (backend) ────────────────────────────
+  lint:
+    needs: notify-start
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync --frozen
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run mypy app
+      - if: always()
+        uses: ./.github/actions/tg-notify
+        with:
+          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          chat: ${{ secrets.TELEGRAM_CHAT_ID }}
+          stage: "lint + mypy (backend)"
+          status: ${{ job.status }}
+
+  # ── Тесты backend ───────────────────────────────────────────────────
+  test:
+    needs: notify-start
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync --frozen
+      - run: uv run pytest -q
+      - if: always()
+        uses: ./.github/actions/tg-notify
+        with:
+          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          chat: ${{ secrets.TELEGRAM_CHAT_ID }}
+          stage: "тесты (backend)"
+          status: ${{ job.status }}
+
+  # ── Проверки frontend: типы (build) + eslint ────────────────────────
+  frontend:
+    needs: notify-start
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm eslint .
+      - if: always()
+        uses: ./.github/actions/tg-notify
+        with:
+          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          chat: ${{ secrets.TELEGRAM_CHAT_ID }}
+          stage: "проверки (frontend)"
+          status: ${{ job.status }}
+
+  # ── Сборка backend-образа → GHCR ────────────────────────────────────
+  build-backend:
+    needs: [lint, test]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Image name
+        id: img
+        run: |
+          owner=$(echo "${{ github.repository_owner }}" | tr 'A-Z' 'a-z')
+          echo "ref=${REGISTRY}/${owner}/anfinances-backend" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          file: ./backend/docker/Dockerfile
+          push: true
+          tags: |
+            ${{ steps.img.outputs.ref }}:latest
+            ${{ steps.img.outputs.ref }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - if: always()
+        uses: ./.github/actions/tg-notify
+        with:
+          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          chat: ${{ secrets.TELEGRAM_CHAT_ID }}
+          stage: "сборка backend → GHCR"
+          status: ${{ job.status }}
+
+  # ── Сборка frontend-образа → GHCR ───────────────────────────────────
+  build-frontend:
+    needs: frontend
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Image name
+        id: img
+        run: |
+          owner=$(echo "${{ github.repository_owner }}" | tr 'A-Z' 'a-z')
+          echo "ref=${REGISTRY}/${owner}/anfinances-frontend" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile
+          push: true
+          tags: |
+            ${{ steps.img.outputs.ref }}:latest
+            ${{ steps.img.outputs.ref }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - if: always()
+        uses: ./.github/actions/tg-notify
+        with:
+          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          chat: ${{ secrets.TELEGRAM_CHAT_ID }}
+          stage: "сборка frontend → GHCR"
+          status: ${{ job.status }}
+
+  # ── Раскатка на сервер по SSH + миграции ────────────────────────────
+  deploy:
+    needs: [build-backend, build-frontend]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_USER: ${{ github.actor }}
+          OWNER: ${{ github.repository_owner }}
+          SECRET_KEY: ${{ secrets.SECRET_KEY }}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          SINGLE_USER_EMAIL: ${{ secrets.SINGLE_USER_EMAIL }}
+          SINGLE_USER_PASSWORD: ${{ secrets.SINGLE_USER_PASSWORD }}
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          envs: GHCR_TOKEN,GHCR_USER,OWNER,SECRET_KEY,POSTGRES_PASSWORD,SINGLE_USER_EMAIL,SINGLE_USER_PASSWORD
+          script: |
+            set -e
+            cd ${{ secrets.DEPLOY_PATH }}
+            git pull --ff-only
+
+            owner_lc=$(echo "$OWNER" | tr 'A-Z' 'a-z')
+            export IMAGE_BACKEND="ghcr.io/${owner_lc}/anfinances-backend:latest"
+            export IMAGE_FRONTEND="ghcr.io/${owner_lc}/anfinances-frontend:latest"
+            export POSTGRES_PASSWORD
+
+            umask 077
+            cat > backend/.env <<EOF
+            SECRET_KEY=$SECRET_KEY
+            POSTGRES_PASSWORD=$POSTGRES_PASSWORD
+            AUTH_MODE=single_user
+            SINGLE_USER_EMAIL=$SINGLE_USER_EMAIL
+            SINGLE_USER_PASSWORD=$SINGLE_USER_PASSWORD
+            EOF
+
+            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
+            docker compose -f docker-compose.deploy.yml pull
+            docker compose -f docker-compose.deploy.yml up -d
+            docker compose -f docker-compose.deploy.yml run --rm backend \
+              alembic upgrade head
+      - if: always()
+        uses: ./.github/actions/tg-notify
+        with:
+          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          chat: ${{ secrets.TELEGRAM_CHAT_ID }}
+          stage: "раскатка на сервер + миграции"
+          status: ${{ job.status }}
+
+  # ── Smoke-проверка боевого health по HTTPS ──────────────────────────
+  smoke:
+    needs: deploy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Health check
+        run: |
+          url="https://anfinances.ru:8443/api/v1/health/ready"
+          for i in $(seq 1 10); do
+            if curl -fsS "$url"; then
+              echo "OK"; exit 0
+            fi
+            echo "попытка $i не прошла, жду..."; sleep 6
+          done
+          echo "health не ответил ok"; exit 1
+      - if: always()
+        uses: ./.github/actions/tg-notify
+        with:
+          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          chat: ${{ secrets.TELEGRAM_CHAT_ID }}
+          stage: "smoke (health по HTTPS)"
+          status: ${{ job.status }}
+
+  # ── Итоговая сводка: статус каждой стадии одним сообщением ───────────
+  summary:
+    needs:
+      - notify-start
+      - lint
+      - test
+      - frontend
+      - build-backend
+      - build-frontend
+      - deploy
+      - smoke
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - shell: bash
+        env:
+          TG_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TG_CHAT: ${{ secrets.TELEGRAM_CHAT_ID }}
+          R_LINT: ${{ needs.lint.result }}
+          R_TEST: ${{ needs.test.result }}
+          R_FRONT: ${{ needs.frontend.result }}
+          R_BB: ${{ needs.build-backend.result }}
+          R_BF: ${{ needs.build-frontend.result }}
+          R_DEPLOY: ${{ needs.deploy.result }}
+          R_SMOKE: ${{ needs.smoke.result }}
+        run: |
+          ic() { case "$1" in
+            success) echo "✅";; failure) echo "❌";;
+            cancelled) echo "🚫";; skipped) echo "⏭️";; *) echo "❔";;
+          esac; }
+          overall="✅ успешно"
+          for r in "$R_LINT" "$R_TEST" "$R_FRONT" "$R_BB" "$R_BF" \
+                   "$R_DEPLOY" "$R_SMOKE"; do
+            [ "$r" = "failure" ] && overall="❌ с ошибкой"
+          done
+          text="<b>Итог деплоя: ${overall}</b>
+          $(ic "$R_LINT") lint + mypy
+          $(ic "$R_TEST") тесты
+          $(ic "$R_FRONT") frontend
+          $(ic "$R_BB") сборка backend
+          $(ic "$R_BF") сборка frontend
+          $(ic "$R_DEPLOY") раскатка + миграции
+          $(ic "$R_SMOKE") smoke
+          → https://anfinances.ru:8443"
+          curl -s -X POST \
+            "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
+            -d chat_id="${TG_CHAT}" -d parse_mode=HTML \
+            -d disable_web_page_preview=true \
+            --data-urlencode text="${text}" >/dev/null || true
