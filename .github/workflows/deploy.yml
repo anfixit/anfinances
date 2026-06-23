@@ -2,147 +2,298 @@ name: Deploy
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+
   workflow_dispatch:
 
 env:
   REGISTRY: ghcr.io
 
 jobs:
-  # ── Старт ───────────────────────────────────────────────────────────
   notify-start:
     runs-on: ubuntu-latest
+
     steps:
-      - name: notify
+      - name: Send start notification
+        shell: bash
         env:
           TG_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TG_CHAT: ${{ secrets.TELEGRAM_CHAT_ID }}
-          MSG: ${{ github.event.head_commit.message }}
+
+          REPOSITORY: ${{ github.repository }}
+          ACTOR: ${{ github.actor }}
+          SHA: ${{ github.sha }}
+          REF_NAME: ${{ github.ref_name }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_NUMBER: ${{ github.run_number }}
+          SERVER_URL: ${{ github.server_url }}
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
         run: |
+          set -euo pipefail
+
+          if [ -z "$TG_TOKEN" ]; then
+            echo "::error::TELEGRAM_BOT_TOKEN is empty"
+            exit 1
+          fi
+
+          if [ -z "$TG_CHAT" ]; then
+            echo "::error::TELEGRAM_CHAT_ID is empty"
+            exit 1
+          fi
+
+          short_sha="${SHA:0:7}"
+          run_url="${SERVER_URL}/${REPOSITORY}/actions/runs/${RUN_ID}"
+          commit_url="${SERVER_URL}/${REPOSITORY}/commit/${SHA}"
+
           text="🚀 <b>Деплой anfinances начат</b>
-          commit: <code>${GITHUB_SHA::7}</code> · ${GITHUB_ACTOR}
-          ${MSG}"
-          curl -s -X POST \
-            "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
-            -d chat_id="${TG_CHAT}" -d parse_mode=HTML \
-            -d disable_web_page_preview=true \
-            --data-urlencode text="${text}" >/dev/null || true
 
-  # ── lint + типы (backend) ───────────────────────────────────────────
+          Репозиторий: <code>${REPOSITORY}</code>
+          Ветка: <code>${REF_NAME}</code>
+          Commit: <a href=\"${commit_url}\">${short_sha}</a>
+          Автор запуска: <code>${ACTOR}</code>
+          Workflow run: <a href=\"${run_url}\">#${RUN_NUMBER}</a>
+
+          <b>Сообщение commit:</b>
+          ${COMMIT_MESSAGE}
+
+          <b>План:</b>
+          1. Проверка backend
+          2. Тесты backend
+          3. Проверка frontend
+          4. Сборка Docker-образов
+          5. Публикация в GHCR
+          6. Деплой на сервер
+          7. Миграции базы данных
+          8. Smoke-проверка"
+
+          curl \
+            --fail-with-body \
+            --silent \
+            --show-error \
+            -X POST \
+            "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
+            -d "chat_id=${TG_CHAT}" \
+            -d "parse_mode=HTML" \
+            -d "disable_web_page_preview=true" \
+            --data-urlencode "text=${text}"
+
   lint:
-    needs: notify-start
+    needs:
+      - notify-start
+
     runs-on: ubuntu-latest
+
     defaults:
       run:
         working-directory: backend
+
     steps:
       - uses: actions/checkout@v4
+
       - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
-      - run: uv sync --frozen
-      - run: uv run ruff check .
-      - run: uv run ruff format --check .
-      - run: uv run mypy app
-      - name: notify
-        if: always()
-        env:
-          TG_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TG_CHAT: ${{ secrets.TELEGRAM_CHAT_ID }}
-          STATUS: ${{ job.status }}
-        run: |
-          case "$STATUS" in
-            success) i="✅";; failure) i="❌";; cancelled) i="🚫";; *) i="▶️";;
-          esac
-          curl -s -X POST \
-            "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
-            -d chat_id="${TG_CHAT}" -d parse_mode=HTML \
-            --data-urlencode text="${i} <b>lint + mypy</b>: ${STATUS}" \
-            >/dev/null || true
 
-  # ── тесты (backend) ─────────────────────────────────────────────────
+      - name: Record start time
+        id: timer
+        shell: bash
+        run: echo "started=$(date +%s)" >> "$GITHUB_OUTPUT"
+
+      - name: Install backend dependencies
+        run: uv sync --frozen
+
+      - name: Ruff lint
+        run: uv run ruff check .
+
+      - name: Ruff format check
+        run: uv run ruff format --check .
+
+      - name: Mypy
+        run: uv run mypy app
+
+      - name: Calculate duration
+        if: always()
+        id: duration
+        shell: bash
+        run: |
+          ended=$(date +%s)
+          seconds=$((ended - ${{ steps.timer.outputs.started }}))
+          minutes=$((seconds / 60))
+          rest=$((seconds % 60))
+          echo "value=${minutes} мин ${rest} сек" >> "$GITHUB_OUTPUT"
+
+      - name: Notify Telegram
+        if: always()
+        uses: ./.github/actions/tg-notify
+        with:
+          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          chat: ${{ secrets.TELEGRAM_CHAT_ID }}
+          stage: Проверка качества backend
+          status: ${{ job.status }}
+          duration: ${{ steps.duration.outputs.value }}
+          details: |
+            Выполнено:
+            • установка зависимостей через uv
+            • ruff check
+            • ruff format --check
+            • mypy app
+
   test:
-    needs: notify-start
+    needs:
+      - notify-start
+
     runs-on: ubuntu-latest
+
     defaults:
       run:
         working-directory: backend
+
     steps:
       - uses: actions/checkout@v4
+
       - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
-      - run: uv sync --frozen
-      - run: uv run pytest -q
-      - name: notify
-        if: always()
-        env:
-          TG_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TG_CHAT: ${{ secrets.TELEGRAM_CHAT_ID }}
-          STATUS: ${{ job.status }}
-        run: |
-          case "$STATUS" in
-            success) i="✅";; failure) i="❌";; cancelled) i="🚫";; *) i="▶️";;
-          esac
-          curl -s -X POST \
-            "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
-            -d chat_id="${TG_CHAT}" -d parse_mode=HTML \
-            --data-urlencode text="${i} <b>тесты</b>: ${STATUS}" \
-            >/dev/null || true
 
-  # ── проверки (frontend) ─────────────────────────────────────────────
+      - name: Record start time
+        id: timer
+        shell: bash
+        run: echo "started=$(date +%s)" >> "$GITHUB_OUTPUT"
+
+      - name: Install backend dependencies
+        run: uv sync --frozen
+
+      - name: Run tests
+        run: uv run pytest -q
+
+      - name: Calculate duration
+        if: always()
+        id: duration
+        shell: bash
+        run: |
+          ended=$(date +%s)
+          seconds=$((ended - ${{ steps.timer.outputs.started }}))
+          minutes=$((seconds / 60))
+          rest=$((seconds % 60))
+          echo "value=${minutes} мин ${rest} сек" >> "$GITHUB_OUTPUT"
+
+      - name: Notify Telegram
+        if: always()
+        uses: ./.github/actions/tg-notify
+        with:
+          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          chat: ${{ secrets.TELEGRAM_CHAT_ID }}
+          stage: Тесты backend
+          status: ${{ job.status }}
+          duration: ${{ steps.duration.outputs.value }}
+          details: |
+            Команда:
+            <code>uv run pytest -q</code>
+
+            Проверены unit и integration тесты backend.
+
   frontend:
-    needs: notify-start
+    needs:
+      - notify-start
+
     runs-on: ubuntu-latest
+
     defaults:
       run:
         working-directory: frontend
+
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: corepack enable
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm build
-      - run: pnpm eslint .
-      - name: notify
-        if: always()
-        env:
-          TG_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TG_CHAT: ${{ secrets.TELEGRAM_CHAT_ID }}
-          STATUS: ${{ job.status }}
-        run: |
-          case "$STATUS" in
-            success) i="✅";; failure) i="❌";; cancelled) i="🚫";; *) i="▶️";;
-          esac
-          curl -s -X POST \
-            "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
-            -d chat_id="${TG_CHAT}" -d parse_mode=HTML \
-            --data-urlencode text="${i} <b>frontend</b>: ${STATUS}" \
-            >/dev/null || true
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
 
-  # ── сборка backend → GHCR ───────────────────────────────────────────
+      - name: Record start time
+        id: timer
+        shell: bash
+        run: echo "started=$(date +%s)" >> "$GITHUB_OUTPUT"
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build frontend
+        run: pnpm build
+
+      - name: ESLint
+        run: pnpm eslint .
+
+      - name: Calculate duration
+        if: always()
+        id: duration
+        shell: bash
+        run: |
+          ended=$(date +%s)
+          seconds=$((ended - ${{ steps.timer.outputs.started }}))
+          minutes=$((seconds / 60))
+          rest=$((seconds % 60))
+          echo "value=${minutes} мин ${rest} сек" >> "$GITHUB_OUTPUT"
+
+      - name: Notify Telegram
+        if: always()
+        uses: ./.github/actions/tg-notify
+        with:
+          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          chat: ${{ secrets.TELEGRAM_CHAT_ID }}
+          stage: Проверка frontend
+          status: ${{ job.status }}
+          duration: ${{ steps.duration.outputs.value }}
+          details: |
+            Выполнено:
+            • pnpm install --frozen-lockfile
+            • TypeScript/Vite build
+            • ESLint
+
+            Node.js: <code>22</code>
+            pnpm: <code>11.8.0</code>
+
   build-backend:
-    needs: [lint, test]
+    needs:
+      - lint
+      - test
+
     runs-on: ubuntu-latest
+
     permissions:
       contents: read
       packages: write
+
     steps:
       - uses: actions/checkout@v4
-      - name: Image name
+
+      - name: Record start time
+        id: timer
+        shell: bash
+        run: echo "started=$(date +%s)" >> "$GITHUB_OUTPUT"
+
+      - name: Prepare backend image name
         id: img
+        shell: bash
         run: |
-          owner=$(echo "${{ github.repository_owner }}" | tr 'A-Z' 'a-z')
+          owner="$(echo "${{ github.repository_owner }}" | tr 'A-Z' 'a-z')"
           echo "ref=${REGISTRY}/${owner}/anfinances-backend" >> "$GITHUB_OUTPUT"
+
       - uses: docker/setup-buildx-action@v3
+
       - uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/build-push-action@v6
+
+      - name: Build and push backend image
+        uses: docker/build-push-action@v6
         with:
           context: ./backend
           file: ./backend/docker/Dockerfile
@@ -152,43 +303,72 @@ jobs:
             ${{ steps.img.outputs.ref }}:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-      - name: notify
-        if: always()
-        env:
-          TG_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TG_CHAT: ${{ secrets.TELEGRAM_CHAT_ID }}
-          STATUS: ${{ job.status }}
-        run: |
-          case "$STATUS" in
-            success) i="✅";; failure) i="❌";; cancelled) i="🚫";; *) i="▶️";;
-          esac
-          curl -s -X POST \
-            "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
-            -d chat_id="${TG_CHAT}" -d parse_mode=HTML \
-            --data-urlencode text="${i} <b>сборка backend</b>: ${STATUS}" \
-            >/dev/null || true
 
-  # ── сборка frontend → GHCR ──────────────────────────────────────────
+      - name: Calculate duration
+        if: always()
+        id: duration
+        shell: bash
+        run: |
+          ended=$(date +%s)
+          seconds=$((ended - ${{ steps.timer.outputs.started }}))
+          minutes=$((seconds / 60))
+          rest=$((seconds % 60))
+          echo "value=${minutes} мин ${rest} сек" >> "$GITHUB_OUTPUT"
+
+      - name: Notify Telegram
+        if: always()
+        uses: ./.github/actions/tg-notify
+        with:
+          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          chat: ${{ secrets.TELEGRAM_CHAT_ID }}
+          stage: Сборка backend Docker image
+          status: ${{ job.status }}
+          duration: ${{ steps.duration.outputs.value }}
+          details: |
+            Образ:
+            <code>${{ steps.img.outputs.ref }}:latest</code>
+
+            Дополнительный тег:
+            <code>${{ github.sha }}</code>
+
+            Registry:
+            <code>ghcr.io</code>
+
   build-frontend:
-    needs: frontend
+    needs:
+      - frontend
+
     runs-on: ubuntu-latest
+
     permissions:
       contents: read
       packages: write
+
     steps:
       - uses: actions/checkout@v4
-      - name: Image name
+
+      - name: Record start time
+        id: timer
+        shell: bash
+        run: echo "started=$(date +%s)" >> "$GITHUB_OUTPUT"
+
+      - name: Prepare frontend image name
         id: img
+        shell: bash
         run: |
-          owner=$(echo "${{ github.repository_owner }}" | tr 'A-Z' 'a-z')
+          owner="$(echo "${{ github.repository_owner }}" | tr 'A-Z' 'a-z')"
           echo "ref=${REGISTRY}/${owner}/anfinances-frontend" >> "$GITHUB_OUTPUT"
+
       - uses: docker/setup-buildx-action@v3
+
       - uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/build-push-action@v6
+
+      - name: Build and push frontend image
+        uses: docker/build-push-action@v6
         with:
           context: ./frontend
           file: ./frontend/Dockerfile
@@ -198,30 +378,56 @@ jobs:
             ${{ steps.img.outputs.ref }}:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-      - name: notify
-        if: always()
-        env:
-          TG_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TG_CHAT: ${{ secrets.TELEGRAM_CHAT_ID }}
-          STATUS: ${{ job.status }}
-        run: |
-          case "$STATUS" in
-            success) i="✅";; failure) i="❌";; cancelled) i="🚫";; *) i="▶️";;
-          esac
-          curl -s -X POST \
-            "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
-            -d chat_id="${TG_CHAT}" -d parse_mode=HTML \
-            --data-urlencode text="${i} <b>сборка frontend</b>: ${STATUS}" \
-            >/dev/null || true
 
-  # ── раскатка + миграции ─────────────────────────────────────────────
+      - name: Calculate duration
+        if: always()
+        id: duration
+        shell: bash
+        run: |
+          ended=$(date +%s)
+          seconds=$((ended - ${{ steps.timer.outputs.started }}))
+          minutes=$((seconds / 60))
+          rest=$((seconds % 60))
+          echo "value=${minutes} мин ${rest} сек" >> "$GITHUB_OUTPUT"
+
+      - name: Notify Telegram
+        if: always()
+        uses: ./.github/actions/tg-notify
+        with:
+          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          chat: ${{ secrets.TELEGRAM_CHAT_ID }}
+          stage: Сборка frontend Docker image
+          status: ${{ job.status }}
+          duration: ${{ steps.duration.outputs.value }}
+          details: |
+            Образ:
+            <code>${{ steps.img.outputs.ref }}:latest</code>
+
+            Дополнительный тег:
+            <code>${{ github.sha }}</code>
+
+            Базовый build image:
+            <code>node:22-alpine</code>
+
   deploy:
-    needs: [build-backend, build-frontend]
+    needs:
+      - build-backend
+      - build-frontend
+
     runs-on: ubuntu-latest
+
     permissions:
       contents: read
       packages: read
+
     steps:
+      - uses: actions/checkout@v4
+
+      - name: Record start time
+        id: timer
+        shell: bash
+        run: echo "started=$(date +%s)" >> "$GITHUB_OUTPUT"
+
       - name: Deploy over SSH
         uses: appleboy/ssh-action@v1
         env:
@@ -239,16 +445,20 @@ jobs:
           port: ${{ secrets.SSH_PORT }}
           envs: GHCR_TOKEN,GHCR_USER,OWNER,SECRET_KEY,POSTGRES_PASSWORD,SINGLE_USER_EMAIL,SINGLE_USER_PASSWORD
           script: |
-            set -e
-            cd ${{ secrets.DEPLOY_PATH }}
+            set -euo pipefail
+
+            cd "${{ secrets.DEPLOY_PATH }}"
+
             git pull --ff-only
 
-            owner_lc=$(echo "$OWNER" | tr 'A-Z' 'a-z')
+            owner_lc="$(echo "$OWNER" | tr 'A-Z' 'a-z')"
+
             export IMAGE_BACKEND="ghcr.io/${owner_lc}/anfinances-backend:latest"
             export IMAGE_FRONTEND="ghcr.io/${owner_lc}/anfinances-frontend:latest"
             export POSTGRES_PASSWORD
 
             umask 077
+
             cat > backend/.env <<EOF
             SECRET_KEY=$SECRET_KEY
             POSTGRES_PASSWORD=$POSTGRES_PASSWORD
@@ -257,57 +467,121 @@ jobs:
             SINGLE_USER_PASSWORD=$SINGLE_USER_PASSWORD
             EOF
 
-            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
-            docker compose -f docker-compose.deploy.yml pull
-            docker compose -f docker-compose.deploy.yml up -d
-            docker compose -f docker-compose.deploy.yml run --rm backend \
+            echo "$GHCR_TOKEN" |
+              docker login ghcr.io \
+                -u "$GHCR_USER" \
+                --password-stdin
+
+            docker compose \
+              -f docker-compose.deploy.yml \
+              pull
+
+            docker compose \
+              -f docker-compose.deploy.yml \
+              up -d
+
+            docker compose \
+              -f docker-compose.deploy.yml \
+              run --rm backend \
               alembic upgrade head
-      - name: notify
-        if: always()
-        env:
-          TG_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TG_CHAT: ${{ secrets.TELEGRAM_CHAT_ID }}
-          STATUS: ${{ job.status }}
-        run: |
-          case "$STATUS" in
-            success) i="✅";; failure) i="❌";; cancelled) i="🚫";; *) i="▶️";;
-          esac
-          curl -s -X POST \
-            "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
-            -d chat_id="${TG_CHAT}" -d parse_mode=HTML \
-            --data-urlencode text="${i} <b>раскатка + миграции</b>: ${STATUS}" \
-            >/dev/null || true
 
-  # ── smoke (health по HTTPS) ─────────────────────────────────────────
+            docker compose \
+              -f docker-compose.deploy.yml \
+              ps
+
+      - name: Calculate duration
+        if: always()
+        id: duration
+        shell: bash
+        run: |
+          ended=$(date +%s)
+          seconds=$((ended - ${{ steps.timer.outputs.started }}))
+          minutes=$((seconds / 60))
+          rest=$((seconds % 60))
+          echo "value=${minutes} мин ${rest} сек" >> "$GITHUB_OUTPUT"
+
+      - name: Notify Telegram
+        if: always()
+        uses: ./.github/actions/tg-notify
+        with:
+          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          chat: ${{ secrets.TELEGRAM_CHAT_ID }}
+          stage: Деплой на сервер
+          status: ${{ job.status }}
+          duration: ${{ steps.duration.outputs.value }}
+          details: |
+            Выполнено:
+            • git pull --ff-only
+            • docker compose pull
+            • docker compose up -d
+            • alembic upgrade head
+            • docker compose ps
+
+            Сервер:
+            <code>${{ secrets.SSH_HOST }}</code>
+
   smoke:
-    needs: deploy
-    runs-on: ubuntu-latest
-    steps:
-      - name: Health check
-        run: |
-          url="https://anfinances.ru:8443/api/v1/health/ready"
-          for i in $(seq 1 10); do
-            if curl -fsS "$url"; then echo "OK"; exit 0; fi
-            echo "попытка $i не прошла, жду..."; sleep 6
-          done
-          echo "health не ответил ok"; exit 1
-      - name: notify
-        if: always()
-        env:
-          TG_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TG_CHAT: ${{ secrets.TELEGRAM_CHAT_ID }}
-          STATUS: ${{ job.status }}
-        run: |
-          case "$STATUS" in
-            success) i="✅";; failure) i="❌";; cancelled) i="🚫";; *) i="▶️";;
-          esac
-          curl -s -X POST \
-            "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
-            -d chat_id="${TG_CHAT}" -d parse_mode=HTML \
-            --data-urlencode text="${i} <b>smoke (health)</b>: ${STATUS}" \
-            >/dev/null || true
+    needs:
+      - deploy
 
-  # ── итоговая сводка ─────────────────────────────────────────────────
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Record start time
+        id: timer
+        shell: bash
+        run: echo "started=$(date +%s)" >> "$GITHUB_OUTPUT"
+
+      - name: Health check
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          url="https://anfinances.ru:8443/api/v1/health/ready"
+
+          for attempt in $(seq 1 10); do
+            echo "Health-check attempt ${attempt}/10"
+
+            if response="$(curl --fail --silent --show-error "$url")"; then
+              echo "Response: $response"
+              exit 0
+            fi
+
+            sleep 6
+          done
+
+          echo "Health endpoint did not return success"
+          exit 1
+
+      - name: Calculate duration
+        if: always()
+        id: duration
+        shell: bash
+        run: |
+          ended=$(date +%s)
+          seconds=$((ended - ${{ steps.timer.outputs.started }}))
+          minutes=$((seconds / 60))
+          rest=$((seconds % 60))
+          echo "value=${minutes} мин ${rest} сек" >> "$GITHUB_OUTPUT"
+
+      - name: Notify Telegram
+        if: always()
+        uses: ./.github/actions/tg-notify
+        with:
+          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          chat: ${{ secrets.TELEGRAM_CHAT_ID }}
+          stage: Smoke-проверка production
+          status: ${{ job.status }}
+          duration: ${{ steps.duration.outputs.value }}
+          details: |
+            Проверен endpoint:
+            <a href="https://anfinances.ru:8443/api/v1/health/ready">health/ready</a>
+
+            Production:
+            <a href="https://anfinances.ru:8443">anfinances.ru</a>
+
   summary:
     needs:
       - notify-start
@@ -318,41 +592,103 @@ jobs:
       - build-frontend
       - deploy
       - smoke
+
     if: always()
+
     runs-on: ubuntu-latest
+
     steps:
-      - name: notify
+      - name: Send final summary
+        shell: bash
         env:
           TG_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TG_CHAT: ${{ secrets.TELEGRAM_CHAT_ID }}
-          R_LINT: ${{ needs.lint.result }}
-          R_TEST: ${{ needs.test.result }}
-          R_FRONT: ${{ needs.frontend.result }}
-          R_BB: ${{ needs.build-backend.result }}
-          R_BF: ${{ needs.build-frontend.result }}
-          R_DEPLOY: ${{ needs.deploy.result }}
-          R_SMOKE: ${{ needs.smoke.result }}
+
+          RESULT_LINT: ${{ needs.lint.result }}
+          RESULT_TEST: ${{ needs.test.result }}
+          RESULT_FRONTEND: ${{ needs.frontend.result }}
+          RESULT_BUILD_BACKEND: ${{ needs.build-backend.result }}
+          RESULT_BUILD_FRONTEND: ${{ needs.build-frontend.result }}
+          RESULT_DEPLOY: ${{ needs.deploy.result }}
+          RESULT_SMOKE: ${{ needs.smoke.result }}
+
+          REPOSITORY: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+          REF_NAME: ${{ github.ref_name }}
+          ACTOR: ${{ github.actor }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_NUMBER: ${{ github.run_number }}
+          SERVER_URL: ${{ github.server_url }}
         run: |
-          ic() { case "$1" in
-            success) echo "✅";; failure) echo "❌";;
-            cancelled) echo "🚫";; skipped) echo "⏭️";; *) echo "❔";;
-          esac; }
-          overall="✅ успешно"
-          for r in "$R_LINT" "$R_TEST" "$R_FRONT" "$R_BB" "$R_BF" \
-                   "$R_DEPLOY" "$R_SMOKE"; do
-            [ "$r" = "failure" ] && overall="❌ с ошибкой"
+          set -euo pipefail
+
+          icon() {
+            case "$1" in
+              success) echo "✅" ;;
+              failure) echo "❌" ;;
+              cancelled) echo "🚫" ;;
+              skipped) echo "⏭️" ;;
+              *) echo "❔" ;;
+            esac
+          }
+
+          overall_icon="✅"
+          overall_text="деплой завершён успешно"
+
+          for result in \
+            "$RESULT_LINT" \
+            "$RESULT_TEST" \
+            "$RESULT_FRONTEND" \
+            "$RESULT_BUILD_BACKEND" \
+            "$RESULT_BUILD_FRONTEND" \
+            "$RESULT_DEPLOY" \
+            "$RESULT_SMOKE"
+          do
+            if [ "$result" = "failure" ]; then
+              overall_icon="❌"
+              overall_text="деплой завершён с ошибкой"
+            fi
+
+            if [ "$result" = "cancelled" ]; then
+              overall_icon="🚫"
+              overall_text="деплой был отменён"
+            fi
           done
-          text="<b>Итог деплоя: ${overall}</b>
-          $(ic "$R_LINT") lint + mypy
-          $(ic "$R_TEST") тесты
-          $(ic "$R_FRONT") frontend
-          $(ic "$R_BB") сборка backend
-          $(ic "$R_BF") сборка frontend
-          $(ic "$R_DEPLOY") раскатка + миграции
-          $(ic "$R_SMOKE") smoke
-          → https://anfinances.ru:8443"
-          curl -s -X POST \
+
+          short_sha="${SHA:0:7}"
+          run_url="${SERVER_URL}/${REPOSITORY}/actions/runs/${RUN_ID}"
+          commit_url="${SERVER_URL}/${REPOSITORY}/commit/${SHA}"
+
+          text="${overall_icon} <b>${overall_text}</b>
+
+          Репозиторий: <code>${REPOSITORY}</code>
+          Ветка: <code>${REF_NAME}</code>
+          Commit: <a href=\"${commit_url}\">${short_sha}</a>
+          Автор: <code>${ACTOR}</code>
+          Workflow run: <a href=\"${run_url}\">#${RUN_NUMBER}</a>
+
+          <b>Результаты:</b>
+          $(icon "$RESULT_LINT") Backend lint, format, mypy: <code>${RESULT_LINT}</code>
+          $(icon "$RESULT_TEST") Backend tests: <code>${RESULT_TEST}</code>
+          $(icon "$RESULT_FRONTEND") Frontend checks: <code>${RESULT_FRONTEND}</code>
+          $(icon "$RESULT_BUILD_BACKEND") Backend image: <code>${RESULT_BUILD_BACKEND}</code>
+          $(icon "$RESULT_BUILD_FRONTEND") Frontend image: <code>${RESULT_BUILD_FRONTEND}</code>
+          $(icon "$RESULT_DEPLOY") Server deploy: <code>${RESULT_DEPLOY}</code>
+          $(icon "$RESULT_SMOKE") Production smoke: <code>${RESULT_SMOKE}</code>
+
+          <b>Production:</b>
+          <a href=\"https://anfinances.ru:8443\">https://anfinances.ru:8443</a>
+
+          <b>Логи:</b>
+          <a href=\"${run_url}\">открыть GitHub Actions</a>"
+
+          curl \
+            --fail-with-body \
+            --silent \
+            --show-error \
+            -X POST \
             "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
-            -d chat_id="${TG_CHAT}" -d parse_mode=HTML \
-            -d disable_web_page_preview=true \
-            --data-urlencode text="${text}" >/dev/null || true
+            -d "chat_id=${TG_CHAT}" \
+            -d "parse_mode=HTML" \
+            -d "disable_web_page_preview=true" \
+            --data-urlencode "text=${text}"

@@ -1,0 +1,139 @@
+name: tg-notify
+description: Send a detailed GitHub Actions status message to Telegram.
+
+inputs:
+  token:
+    description: Telegram bot token
+    required: true
+
+  chat:
+    description: Telegram chat ID
+    required: true
+
+  stage:
+    description: Pipeline stage name
+    required: true
+
+  status:
+    description: Job status
+    required: true
+
+  details:
+    description: Additional message details
+    required: false
+    default: ""
+
+  duration:
+    description: Stage duration
+    required: false
+    default: ""
+
+runs:
+  using: composite
+
+  steps:
+    - name: Send Telegram notification
+      shell: bash
+      env:
+        TG_TOKEN: ${{ inputs.token }}
+        TG_CHAT: ${{ inputs.chat }}
+        STAGE: ${{ inputs.stage }}
+        STATUS: ${{ inputs.status }}
+        DETAILS: ${{ inputs.details }}
+        DURATION: ${{ inputs.duration }}
+
+        REPOSITORY: ${{ github.repository }}
+        ACTOR: ${{ github.actor }}
+        SHA: ${{ github.sha }}
+        REF_NAME: ${{ github.ref_name }}
+        RUN_ID: ${{ github.run_id }}
+        RUN_NUMBER: ${{ github.run_number }}
+        SERVER_URL: ${{ github.server_url }}
+      run: |
+        set -euo pipefail
+
+        if [ -z "$TG_TOKEN" ]; then
+          echo "::error::TELEGRAM_BOT_TOKEN is empty"
+          exit 1
+        fi
+
+        if [ -z "$TG_CHAT" ]; then
+          echo "::error::TELEGRAM_CHAT_ID is empty"
+          exit 1
+        fi
+
+        case "$STATUS" in
+          success)
+            icon="✅"
+            status_text="успешно"
+            ;;
+          failure)
+            icon="❌"
+            status_text="ошибка"
+            ;;
+          cancelled)
+            icon="🚫"
+            status_text="отменено"
+            ;;
+          skipped)
+            icon="⏭️"
+            status_text="пропущено"
+            ;;
+          *)
+            icon="ℹ️"
+            status_text="$STATUS"
+            ;;
+        esac
+
+        short_sha="${SHA:0:7}"
+        run_url="${SERVER_URL}/${REPOSITORY}/actions/runs/${RUN_ID}"
+        commit_url="${SERVER_URL}/${REPOSITORY}/commit/${SHA}"
+
+        text="${icon} <b>${STAGE}</b>
+
+        Статус: <b>${status_text}</b>
+        Репозиторий: <code>${REPOSITORY}</code>
+        Ветка: <code>${REF_NAME}</code>
+        Commit: <a href=\"${commit_url}\">${short_sha}</a>
+        Запустил: <code>${ACTOR}</code>
+        Workflow run: <a href=\"${run_url}\">#${RUN_NUMBER}</a>"
+
+        if [ -n "$DURATION" ]; then
+          text="${text}
+        Время: <code>${DURATION}</code>"
+        fi
+
+        if [ -n "$DETAILS" ]; then
+          text="${text}
+
+        ${DETAILS}"
+        fi
+
+        response_file="$(mktemp)"
+
+        http_code="$(
+          curl \
+            --silent \
+            --show-error \
+            --output "$response_file" \
+            --write-out "%{http_code}" \
+            -X POST \
+            "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
+            -d "chat_id=${TG_CHAT}" \
+            -d "parse_mode=HTML" \
+            -d "disable_web_page_preview=true" \
+            --data-urlencode "text=${text}"
+        )"
+
+        cat "$response_file"
+        echo
+
+        if [ "$http_code" -lt 200 ] || [ "$http_code" -ge 300 ]; then
+          echo "::error::Telegram API returned HTTP ${http_code}"
+          exit 1
+        fi
+
+        if ! grep -q '"ok":true' "$response_file"; then
+          echo "::error::Telegram API did not confirm delivery"
+          exit 1
+        fi
