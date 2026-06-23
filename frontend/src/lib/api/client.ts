@@ -4,7 +4,7 @@ import axios, {
   type InternalAxiosRequestConfig,
 } from "axios"
 
-import { getAccessToken, setAccessToken } from "@/auth/tokenStore"
+import { getAccessToken, notifyAuthExpired } from "@/auth/tokenStore"
 import { AppError, isApiErrorBody } from "@/lib/api/errors"
 import { API_BASE_URL } from "@/lib/api/baseUrl"
 import { refreshAccessToken } from "@/lib/api/refresh"
@@ -43,7 +43,7 @@ api.interceptors.response.use(
     }
     // /auth/refresh сам отдал 401 — сессии нет, не зацикливаемся.
     if (config.url?.endsWith("/auth/refresh")) {
-      setAccessToken(null)
+      notifyAuthExpired()
       return Promise.reject(toError(error))
     }
 
@@ -52,7 +52,7 @@ api.interceptors.response.use(
       await refreshAccessToken()
       return await api(config)
     } catch {
-      setAccessToken(null)
+      notifyAuthExpired()
       return Promise.reject(toError(error))
     }
   },

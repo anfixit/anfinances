@@ -8,7 +8,7 @@ import {
 } from "@/auth/authApi"
 import { AuthContext } from "@/auth/authContext"
 import type { AuthContextValue, AuthStatus } from "@/auth/authContext"
-import { setAccessToken } from "@/auth/tokenStore"
+import { setAccessToken, setOnAuthExpired } from "@/auth/tokenStore"
 import type { User } from "@/auth/types"
 import { refreshAccessToken } from "@/lib/api/refresh"
 import { queryClient } from "@/lib/query/queryClient"
@@ -40,6 +40,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true
     }
+  }, [])
+
+  // Когда api-перехватчик не смог обновить токен — уводим в
+  // unauthenticated (ProtectedRoute редиректит на /login).
+  useEffect(() => {
+    setOnAuthExpired(() => {
+      setAccessToken(null)
+      setUser(null)
+      setStatus("unauthenticated")
+      queryClient.clear()
+    })
+    return () => setOnAuthExpired(null)
   }, [])
 
   const login = useCallback(async (email: string, password: string) => {

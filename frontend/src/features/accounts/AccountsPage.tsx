@@ -5,7 +5,8 @@ import {
   useArchiveAccount,
   useReorderAccounts,
 } from "@/features/accounts/hooks"
-import { AccountForm, TYPE_LABELS } from "@/features/accounts/AccountForm"
+import { AccountForm } from "@/features/accounts/AccountForm"
+import { TYPE_LABELS } from "@/features/accounts/types"
 import type { Account } from "@/features/accounts/types"
 import { Sheet } from "@/components/Sheet"
 import { formatMoney } from "@/lib/money"

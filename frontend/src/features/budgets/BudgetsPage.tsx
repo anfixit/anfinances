@@ -14,7 +14,7 @@ import type { Budget } from "@/features/budgets/types"
 import { useByCategory } from "@/features/summary/hooks"
 import { Sheet } from "@/components/Sheet"
 import { queryKeys } from "@/lib/query/keys"
-import { formatMoney } from "@/lib/money"
+import { formatMoney, sumMoney } from "@/lib/money"
 
 function currentMonth(): string {
   const d = new Date()
@@ -239,13 +239,13 @@ export function BudgetsPage() {
 
           // Группа: итог по родителю + детям.
           const groupCats = [parent, ...kids]
-          let avail = 0
+          const avail = sumMoney(
+            groupCats
+              .map((c) => byCat.get(c.id)?.available)
+              .filter((v) => v !== undefined),
+          )
           let spentTotal = 0
           for (const c of groupCats) {
-            const b = byCat.get(c.id)
-            if (b) {
-              avail += Number(b.available)
-            }
             spentTotal += spentOf(c)
           }
           const over = avail > 0 && spentTotal > avail

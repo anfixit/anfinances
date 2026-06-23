@@ -51,7 +51,10 @@ export function TransactionsPage() {
     })
   }
 
-  const patchFilter = (key: keyof TransactionFilters, value: string) => {
+  const patchFilter = (
+    key: Exclude<keyof TransactionFilters, "kind">,
+    value: string,
+  ) => {
     setFilters((f) => {
       const next = { ...f }
       if (value) {

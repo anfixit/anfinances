@@ -5,18 +5,11 @@ import {
   useUpdateAccount,
 } from "@/features/accounts/hooks"
 import { accountFormSchema } from "@/features/accounts/schemas"
+import { TYPE_LABELS } from "@/features/accounts/types"
 import type { Account } from "@/features/accounts/types"
 import { useCurrencies } from "@/features/currencies/hooks"
 import { AppError } from "@/lib/api/errors"
 import type { AccountType } from "@/types/enums"
-
-export const TYPE_LABELS: Record<AccountType, string> = {
-  card: "Карта",
-  cash: "Наличные",
-  card_credit: "Кредитная карта",
-  savings: "Накопительный",
-  investment: "Инвестиции",
-}
 
 export function AccountForm({
   account,

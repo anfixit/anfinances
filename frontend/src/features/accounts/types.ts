@@ -16,3 +16,11 @@ export interface Account {
   created_at: IsoDate
   updated_at: IsoDate
 }
+
+export const TYPE_LABELS: Record<AccountType, string> = {
+  card: "Карта",
+  cash: "Наличные",
+  card_credit: "Кредитная карта",
+  savings: "Накопительный",
+  investment: "Инвестиции",
+}
