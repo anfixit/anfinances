@@ -1,0 +1,109 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compute lowercase image names
+        id: img
+        run: |
+          owner=$(echo "${{ github.repository_owner }}" | tr 'A-Z' 'a-z')
+          echo "backend=${REGISTRY}/${owner}/anfinances-backend" >> "$GITHUB_OUTPUT"
+          echo "frontend=${REGISTRY}/${owner}/anfinances-frontend" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build & push backend
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          file: ./backend/docker/Dockerfile
+          push: true
+          tags: |
+            ${{ steps.img.outputs.backend }}:latest
+            ${{ steps.img.outputs.backend }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build & push frontend
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile
+          push: true
+          tags: |
+            ${{ steps.img.outputs.frontend }}:latest
+            ${{ steps.img.outputs.frontend }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_USER: ${{ github.actor }}
+          OWNER: ${{ github.repository_owner }}
+          SECRET_KEY: ${{ secrets.SECRET_KEY }}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          SINGLE_USER_EMAIL: ${{ secrets.SINGLE_USER_EMAIL }}
+          SINGLE_USER_PASSWORD: ${{ secrets.SINGLE_USER_PASSWORD }}
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          envs: GHCR_TOKEN,GHCR_USER,OWNER,SECRET_KEY,POSTGRES_PASSWORD,SINGLE_USER_EMAIL,SINGLE_USER_PASSWORD
+          script: |
+            set -e
+            cd ${{ secrets.DEPLOY_PATH }}
+            git pull --ff-only
+
+            owner_lc=$(echo "$OWNER" | tr 'A-Z' 'a-z')
+            export IMAGE_BACKEND="ghcr.io/${owner_lc}/anfinances-backend:latest"
+            export IMAGE_FRONTEND="ghcr.io/${owner_lc}/anfinances-frontend:latest"
+            export POSTGRES_PASSWORD
+
+            # backend/.env: только секреты. Прод-тумблеры (ENVIRONMENT,
+            # DEBUG, COOKIE_SECURE, CORS_ORIGINS) заданы в compose.
+            umask 077
+            cat > backend/.env <<EOF
+            SECRET_KEY=$SECRET_KEY
+            POSTGRES_PASSWORD=$POSTGRES_PASSWORD
+            AUTH_MODE=single_user
+            SINGLE_USER_EMAIL=$SINGLE_USER_EMAIL
+            SINGLE_USER_PASSWORD=$SINGLE_USER_PASSWORD
+            EOF
+
+            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
+
+            docker compose -f docker-compose.deploy.yml pull
+            docker compose -f docker-compose.deploy.yml up -d
+            docker compose -f docker-compose.deploy.yml run --rm backend \
+              alembic upgrade head
