@@ -56,11 +56,7 @@ class Settings(BaseSettings):
 
     @property
     def database_url(self) -> PostgresDsn:
-        """Async URL для SQLAlchemy (драйвер asyncpg).
-
-        Обычный property (не computed_field): DSN с паролем НЕ должен
-        попадать в model_dump()/JSON-схему и, как следствие, в логи.
-        """
+        """Async URL для SQLAlchemy (драйвер asyncpg)."""
         return PostgresDsn.build(
             scheme="postgresql+asyncpg",
             username=self.postgres_user,
@@ -75,8 +71,6 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 15
     refresh_token_expire_days: int = 30
 
-    # Refresh-cookie: HttpOnly (ADR-024). secure=False — только для
-    # локального http-dev; в проде на https — true.
     cookie_secure: bool = True
     cookie_samesite: Literal["lax", "strict", "none"] = "lax"
 
@@ -87,10 +81,12 @@ class Settings(BaseSettings):
     password_max_length: int = 128
     password_min_zxcvbn_score: int = 3
     hibp_enabled: bool = True
-    # Мягкий фейл: при недоступности HIBP не блокируем регистрацию.
-    # Для публичного SaaS можно ужесточить (false).
     hibp_fail_open: bool = True
     hibp_timeout_seconds: float = 3.0
+
+    rate_limit_enabled: bool = True
+    rate_limit_login: str = "10/minute"
+    rate_limit_register: str = "5/minute"
 
     auth_mode: AuthMode = "single_user"
 
@@ -105,6 +101,7 @@ class Settings(BaseSettings):
 
     exchange_rate_api_url: str = "https://open.er-api.com/v6/latest"
     exchange_rate_api_key: str | None = None
+    exchange_rate_timeout_seconds: float = 10.0
 
     @model_validator(mode="after")
     def _enforce_production_safety(self) -> Self:
@@ -145,10 +142,5 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
-    """Возвращает singleton настроек.
-
-    @lru_cache гарантирует один экземпляр на процесс: Settings
-    создаётся один раз, .env читается один раз. В тестах можно
-    переопределить через app.dependency_overrides.
-    """
+    """Возвращает singleton настроек."""
     return Settings()
