@@ -2,6 +2,7 @@ import { useState } from "react"
 
 import { useAccounts } from "@/features/accounts/hooks"
 import { useCategories } from "@/features/categories/hooks"
+import { categoryPath } from "@/features/categories/path"
 import { Sheet } from "@/components/Sheet"
 import { TransactionSheet } from "@/features/transactions/TransactionSheet"
 import {
@@ -80,6 +81,13 @@ export function TransactionsPage() {
 
   const rows = list.data?.pages.flatMap((p) => p.items) ?? []
 
+  // Категории фильтра: родители верхнего уровня с вложенными
+  // подкатегориями. Сам родитель тоже выбираем (его прямые операции).
+  const allCats = categoriesQ.data ?? []
+  const filterParents = allCats
+    .filter((c) => c.parent_id === null)
+    .sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name, "ru"))
+
   return (
     <>
       <h1>Операции</h1>
@@ -145,11 +153,32 @@ export function TransactionsPage() {
               onChange={(e) => patchFilter("category_id", e.target.value)}
             >
               <option value="">Все</option>
-              {(categoriesQ.data ?? []).map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
+              {filterParents.map((p) => {
+                const children = allCats
+                  .filter((c) => c.parent_id === p.id)
+                  .sort(
+                    (a, b) =>
+                      a.sort_order - b.sort_order ||
+                      a.name.localeCompare(b.name, "ru"),
+                  )
+                if (children.length === 0) {
+                  return (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  )
+                }
+                return (
+                  <optgroup key={p.id} label={p.name}>
+                    <option value={p.id}>{p.name} — вся категория</option>
+                    {children.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                )
+              })}
             </select>
           </label>
         </div>
@@ -165,8 +194,7 @@ export function TransactionsPage() {
           const label =
             t.kind === "transfer"
               ? "Перевод"
-              : (t.category_id && catById.get(t.category_id)?.name) ||
-                "Без категории"
+              : (categoryPath(catById, t.category_id) ?? "Без категории")
           const account = accById.get(t.account_id)
           return (
             <li key={t.id} className="tx-row">

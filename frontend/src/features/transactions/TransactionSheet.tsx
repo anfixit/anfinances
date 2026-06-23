@@ -2,6 +2,7 @@ import { useState } from "react"
 
 import { useAccounts } from "@/features/accounts/hooks"
 import type { Account } from "@/features/accounts/types"
+import { CategorySelect } from "@/features/categories/CategorySelect"
 import { useCategories } from "@/features/categories/hooks"
 import {
   useCreateTransaction,
@@ -60,9 +61,8 @@ export function TransactionSheet({ onDone }: { onDone: () => void }) {
   const categories = categoriesQ.data
   const accById = new Map(accounts.map((a) => [a.id, a]))
 
-  const expenseCats = categories.filter((c) => c.kind === "expense")
-  const incomeCats = categories.filter((c) => c.kind === "income")
-  const ordinaryCats = mode === "income" ? incomeCats : expenseCats
+  // Тип категории для обычной операции: расход или доход.
+  const ordinaryKind = mode === "income" ? "income" : "expense"
 
   const fromAcc = accById.get(fromId)
   const toAcc = accById.get(toId)
@@ -77,6 +77,13 @@ export function TransactionSheet({ onDone }: { onDone: () => void }) {
 
   const onError = (err: unknown) => {
     setFormError(err instanceof AppError ? err.message : "Ошибка сохранения")
+  }
+
+  // Смена типа операции: категория расхода и дохода — разные
+  // деревья, поэтому при переключении сбрасываем выбор.
+  const changeMode = (next: Mode) => {
+    setMode(next)
+    setCategoryId("")
   }
 
   const submitOrdinary = () => {
@@ -152,21 +159,21 @@ export function TransactionSheet({ onDone }: { onDone: () => void }) {
         <button
           type="button"
           aria-pressed={mode === "expense"}
-          onClick={() => setMode("expense")}
+          onClick={() => changeMode("expense")}
         >
           Расход
         </button>
         <button
           type="button"
           aria-pressed={mode === "income"}
-          onClick={() => setMode("income")}
+          onClick={() => changeMode("income")}
         >
           Доход
         </button>
         <button
           type="button"
           aria-pressed={mode === "transfer"}
-          onClick={() => setMode("transfer")}
+          onClick={() => changeMode("transfer")}
         >
           Перевод
         </button>
@@ -199,20 +206,13 @@ export function TransactionSheet({ onDone }: { onDone: () => void }) {
               onChange={(e) => setAmount(e.target.value)}
             />
           </label>
-          <label className="field">
-            <span>Категория</span>
-            <select
-              value={categoryId}
-              onChange={(e) => setCategoryId(e.target.value)}
-            >
-              <option value="">— без категории —</option>
-              {ordinaryCats.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-          </label>
+          <CategorySelect
+            categories={categories}
+            kind={ordinaryKind}
+            value={categoryId}
+            onChange={setCategoryId}
+            emptyLabel="— без категории —"
+          />
           {mode === "expense" && (
             <label className="field">
               <span>Обязательность</span>
@@ -291,20 +291,13 @@ export function TransactionSheet({ onDone }: { onDone: () => void }) {
             />
           </label>
           {feeAmount && (
-            <label className="field">
-              <span>Категория комиссии</span>
-              <select
-                value={feeCategory}
-                onChange={(e) => setFeeCategory(e.target.value)}
-              >
-                <option value="">— без категории —</option>
-                {expenseCats.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <CategorySelect
+              categories={categories}
+              kind="expense"
+              value={feeCategory}
+              onChange={setFeeCategory}
+              emptyLabel="— без категории —"
+            />
           )}
         </>
       )}

@@ -1,5 +1,6 @@
 import { useState } from "react"
 
+import { CategorySelect } from "@/features/categories/CategorySelect"
 import { useCategories } from "@/features/categories/hooks"
 import { useCurrencies } from "@/features/currencies/hooks"
 import {
@@ -34,10 +35,6 @@ export function RecurringForm({
   const [formError, setFormError] = useState<string | null>(null)
 
   const pending = create.isPending || update.isPending
-
-  const expenseCats = (categoriesQ.data ?? []).filter(
-    (c) => c.kind === "expense",
-  )
 
   const onError = (err: unknown) => {
     setFormError(err instanceof AppError ? err.message : "Ошибка сохранения")
@@ -98,20 +95,13 @@ export function RecurringForm({
         <input value={name} onChange={(e) => setName(e.target.value)} />
       </label>
 
-      <label className="field">
-        <span>Категория (расход)</span>
-        <select
-          value={categoryId}
-          onChange={(e) => setCategoryId(e.target.value)}
-        >
-          <option value="">— выберите —</option>
-          {expenseCats.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-            </option>
-          ))}
-        </select>
-      </label>
+      <CategorySelect
+        categories={categoriesQ.data ?? []}
+        kind="expense"
+        value={categoryId}
+        onChange={setCategoryId}
+        emptyLabel="— выберите —"
+      />
 
       <label className="field">
         <span>Сумма в месяц</span>
