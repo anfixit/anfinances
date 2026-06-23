@@ -56,7 +56,7 @@ services:
       COOKIE_SECURE: "true"
       # SPA и API на одном origin, так что CORS фактически не задействован,
       # но в проде держим реальный домен, а не localhost.
-      CORS_ORIGINS: '["https://anfinances.example.com"]'
+      CORS_ORIGINS: '["https://anfinances.ru"]'
     env_file:
       - ./backend/.env
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

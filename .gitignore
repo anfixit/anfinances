@@ -5,3 +5,4 @@ node_modules/
 backend/credentials.json
 dist/
 .DS_Store
+.vite/
