@@ -650,3 +650,235 @@ select:focus {
     animation: none !important;
   }
 }
+
+/* ── Мобильная навигация ────────────────────────────────────── */
+.icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border-radius: var(--shape-full);
+  background: transparent;
+  color: var(--on-app-bar);
+  box-shadow: none;
+}
+
+.icon-button:hover {
+  background: color-mix(in srgb, var(--on-app-bar) 14%, transparent);
+  box-shadow: none;
+  filter: none;
+}
+
+.icon-button svg {
+  width: 24px;
+  height: 24px;
+}
+
+.menu-toggle {
+  display: none;
+}
+
+.mobile-nav-scrim {
+  display: none;
+}
+
+@media (max-width: 960px) {
+  .header {
+    min-height: 64px;
+    padding: 10px 16px;
+  }
+
+  .nav--desktop,
+  .header-logout,
+  .header .user {
+    display: none;
+  }
+
+  .menu-toggle {
+    display: inline-flex;
+  }
+
+  .mobile-nav-scrim {
+    position: fixed;
+    inset: calc(64px + env(safe-area-inset-top)) 0 0;
+    z-index: 30;
+    display: flex;
+    justify-content: flex-end;
+    background: rgba(0, 0, 0, 0.4);
+    animation: scrim-in 160ms ease-out;
+  }
+
+  .mobile-nav {
+    width: min(320px, 86vw);
+    height: 100%;
+    padding: 20px 16px max(24px, env(safe-area-inset-bottom));
+    overflow-y: auto;
+    background: var(--surface-container-lowest);
+    box-shadow: var(--elev-3);
+    animation: mobile-nav-in var(--emphasized);
+  }
+
+  .mobile-nav__account {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 4px 12px 16px;
+    border-bottom: 1px solid var(--outline-variant);
+    margin-bottom: 8px;
+  }
+
+  .mobile-nav__title {
+    font-size: 1.15rem;
+    font-weight: 700;
+  }
+
+  .mobile-nav__email {
+    overflow: hidden;
+    color: var(--on-surface-variant);
+    font-size: 0.85rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .mobile-nav a,
+  .mobile-nav__logout {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    min-height: 48px;
+    padding: 10px 14px;
+    border-radius: var(--shape-m);
+    color: var(--on-surface);
+    background: transparent;
+    text-decoration: none;
+    font-weight: 600;
+    box-shadow: none;
+  }
+
+  .mobile-nav a:hover,
+  .mobile-nav__logout:hover {
+    background: var(--surface-container-low);
+    box-shadow: none;
+    filter: none;
+  }
+
+  .mobile-nav a.active {
+    color: var(--on-primary-container);
+    background: var(--primary-container);
+  }
+
+  .mobile-nav__logout {
+    margin-top: 8px;
+    color: var(--error);
+  }
+
+  @keyframes mobile-nav-in {
+    from {
+      transform: translateX(28px);
+      opacity: 0.7;
+    }
+  }
+}
+
+@media (max-width: 640px) {
+  html,
+  body,
+  #root {
+    width: 100%;
+    min-width: 0;
+    overflow-x: hidden;
+  }
+
+  body {
+    font-size: 15px;
+  }
+
+  h1 {
+    font-size: 1.7rem;
+  }
+
+  .header {
+    flex-wrap: nowrap;
+    padding-top: max(8px, env(safe-area-inset-top));
+  }
+
+  .brand {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .page {
+    width: 100%;
+    padding: 20px 12px calc(104px + env(safe-area-inset-bottom));
+  }
+
+  .card {
+    padding: 16px;
+    border-radius: var(--shape-m);
+  }
+
+  .form {
+    width: 100%;
+    max-width: none;
+  }
+
+  .field input,
+  .field select,
+  input[type="text"],
+  input[type="email"],
+  input[type="password"],
+  input[type="number"],
+  input[type="date"],
+  input[type="datetime-local"],
+  select {
+    width: 100%;
+    min-height: 48px;
+    font-size: 16px;
+  }
+
+  .segmented {
+    display: grid;
+    width: 100%;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(max-content, 1fr);
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    scrollbar-width: none;
+  }
+
+  .segmented::-webkit-scrollbar {
+    display: none;
+  }
+
+  .segmented button {
+    min-height: 44px;
+    padding: 8px 14px;
+    white-space: nowrap;
+  }
+
+  .fab {
+    right: 12px;
+    bottom: calc(12px + env(safe-area-inset-bottom));
+    min-height: 56px;
+  }
+
+  .row {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .row-name {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .rates {
+    display: block;
+    overflow-x: auto;
+    white-space: nowrap;
+  }
+}

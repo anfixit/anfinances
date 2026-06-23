@@ -154,7 +154,7 @@ export function TransactionSheet({ onDone }: { onDone: () => void }) {
   }
 
   return (
-    <div className="form">
+    <div className="form transaction-form">
       <div className="segmented" role="group" aria-label="Тип операции">
         <button
           type="button"
@@ -318,9 +318,11 @@ export function TransactionSheet({ onDone }: { onDone: () => void }) {
 
       {formError && <p className="error">{formError}</p>}
 
-      <button type="button" onClick={submit} disabled={pending}>
-        {pending ? "Сохраняю…" : "Сохранить"}
-      </button>
+      <div className="transaction-submit">
+        <button type="button" onClick={submit} disabled={pending}>
+          {pending ? "Сохраняю…" : "Сохранить"}
+        </button>
+      </div>
     </div>
   )
 }
