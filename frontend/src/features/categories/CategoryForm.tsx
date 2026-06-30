@@ -3,6 +3,7 @@ import { useState } from "react"
 import { useForm, useWatch } from "react-hook-form"
 
 import { useCreateCategory } from "@/features/categories/hooks"
+import { compareCategoriesByName } from "@/features/categories/sort"
 import { categoryFormSchema } from "@/features/categories/schemas"
 import type { CategoryFormInput } from "@/features/categories/schemas"
 import type { Category } from "@/features/categories/types"
@@ -24,9 +25,9 @@ export function CategoryForm({ categories }: { categories: Category[] }) {
 
   const kind = useWatch({ control, name: "kind" })
   const parentId = useWatch({ control, name: "parent_id" })
-  const parentOptions = categories.filter(
-    (c) => c.kind === kind && c.parent_id === null,
-  )
+  const parentOptions = categories
+    .filter((c) => c.kind === kind && c.parent_id === null)
+    .sort(compareCategoriesByName)
 
   const submit = handleSubmit((values) => {
     setFormError(null)

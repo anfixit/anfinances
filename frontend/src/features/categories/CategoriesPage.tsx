@@ -1,6 +1,7 @@
 import { useState } from "react"
 
 import { CategoryForm } from "@/features/categories/CategoryForm"
+import { compareCategoriesByName } from "@/features/categories/sort"
 import {
   useArchiveCategory,
   useCategories,
@@ -26,9 +27,13 @@ export function CategoriesPage() {
   }
 
   const tops = (kind: (typeof KINDS)[number]) =>
-    data.filter((c) => c.kind === kind && c.parent_id === null)
+    data
+      .filter((c) => c.kind === kind && c.parent_id === null)
+      .sort(compareCategoriesByName)
   const childrenOf = (parentId: string) =>
-    data.filter((c) => c.parent_id === parentId)
+    data
+      .filter((c) => c.parent_id === parentId)
+      .sort(compareCategoriesByName)
 
   return (
     <>

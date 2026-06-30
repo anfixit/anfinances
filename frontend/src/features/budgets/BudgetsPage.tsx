@@ -1,6 +1,7 @@
 import { useState } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 
+import { compareCategoriesByName } from "@/features/categories/sort"
 import type { Category } from "@/features/categories/types"
 import { useCategories } from "@/features/categories/hooks"
 import { listBudgets } from "@/features/budgets/budgetsApi"
@@ -64,10 +65,13 @@ export function BudgetsPage() {
   )
 
   const expense = (categoriesQ.data ?? []).filter((c) => c.kind === "expense")
-  const byName = (a: Category, b: Category) => a.name.localeCompare(b.name, "ru")
-  const parents = expense.filter((c) => c.parent_id === null).sort(byName)
+  const parents = expense
+    .filter((c) => c.parent_id === null)
+    .sort(compareCategoriesByName)
   const childrenOf = (pid: string) =>
-    expense.filter((c) => c.parent_id === pid).sort(byName)
+    expense
+      .filter((c) => c.parent_id === pid)
+      .sort(compareCategoriesByName)
 
   const spentOf = (cat: Category): number => {
     const b = byCat.get(cat.id)

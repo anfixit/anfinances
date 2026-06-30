@@ -2,6 +2,7 @@ import { useState } from "react"
 
 import { useAccounts } from "@/features/accounts/hooks"
 import { useCategories } from "@/features/categories/hooks"
+import { compareCategoriesByName } from "@/features/categories/sort"
 import { categoryPath } from "@/features/categories/path"
 import { Sheet } from "@/components/Sheet"
 import { TransactionSheet } from "@/features/transactions/TransactionSheet"
@@ -102,7 +103,7 @@ export function TransactionsPage() {
   const allCats = categoriesQ.data ?? []
   const filterParents = allCats
     .filter((c) => c.parent_id === null)
-    .sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name, "ru"))
+    .sort(compareCategoriesByName)
 
   return (
     <>
@@ -172,11 +173,7 @@ export function TransactionsPage() {
               {filterParents.map((p) => {
                 const children = allCats
                   .filter((c) => c.parent_id === p.id)
-                  .sort(
-                    (a, b) =>
-                      a.sort_order - b.sort_order ||
-                      a.name.localeCompare(b.name, "ru"),
-                  )
+                  .sort(compareCategoriesByName)
                 if (children.length === 0) {
                   return (
                     <option key={p.id} value={p.id}>

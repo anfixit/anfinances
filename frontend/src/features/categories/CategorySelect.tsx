@@ -1,5 +1,6 @@
 import { useMemo } from "react"
 
+import { compareCategoriesByName } from "@/features/categories/sort"
 import type { Category } from "@/features/categories/types"
 import type { CategoryKind } from "@/types/enums"
 
@@ -25,13 +26,6 @@ interface CategorySelectProps {
   disabled?: boolean
 }
 
-function sortByOrder(a: Category, b: Category): number {
-  if (a.sort_order !== b.sort_order) {
-    return a.sort_order - b.sort_order
-  }
-  return a.name.localeCompare(b.name, "ru")
-}
-
 export function CategorySelect({
   categories,
   kind,
@@ -49,7 +43,7 @@ export function CategorySelect({
     () =>
       categories
         .filter((c) => c.kind === kind && c.parent_id === null)
-        .sort(sortByOrder),
+        .sort(compareCategoriesByName),
     [categories, kind],
   )
 
@@ -69,7 +63,7 @@ export function CategorySelect({
       parentId
         ? categories
             .filter((c) => c.parent_id === parentId)
-            .sort(sortByOrder)
+            .sort(compareCategoriesByName)
         : [],
     [categories, parentId],
   )
