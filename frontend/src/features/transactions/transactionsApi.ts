@@ -98,6 +98,19 @@ export async function createTransfer(
   return unwrap(await api.post<ApiResponse<Transfer>>("/transfers", input))
 }
 
+export async function getTransfer(id: string): Promise<Transfer> {
+  return unwrap(await api.get<ApiResponse<Transfer>>(`/transfers/${id}`))
+}
+
+export async function updateTransfer(
+  id: string,
+  input: TransferCreateInput,
+): Promise<Transfer> {
+  return unwrap(
+    await api.patch<ApiResponse<Transfer>>(`/transfers/${id}`, input),
+  )
+}
+
 export async function deleteTransfer(id: string): Promise<void> {
   await api.delete(`/transfers/${id}`)
 }

@@ -25,6 +25,7 @@ __all__ = [
     "TransactionUpdate",
     "TransferCreate",
     "TransferRead",
+    "TransferUpdate",
 ]
 
 OrdinaryKind = Literal[TransactionKind.EXPENSE, TransactionKind.INCOME]
@@ -85,6 +86,10 @@ class TransferCreate(BaseModel):
             self.fee_amount = None
             self.fee_category_id = None
         return self
+
+
+class TransferUpdate(TransferCreate):
+    """Полная замена параметров существующего перевода."""
 
 
 class TransferRead(BaseModel):

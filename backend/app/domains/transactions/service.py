@@ -43,6 +43,7 @@ from app.domains.transactions.schemas import (
     TransactionCreate,
     TransactionUpdate,
     TransferCreate,
+    TransferUpdate,
 )
 
 __all__ = ["TransactionService", "TransferService"]
@@ -275,6 +276,104 @@ class TransferService:
 
         return transfer, created
 
+    async def update_transfer(
+        self,
+        transfer_id: uuid.UUID,
+        user_id: uuid.UUID,
+        data: TransferUpdate,
+    ) -> tuple[Transfer, list[Transaction]]:
+        transfer, legs = await self.get_transfer(transfer_id, user_id)
+        src_leg, dst_leg, fee_leg = self._split_legs(legs)
+
+        src = await self._accounts.get(data.from_account_id, user_id)
+        if src is None:
+            raise NotFoundError("Счёт-источник не найден.")
+        dst = await self._accounts.get(data.to_account_id, user_id)
+        if dst is None:
+            raise NotFoundError("Счёт-получатель не найден.")
+
+        await self._validate_fee_category(
+            user_id, data.fee_category_id, data.fee_amount
+        )
+
+        src_rate = await self._currencies.rate_to_rub(src.currency_code)
+        src_rub = data.amount_from * src_rate
+        dst_rate = src_rub / data.amount_to
+
+        src_leg.account_id = src.id
+        src_leg.amount = -data.amount_from
+        src_leg.currency_code = src.currency_code
+        src_leg.amount_rub = -src_rub
+        src_leg.exchange_rate = src_rate
+        src_leg.date = data.date
+        src_leg.comment = data.comment
+
+        dst_leg.account_id = dst.id
+        dst_leg.amount = data.amount_to
+        dst_leg.currency_code = dst.currency_code
+        dst_leg.amount_rub = src_rub
+        dst_leg.exchange_rate = dst_rate
+        dst_leg.date = data.date
+        dst_leg.comment = data.comment
+
+        if data.fee_amount is None:
+            if fee_leg is not None:
+                await self._repo.delete(fee_leg)
+            return transfer, [src_leg, dst_leg]
+
+        fee_rub = data.fee_amount * src_rate
+        if fee_leg is None:
+            fee_leg = await self._repo.add(
+                Transaction(
+                    user_id=user_id,
+                    transfer_id=transfer.id,
+                    account_id=src.id,
+                    kind=TransactionKind.EXPENSE,
+                    amount=-data.fee_amount,
+                    currency_code=src.currency_code,
+                    amount_rub=-fee_rub,
+                    exchange_rate=src_rate,
+                    category_id=data.fee_category_id,
+                    date=data.date,
+                    comment="Комиссия за перевод",
+                )
+            )
+        else:
+            fee_leg.account_id = src.id
+            fee_leg.amount = -data.fee_amount
+            fee_leg.currency_code = src.currency_code
+            fee_leg.amount_rub = -fee_rub
+            fee_leg.exchange_rate = src_rate
+            fee_leg.category_id = data.fee_category_id
+            fee_leg.date = data.date
+
+        return transfer, [src_leg, dst_leg, fee_leg]
+
+    @staticmethod
+    def _split_legs(
+        legs: list[Transaction],
+    ) -> tuple[Transaction, Transaction, Transaction | None]:
+        transfer_legs = [
+            leg for leg in legs if leg.kind == TransactionKind.TRANSFER
+        ]
+        source = next(
+            (leg for leg in transfer_legs if leg.amount < 0),
+            None,
+        )
+        destination = next(
+            (leg for leg in transfer_legs if leg.amount > 0),
+            None,
+        )
+        fee = next(
+            (leg for leg in legs if leg.kind == TransactionKind.EXPENSE),
+            None,
+        )
+        if source is None or destination is None:
+            raise ValidationFailedError(
+                "Перевод повреждён: не найдены обе его части."
+            )
+        return source, destination, fee
+
     async def get_transfer(
         self, transfer_id: uuid.UUID, user_id: uuid.UUID
     ) -> tuple[Transfer, list[Transaction]]:
@@ -312,6 +411,8 @@ class TransferService:
         category = await self._categories.get(fee_category_id, user_id)
         if category is None:
             raise NotFoundError("Категория комиссии не найдена.")
+        if category.is_archived:
+            raise ValidationFailedError("Категория комиссии в архиве.")
         if category.kind != CategoryKind.EXPENSE:
             raise ValidationFailedError(
                 "Комиссия учитывается только по расходной категории."

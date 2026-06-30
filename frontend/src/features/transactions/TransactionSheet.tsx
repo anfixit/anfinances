@@ -8,12 +8,16 @@ import {
   useCreateTransaction,
   useCreateTransfer,
   useUpdateTransaction,
+  useUpdateTransfer,
 } from "@/features/transactions/hooks"
 import {
   ordinaryTxSchema,
   transferTxSchema,
 } from "@/features/transactions/schemas"
-import type { Transaction } from "@/features/transactions/types"
+import type {
+  Transaction,
+  Transfer,
+} from "@/features/transactions/types"
 import { AppError } from "@/lib/api/errors"
 
 type Mode = "expense" | "income" | "transfer"
@@ -36,26 +40,39 @@ const blank = () => ""
 interface TransactionSheetProps {
   onDone: () => void
   transaction?: Transaction
+  transfer?: Transfer
 }
 
 export function TransactionSheet({
   onDone,
   transaction,
+  transfer,
 }: TransactionSheetProps) {
   const accountsQ = useAccounts()
   const categoriesQ = useCategories()
   const createTx = useCreateTransaction()
   const createTransfer = useCreateTransfer()
   const updateTx = useUpdateTransaction()
-  const editing = transaction !== undefined
+  const updateTransfer = useUpdateTransfer()
+  const editing = transaction !== undefined || transfer !== undefined
+  const sourceLeg = transfer?.legs.find((leg) => Number(leg.amount) < 0)
+  const destinationLeg = transfer?.legs.find(
+    (leg) => Number(leg.amount) > 0,
+  )
 
-  const [mode, setMode] = useState<Mode>(() =>
-    transaction?.kind === "income" ? "income" : "expense",
+  const [mode, setMode] = useState<Mode>(() => {
+    if (transfer) {
+      return "transfer"
+    }
+    return transaction?.kind === "income" ? "income" : "expense"
+  })
+  const [date, setDate] = useState<string>(() => {
+    const value = transaction?.date ?? sourceLeg?.date
+    return value ? toLocalInput(value) : nowLocalInput()
+  })
+  const [comment, setComment] = useState(
+    transaction?.comment ?? sourceLeg?.comment ?? "",
   )
-  const [date, setDate] = useState<string>(() =>
-    transaction ? toLocalInput(transaction.date) : nowLocalInput(),
-  )
-  const [comment, setComment] = useState(transaction?.comment ?? "")
   const [formError, setFormError] = useState<string | null>(null)
 
   // Обычная операция
@@ -78,12 +95,22 @@ export function TransactionSheet({
   )
 
   // Перевод
-  const [fromId, setFromId] = useState("")
-  const [toId, setToId] = useState("")
-  const [amountFrom, setAmountFrom] = useState("")
-  const [amountTo, setAmountTo] = useState("")
-  const [feeAmount, setFeeAmount] = useState("")
-  const [feeCategory, setFeeCategory] = useState("")
+  const [fromId, setFromId] = useState(sourceLeg?.account_id ?? "")
+  const [toId, setToId] = useState(destinationLeg?.account_id ?? "")
+  const [amountFrom, setAmountFrom] = useState(() => {
+    const value = sourceLeg?.amount ?? ""
+    return value.startsWith("-") ? value.slice(1) : value
+  })
+  const [amountTo, setAmountTo] = useState(
+    destinationLeg?.amount ?? "",
+  )
+  const [feeAmount, setFeeAmount] = useState(() => {
+    const value = transfer?.fee?.amount ?? ""
+    return value.startsWith("-") ? value.slice(1) : value
+  })
+  const [feeCategory, setFeeCategory] = useState(
+    transfer?.fee?.category_id ?? "",
+  )
 
   if (accountsQ.isPending || categoriesQ.isPending) {
     return <p>Загрузка…</p>
@@ -109,7 +136,10 @@ export function TransactionSheet({
     fromAcc !== undefined && toAcc !== undefined && !sameCurrency
 
   const pending =
-    createTx.isPending || createTransfer.isPending || updateTx.isPending
+    createTx.isPending ||
+    createTransfer.isPending ||
+    updateTx.isPending ||
+    updateTransfer.isPending
 
   const onError = (err: unknown) => {
     if (!(err instanceof AppError)) {
@@ -197,19 +227,24 @@ export function TransactionSheet({
       setFormError(parsed.error.issues[0]?.message ?? "Проверьте поля")
       return
     }
-    createTransfer.mutate(
-      {
-        from_account_id: fromId,
-        to_account_id: toId,
-        amount_from: amountFrom.trim(),
-        amount_to: effectiveTo.trim(),
-        date: new Date(date).toISOString(),
-        comment: comment || null,
-        fee_amount: normalizedFee,
-        fee_category_id: normalizedFee ? feeCategory || null : null,
-      },
-      { onSuccess: onDone, onError },
-    )
+    const input = {
+      from_account_id: fromId,
+      to_account_id: toId,
+      amount_from: amountFrom.trim(),
+      amount_to: effectiveTo.trim(),
+      date: new Date(date).toISOString(),
+      comment: comment || null,
+      fee_amount: normalizedFee,
+      fee_category_id: normalizedFee ? feeCategory || null : null,
+    }
+    if (transfer) {
+      updateTransfer.mutate(
+        { id: transfer.id, input },
+        { onSuccess: onDone, onError },
+      )
+      return
+    }
+    createTransfer.mutate(input, { onSuccess: onDone, onError })
   }
 
   const submit = () => {
@@ -249,7 +284,7 @@ export function TransactionSheet({
         </div>
       )}
 
-      {editing && (
+      {transaction && (
         <p className="form-note">
           Тип операции и счёт нельзя изменить. Для переноса на другой
           счёт удалите операцию и создайте новую.

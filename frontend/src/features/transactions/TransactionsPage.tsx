@@ -10,6 +10,7 @@ import {
   useDeleteTransaction,
   useDeleteTransfer,
   useTransactions,
+  useTransfer,
 } from "@/features/transactions/hooks"
 import type {
   Transaction,
@@ -31,12 +32,16 @@ export function TransactionsPage() {
   const [kindTab, setKindTab] = useState<TransactionKind | "all">("all")
   const [sheetOpen, setSheetOpen] = useState(false)
   const [editingTx, setEditingTx] = useState<Transaction | null>(null)
+  const [editingTransferId, setEditingTransferId] = useState<string | null>(
+    null,
+  )
 
   const accountsQ = useAccounts()
   const categoriesQ = useCategories()
   const list = useTransactions(filters)
   const delTx = useDeleteTransaction()
   const delTransfer = useDeleteTransfer()
+  const transferQ = useTransfer(editingTransferId)
 
   const accById = new Map((accountsQ.data ?? []).map((a) => [a.id, a]))
   const catById = new Map((categoriesQ.data ?? []).map((c) => [c.id, c]))
@@ -71,17 +76,26 @@ export function TransactionsPage() {
 
   const openCreate = () => {
     setEditingTx(null)
+    setEditingTransferId(null)
     setSheetOpen(true)
   }
 
   const openEdit = (transaction: Transaction) => {
+    setEditingTransferId(null)
     setEditingTx(transaction)
+    setSheetOpen(true)
+  }
+
+  const openTransferEdit = (transferId: string) => {
+    setEditingTx(null)
+    setEditingTransferId(transferId)
     setSheetOpen(true)
   }
 
   const closeSheet = () => {
     setSheetOpen(false)
     setEditingTx(null)
+    setEditingTransferId(null)
   }
 
   const remove = (t: Transaction) => {
@@ -209,6 +223,10 @@ export function TransactionsPage() {
               ? "Перевод"
               : (categoryPath(catById, t.category_id) ?? "Без категории")
           const account = accById.get(t.account_id)
+          const editableTransferId =
+            t.kind === "transfer" && Number(t.amount) < 0
+              ? t.transfer_id
+              : null
           return (
             <li key={t.id} className="tx-row">
               <div className="tx-main">
@@ -223,21 +241,41 @@ export function TransactionsPage() {
               </span>
               <div className="tx-actions">
                 {!t.transfer_id && (
-                  <button
-                    type="button"
-                    className="link"
-                    onClick={() => openEdit(t)}
-                  >
-                    Изменить
-                  </button>
+                  <>
+                    <button
+                      type="button"
+                      className="link"
+                      onClick={() => openEdit(t)}
+                    >
+                      Изменить
+                    </button>
+                    <button
+                      type="button"
+                      className="link danger"
+                      onClick={() => remove(t)}
+                    >
+                      Удалить
+                    </button>
+                  </>
                 )}
-                <button
-                  type="button"
-                  className="link danger"
-                  onClick={() => remove(t)}
-                >
-                  Удалить
-                </button>
+                {editableTransferId && (
+                    <>
+                      <button
+                        type="button"
+                        className="link"
+                        onClick={() => openTransferEdit(editableTransferId)}
+                      >
+                        Изменить перевод
+                      </button>
+                      <button
+                        type="button"
+                        className="link danger"
+                        onClick={() => remove(t)}
+                      >
+                        Удалить
+                      </button>
+                    </>
+                  )}
               </div>
             </li>
           )
@@ -263,14 +301,27 @@ export function TransactionsPage() {
 
       <Sheet
         open={sheetOpen}
-        title={editingTx ? "Редактирование операции" : "Новая операция"}
+        title={
+          editingTransferId
+            ? "Редактирование перевода"
+            : editingTx
+              ? "Редактирование операции"
+              : "Новая операция"
+        }
         onClose={closeSheet}
       >
-        <TransactionSheet
-          key={editingTx?.id ?? "new"}
-          onDone={closeSheet}
-          {...(editingTx ? { transaction: editingTx } : {})}
-        />
+        {editingTransferId && transferQ.isPending && <p>Загрузка…</p>}
+        {editingTransferId && transferQ.isError && (
+          <p className="error">Не удалось загрузить перевод</p>
+        )}
+        {(!editingTransferId || transferQ.data) && (
+          <TransactionSheet
+            key={editingTransferId ?? editingTx?.id ?? "new"}
+            onDone={closeSheet}
+            {...(editingTx ? { transaction: editingTx } : {})}
+            {...(transferQ.data ? { transfer: transferQ.data } : {})}
+          />
+        )}
       </Sheet>
     </>
   )

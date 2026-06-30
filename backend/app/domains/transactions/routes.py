@@ -31,6 +31,7 @@ from app.domains.transactions.schemas import (
     TransactionUpdate,
     TransferCreate,
     TransferRead,
+    TransferUpdate,
 )
 from app.domains.transactions.service import (
     TransactionService,
@@ -202,6 +203,21 @@ async def get_transfer(
     service: TransferServiceDep,
 ) -> ApiResponse[TransferRead]:
     transfer, legs = await service.get_transfer(transfer_id, user.id)
+    return ApiResponse(data=_transfer_to_read(transfer.id, legs))
+
+
+@transfer_router.patch(
+    "/{transfer_id}", response_model=ApiResponse[TransferRead]
+)
+async def update_transfer(
+    transfer_id: uuid.UUID,
+    data: TransferUpdate,
+    user: CurrentUser,
+    service: TransferServiceDep,
+    db: DbSession,
+) -> ApiResponse[TransferRead]:
+    transfer, legs = await service.update_transfer(transfer_id, user.id, data)
+    await db.commit()
     return ApiResponse(data=_transfer_to_read(transfer.id, legs))
 
 

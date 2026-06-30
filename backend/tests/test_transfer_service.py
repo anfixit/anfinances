@@ -18,7 +18,7 @@ from app.core.exceptions import (
 from app.domains.accounts.models import Account
 from app.domains.categories.models import Category
 from app.domains.transactions.models import Transaction, Transfer
-from app.domains.transactions.schemas import TransferCreate
+from app.domains.transactions.schemas import TransferCreate, TransferUpdate
 from app.domains.transactions.service import TransferService
 
 USER = uuid.uuid4()
@@ -291,3 +291,96 @@ async def test_delete_transfer_removes_legs() -> None:
 
     with pytest.raises(NotFoundError):
         await svc.get_transfer(transfer.id, USER)
+
+
+async def test_update_transfer_changes_both_legs() -> None:
+    src = _acc("RUB")
+    dst = _acc("USD")
+    svc = _service([src, dst], [], {"USD": Decimal("90")})
+    transfer, _ = await svc.create_transfer(
+        USER,
+        TransferCreate(
+            from_account_id=src.id,
+            to_account_id=dst.id,
+            amount_from=Decimal("9500"),
+            amount_to=Decimal("100"),
+            date=NOW,
+        ),
+    )
+
+    _, updated = await svc.update_transfer(
+        transfer.id,
+        USER,
+        TransferUpdate(
+            from_account_id=src.id,
+            to_account_id=dst.id,
+            amount_from=Decimal("10000"),
+            amount_to=Decimal("110"),
+            date=NOW,
+            comment="Исправленный перевод",
+        ),
+    )
+
+    src_leg = next(t for t in updated if t.amount < 0)
+    dst_leg = next(t for t in updated if t.amount > 0)
+    assert src_leg.amount == Decimal("-10000")
+    assert dst_leg.amount == Decimal("110")
+    assert src_leg.amount_rub + dst_leg.amount_rub == Decimal("0")
+    assert dst_leg.exchange_rate == Decimal("10000") / Decimal("110")
+    assert src_leg.comment == "Исправленный перевод"
+    assert dst_leg.comment == "Исправленный перевод"
+
+
+async def test_update_transfer_adds_and_removes_fee() -> None:
+    src = _acc("RUB")
+    dst = _acc("USD")
+    fee_cat = Category(
+        id=uuid.uuid4(),
+        user_id=USER,
+        name="Комиссии",
+        kind=CategoryKind.EXPENSE,
+        parent_id=None,
+        is_archived=False,
+    )
+    svc = _service([src, dst], [fee_cat], {"USD": Decimal("90")})
+    transfer, _ = await svc.create_transfer(
+        USER,
+        TransferCreate(
+            from_account_id=src.id,
+            to_account_id=dst.id,
+            amount_from=Decimal("9500"),
+            amount_to=Decimal("100"),
+            date=NOW,
+        ),
+    )
+
+    _, with_fee = await svc.update_transfer(
+        transfer.id,
+        USER,
+        TransferUpdate(
+            from_account_id=src.id,
+            to_account_id=dst.id,
+            amount_from=Decimal("9500"),
+            amount_to=Decimal("100"),
+            date=NOW,
+            fee_amount=Decimal("50"),
+            fee_category_id=fee_cat.id,
+        ),
+    )
+    fee = next(t for t in with_fee if t.kind == TransactionKind.EXPENSE)
+    assert fee.amount == Decimal("-50")
+    assert fee.category_id == fee_cat.id
+
+    _, without_fee = await svc.update_transfer(
+        transfer.id,
+        USER,
+        TransferUpdate(
+            from_account_id=src.id,
+            to_account_id=dst.id,
+            amount_from=Decimal("9500"),
+            amount_to=Decimal("100"),
+            date=NOW,
+        ),
+    )
+    assert len(without_fee) == 2
+    assert all(t.kind == TransactionKind.TRANSFER for t in without_fee)
