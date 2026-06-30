@@ -156,6 +156,45 @@ async def test_transfer_same_currency() -> None:
     assert dst_leg.amount == Decimal("1000")
 
 
+def test_zero_fee_is_normalized_to_absent() -> None:
+    src = _acc("RUB")
+    dst = _acc("USD")
+
+    data = TransferCreate(
+        from_account_id=src.id,
+        to_account_id=dst.id,
+        amount_from=Decimal("9500"),
+        amount_to=Decimal("100"),
+        date=NOW,
+        fee_amount=Decimal("0"),
+        fee_category_id=uuid.uuid4(),
+    )
+
+    assert data.fee_amount is None
+    assert data.fee_category_id is None
+
+
+async def test_transfer_with_zero_fee_creates_only_two_legs() -> None:
+    src = _acc("RUB")
+    dst = _acc("USD")
+    svc = _service([src, dst], [], {"USD": Decimal("90")})
+
+    _, created = await svc.create_transfer(
+        USER,
+        TransferCreate(
+            from_account_id=src.id,
+            to_account_id=dst.id,
+            amount_from=Decimal("9500"),
+            amount_to=Decimal("100"),
+            date=NOW,
+            fee_amount=Decimal("0"),
+        ),
+    )
+
+    assert len(created) == 2
+    assert all(tx.kind == TransactionKind.TRANSFER for tx in created)
+
+
 async def test_transfer_with_fee_negative() -> None:
     src = _acc("RUB")
     dst = _acc("USD")

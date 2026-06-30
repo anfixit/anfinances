@@ -112,7 +112,12 @@ export function TransactionSheet({
     createTx.isPending || createTransfer.isPending || updateTx.isPending
 
   const onError = (err: unknown) => {
-    setFormError(err instanceof AppError ? err.message : "Ошибка сохранения")
+    if (!(err instanceof AppError)) {
+      setFormError("Ошибка сохранения")
+      return
+    }
+    const detail = err.details[0]?.message
+    setFormError(detail ?? err.message)
   }
 
   // Смена типа операции: категория расхода и дохода — разные
@@ -174,14 +179,18 @@ export function TransactionSheet({
 
   const submitTransfer = () => {
     const effectiveTo = sameCurrency ? amountFrom : amountTo
+    const normalizedFee =
+      feeAmount.trim() !== "" && Number(feeAmount) > 0
+        ? feeAmount.trim()
+        : null
     const parsed = transferTxSchema.safeParse({
       from_account_id: fromId,
       to_account_id: toId,
       amount_from: amountFrom,
       amount_to: effectiveTo,
       date,
-      fee_amount: feeAmount || null,
-      fee_category_id: feeCategory || null,
+      fee_amount: normalizedFee,
+      fee_category_id: normalizedFee ? feeCategory || null : null,
       comment: comment || null,
     })
     if (!parsed.success) {
@@ -196,8 +205,8 @@ export function TransactionSheet({
         amount_to: effectiveTo.trim(),
         date: new Date(date).toISOString(),
         comment: comment || null,
-        fee_amount: feeAmount || null,
-        fee_category_id: feeAmount ? feeCategory || null : null,
+        fee_amount: normalizedFee,
+        fee_category_id: normalizedFee ? feeCategory || null : null,
       },
       { onSuccess: onDone, onError },
     )
@@ -356,10 +365,15 @@ export function TransactionSheet({
               min="0"
               step="0.01"
               value={feeAmount}
-              onChange={(e) => setFeeAmount(e.target.value)}
+              onChange={(e) => {
+                setFeeAmount(e.target.value)
+                if (Number(e.target.value) <= 0) {
+                  setFeeCategory("")
+                }
+              }}
             />
           </label>
-          {feeAmount && (
+          {Number(feeAmount) > 0 && (
             <CategorySelect
               categories={categories}
               kind="expense"

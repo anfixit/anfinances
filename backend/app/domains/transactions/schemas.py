@@ -74,13 +74,16 @@ class TransferCreate(BaseModel):
     amount_to: Decimal = Field(gt=0)
     date: datetime
     comment: str | None = None
-    fee_amount: Decimal | None = Field(default=None, gt=0)
+    fee_amount: Decimal | None = Field(default=None, ge=0)
     fee_category_id: uuid.UUID | None = None
 
     @model_validator(mode="after")
     def _check(self) -> "TransferCreate":
         if self.from_account_id == self.to_account_id:
             raise ValueError("Счёт-источник и получатель должны различаться.")
+        if self.fee_amount == 0:
+            self.fee_amount = None
+            self.fee_category_id = None
         return self
 
 

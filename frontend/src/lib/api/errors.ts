@@ -6,10 +6,15 @@ export class AppError extends Error {
   readonly details: ApiErrorDetail[]
 
   constructor(body: ApiErrorBody) {
-    super(body.message)
+    const details = body.details ?? []
+    const message =
+      body.message === "Validation failed" && details[0]
+        ? details[0].message
+        : body.message
+    super(message)
     this.name = "AppError"
     this.code = body.code
-    this.details = body.details ?? []
+    this.details = details
   }
 }
 
