@@ -29,6 +29,7 @@ export function TransactionsPage() {
   const [filters, setFilters] = useState<TransactionFilters>({})
   const [kindTab, setKindTab] = useState<TransactionKind | "all">("all")
   const [sheetOpen, setSheetOpen] = useState(false)
+  const [editingTx, setEditingTx] = useState<Transaction | null>(null)
 
   const accountsQ = useAccounts()
   const categoriesQ = useCategories()
@@ -65,6 +66,21 @@ export function TransactionsPage() {
       }
       return next
     })
+  }
+
+  const openCreate = () => {
+    setEditingTx(null)
+    setSheetOpen(true)
+  }
+
+  const openEdit = (transaction: Transaction) => {
+    setEditingTx(transaction)
+    setSheetOpen(true)
+  }
+
+  const closeSheet = () => {
+    setSheetOpen(false)
+    setEditingTx(null)
   }
 
   const remove = (t: Transaction) => {
@@ -208,13 +224,24 @@ export function TransactionsPage() {
               <span className={`amount ${isIncome ? "income" : "expense"}`}>
                 {formatMoney(t.amount, t.currency_code)}
               </span>
-              <button
-                type="button"
-                className="link danger"
-                onClick={() => remove(t)}
-              >
-                Удалить
-              </button>
+              <div className="tx-actions">
+                {!t.transfer_id && (
+                  <button
+                    type="button"
+                    className="link"
+                    onClick={() => openEdit(t)}
+                  >
+                    Изменить
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="link danger"
+                  onClick={() => remove(t)}
+                >
+                  Удалить
+                </button>
+              </div>
             </li>
           )
         })}
@@ -233,16 +260,20 @@ export function TransactionsPage() {
         </p>
       )}
 
-      <button type="button" className="fab" onClick={() => setSheetOpen(true)}>
+      <button type="button" className="fab" onClick={openCreate}>
         + Добавить
       </button>
 
       <Sheet
         open={sheetOpen}
-        title="Новая операция"
-        onClose={() => setSheetOpen(false)}
+        title={editingTx ? "Редактирование операции" : "Новая операция"}
+        onClose={closeSheet}
       >
-        <TransactionSheet onDone={() => setSheetOpen(false)} />
+        <TransactionSheet
+          key={editingTx?.id ?? "new"}
+          onDone={closeSheet}
+          {...(editingTx ? { transaction: editingTx } : {})}
+        />
       </Sheet>
     </>
   )

@@ -148,6 +148,18 @@
   white-space: nowrap;
 }
 
+.tx-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.form-note {
+  margin: 0;
+  color: var(--on-surface-variant);
+  font-size: 0.9rem;
+}
+
 /* ── Мобильный сценарий создания операции ──────────────────── */
 .transaction-form {
   padding-bottom: 4px;
@@ -242,10 +254,13 @@
     grid-row: 1;
   }
 
-  .tx-row .link.danger {
+  .tx-actions {
     grid-column: 2;
     grid-row: 2;
     justify-self: end;
+  }
+
+  .tx-actions .link {
     padding: 6px 8px;
   }
 }

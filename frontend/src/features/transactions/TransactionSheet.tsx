@@ -7,40 +7,75 @@ import { useCategories } from "@/features/categories/hooks"
 import {
   useCreateTransaction,
   useCreateTransfer,
+  useUpdateTransaction,
 } from "@/features/transactions/hooks"
 import {
   ordinaryTxSchema,
   transferTxSchema,
 } from "@/features/transactions/schemas"
+import type { Transaction } from "@/features/transactions/types"
 import { AppError } from "@/lib/api/errors"
 
 type Mode = "expense" | "income" | "transfer"
 
 // datetime-local в текущей таймзоне (YYYY-MM-DDTHH:mm).
-function nowLocalInput(): string {
-  const now = new Date()
-  const local = new Date(now.getTime() - now.getTimezoneOffset() * 60000)
+function toLocalInput(value: string | Date): string {
+  const date = value instanceof Date ? value : new Date(value)
+  const local = new Date(
+    date.getTime() - date.getTimezoneOffset() * 60_000,
+  )
   return local.toISOString().slice(0, 16)
+}
+
+function nowLocalInput(): string {
+  return toLocalInput(new Date())
 }
 
 const blank = () => ""
 
-export function TransactionSheet({ onDone }: { onDone: () => void }) {
+interface TransactionSheetProps {
+  onDone: () => void
+  transaction?: Transaction
+}
+
+export function TransactionSheet({
+  onDone,
+  transaction,
+}: TransactionSheetProps) {
   const accountsQ = useAccounts()
   const categoriesQ = useCategories()
   const createTx = useCreateTransaction()
   const createTransfer = useCreateTransfer()
+  const updateTx = useUpdateTransaction()
+  const editing = transaction !== undefined
 
-  const [mode, setMode] = useState<Mode>("expense")
-  const [date, setDate] = useState<string>(() => nowLocalInput())
-  const [comment, setComment] = useState("")
+  const [mode, setMode] = useState<Mode>(() =>
+    transaction?.kind === "income" ? "income" : "expense",
+  )
+  const [date, setDate] = useState<string>(() =>
+    transaction ? toLocalInput(transaction.date) : nowLocalInput(),
+  )
+  const [comment, setComment] = useState(transaction?.comment ?? "")
   const [formError, setFormError] = useState<string | null>(null)
 
   // Обычная операция
-  const [accountId, setAccountId] = useState("")
-  const [amount, setAmount] = useState("")
-  const [categoryId, setCategoryId] = useState("")
-  const [required, setRequired] = useState("")
+  const [accountId, setAccountId] = useState(
+    transaction?.account_id ?? "",
+  )
+  const [amount, setAmount] = useState(() => {
+    if (!transaction) {
+      return ""
+    }
+    return transaction.amount.startsWith("-")
+      ? transaction.amount.slice(1)
+      : transaction.amount
+  })
+  const [categoryId, setCategoryId] = useState(
+    transaction?.category_id ?? "",
+  )
+  const [required, setRequired] = useState(
+    transaction?.required ?? "",
+  )
 
   // Перевод
   const [fromId, setFromId] = useState("")
@@ -73,7 +108,8 @@ export function TransactionSheet({ onDone }: { onDone: () => void }) {
   const needsConversion =
     fromAcc !== undefined && toAcc !== undefined && !sameCurrency
 
-  const pending = createTx.isPending || createTransfer.isPending
+  const pending =
+    createTx.isPending || createTransfer.isPending || updateTx.isPending
 
   const onError = (err: unknown) => {
     setFormError(err instanceof AppError ? err.message : "Ошибка сохранения")
@@ -82,6 +118,9 @@ export function TransactionSheet({ onDone }: { onDone: () => void }) {
   // Смена типа операции: категория расхода и дохода — разные
   // деревья, поэтому при переключении сбрасываем выбор.
   const changeMode = (next: Mode) => {
+    if (editing) {
+      return
+    }
     setMode(next)
     setCategoryId("")
   }
@@ -99,6 +138,26 @@ export function TransactionSheet({ onDone }: { onDone: () => void }) {
       setFormError(parsed.error.issues[0]?.message ?? "Проверьте поля")
       return
     }
+    if (transaction) {
+      updateTx.mutate(
+        {
+          id: transaction.id,
+          input: {
+            amount: amount.trim(),
+            date: new Date(date).toISOString(),
+            category_id: categoryId || null,
+            required:
+              mode === "expense" && required
+                ? (required as never)
+                : null,
+            comment: comment || null,
+          },
+        },
+        { onSuccess: onDone, onError },
+      )
+      return
+    }
+
     createTx.mutate(
       {
         account_id: accountId,
@@ -155,29 +214,38 @@ export function TransactionSheet({ onDone }: { onDone: () => void }) {
 
   return (
     <div className="form transaction-form">
-      <div className="segmented" role="group" aria-label="Тип операции">
-        <button
-          type="button"
-          aria-pressed={mode === "expense"}
-          onClick={() => changeMode("expense")}
-        >
-          Расход
-        </button>
-        <button
-          type="button"
-          aria-pressed={mode === "income"}
-          onClick={() => changeMode("income")}
-        >
-          Доход
-        </button>
-        <button
-          type="button"
-          aria-pressed={mode === "transfer"}
-          onClick={() => changeMode("transfer")}
-        >
-          Перевод
-        </button>
-      </div>
+      {!editing && (
+        <div className="segmented" role="group" aria-label="Тип операции">
+          <button
+            type="button"
+            aria-pressed={mode === "expense"}
+            onClick={() => changeMode("expense")}
+          >
+            Расход
+          </button>
+          <button
+            type="button"
+            aria-pressed={mode === "income"}
+            onClick={() => changeMode("income")}
+          >
+            Доход
+          </button>
+          <button
+            type="button"
+            aria-pressed={mode === "transfer"}
+            onClick={() => changeMode("transfer")}
+          >
+            Перевод
+          </button>
+        </div>
+      )}
+
+      {editing && (
+        <p className="form-note">
+          Тип операции и счёт нельзя изменить. Для переноса на другой
+          счёт удалите операцию и создайте новую.
+        </p>
+      )}
 
       {mode !== "transfer" && (
         <>
@@ -186,6 +254,7 @@ export function TransactionSheet({ onDone }: { onDone: () => void }) {
             <select
               value={accountId}
               onChange={(e) => setAccountId(e.target.value)}
+              disabled={editing}
             >
               <option value="">— выберите —</option>
               {accounts.map((a) => (
@@ -320,7 +389,11 @@ export function TransactionSheet({ onDone }: { onDone: () => void }) {
 
       <div className="transaction-submit">
         <button type="button" onClick={submit} disabled={pending}>
-          {pending ? "Сохраняю…" : "Сохранить"}
+          {pending
+            ? "Сохраняю…"
+            : editing
+              ? "Сохранить изменения"
+              : "Сохранить"}
         </button>
       </div>
     </div>
