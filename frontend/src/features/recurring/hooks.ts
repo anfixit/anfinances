@@ -5,6 +5,7 @@ import {
   createRecurring,
   generateFromCategories,
   listRecurring,
+  previewGeneration,
   updateRecurring,
 } from "@/features/recurring/recurringApi"
 import type {
@@ -43,10 +44,14 @@ export function useArchiveRecurring() {
   })
 }
 
+export function usePreviewGeneration() {
+  return useMutation({ mutationFn: () => previewGeneration() })
+}
+
 export function useGenerateFromCategories() {
   const qc = useQueryClient()
-  return useMutation<Recurring[], Error, void>({
-    mutationFn: () => generateFromCategories(),
+  return useMutation<Recurring[], Error, string[]>({
+    mutationFn: (categoryIds) => generateFromCategories(categoryIds),
     onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.recurring }),
   })
 }

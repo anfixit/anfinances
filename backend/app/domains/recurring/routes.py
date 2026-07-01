@@ -18,6 +18,8 @@ from app.domains.currencies.service import CurrencyService
 from app.domains.recurring.repository import SqlRecurringRepository
 from app.domains.recurring.schemas import (
     RecurringCreate,
+    RecurringGenerateRequest,
+    RecurringGenerationProposal,
     RecurringRead,
     RecurringUpdate,
 )
@@ -67,18 +69,35 @@ async def create_recurring(
     return ApiResponse(data=RecurringRead.model_validate(item))
 
 
+@router.get(
+    "/generation-preview",
+    response_model=ApiResponse[list[RecurringGenerationProposal]],
+)
+async def preview_generation(
+    user: CurrentUser,
+    service: ServiceDep,
+) -> ApiResponse[list[RecurringGenerationProposal]]:
+    proposals = await service.preview_generation(
+        user.id,
+        user.timezone,
+    )
+    return ApiResponse(data=proposals)
+
+
 @router.post(
     "/generate-from-categories",
     status_code=status.HTTP_201_CREATED,
     response_model=ApiResponse[list[RecurringRead]],
 )
 async def generate_from_categories(
+    data: RecurringGenerateRequest,
     user: CurrentUser,
     service: ServiceDep,
     db: DbSession,
 ) -> ApiResponse[list[RecurringRead]]:
     items = await service.generate_from_categories(
         user.id,
+        data.category_ids,
         user.timezone,
     )
     await db.commit()

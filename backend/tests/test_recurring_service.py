@@ -108,12 +108,13 @@ def _category(
     name: str = "Аренда",
     kind: CategoryKind = CategoryKind.EXPENSE,
     archived: bool = False,
+    parent_id: uuid.UUID | None = None,
 ) -> Category:
     cat = Category(
         user_id=USER,
         name=name,
         kind=kind,
-        parent_id=None,
+        parent_id=parent_id,
         sort_order=0,
     )
     cat.id = uuid.uuid4()
@@ -240,48 +241,117 @@ async def test_archive_hides_from_list() -> None:
     assert await svc.list_recurring(USER) == []
 
 
-async def test_generate_estimates_skips_existing_and_income() -> None:
+async def test_preview_aggregates_children_into_parent() -> None:
     repo = FakeRecurringRepo()
-    cat_rent = _category(name="Аренда")
-    cat_food = _category(name="Еда")
-    cat_income = _category(name="Зарплата", kind=CategoryKind.INCOME)
-    svc = _service(repo, [cat_rent, cat_food, cat_income])
-    # по «Еда» уже есть активный план — пропустить
+    parent = _category(name="Жильё")
+    rent = _category(name="Аренда", parent_id=parent.id)
+    utilities = _category(name="Коммунальные", parent_id=parent.id)
+    svc = _service(repo, [parent, rent, utilities])
+    repo.spend = {
+        parent.id: Decimal("-3000"),
+        rent.id: Decimal("-90000"),
+        utilities.id: Decimal("-18000"),
+    }
+
+    proposals = await svc.preview_generation(USER)
+
+    assert len(proposals) == 1
+    proposal = proposals[0]
+    assert proposal.category_id == parent.id
+    assert proposal.category_path == "Жильё"
+    assert proposal.monthly_amount == Decimal("37000.00")
+
+
+async def test_preview_skips_tree_with_existing_parent_plan() -> None:
+    repo = FakeRecurringRepo()
+    parent = _category(name="Жильё")
+    child = _category(name="Аренда", parent_id=parent.id)
+    svc = _service(repo, [parent, child])
     await repo.add(
         RecurringExpense(
             user_id=USER,
             required=RequiredKind.REQUIRED,
-            category_id=cat_food.id,
-            name="Еда",
-            monthly_amount=Decimal("100"),
+            category_id=parent.id,
+            name=parent.name,
+            monthly_amount=Decimal("30000"),
             currency_code="RUB",
-            amount_rub=Decimal("100"),
+            amount_rub=Decimal("30000"),
         )
     )
-    # обязательные расходы за 3 месяца (со знаком)
-    repo.spend = {
-        cat_rent.id: Decimal("-90000"),
-        cat_food.id: Decimal("-30000"),
-        cat_income.id: Decimal("-5000"),
-    }
-    created = await svc.generate_from_categories(USER)
-    assert len(created) == 1
-    item = created[0]
-    assert item.category_id == cat_rent.id
-    assert item.name == "Аренда"
-    assert item.monthly_amount == Decimal("30000.00")  # 90000 / 3
-    assert item.amount_rub == Decimal("30000.00")
-    assert item.currency_code == "RUB"
-    assert item.required == RequiredKind.REQUIRED
+    repo.spend = {child.id: Decimal("-90000")}
+
+    proposals = await svc.preview_generation(USER)
+
+    assert proposals == []
 
 
-async def test_generate_rounds_estimate() -> None:
+async def test_preview_suggests_only_missing_children() -> None:
     repo = FakeRecurringRepo()
-    cat = _category(name="Связь")
-    svc = _service(repo, [cat])
-    repo.spend = {cat.id: Decimal("-100000")}  # /3 = 33333.3333...
-    created = await svc.generate_from_categories(USER)
-    assert created[0].monthly_amount == Decimal("33333.33")
+    parent = _category(name="Транспорт")
+    fuel = _category(name="Бензин", parent_id=parent.id)
+    taxi = _category(name="Такси", parent_id=parent.id)
+    svc = _service(repo, [parent, fuel, taxi])
+    await repo.add(
+        RecurringExpense(
+            user_id=USER,
+            required=RequiredKind.REQUIRED,
+            category_id=fuel.id,
+            name=fuel.name,
+            monthly_amount=Decimal("5000"),
+            currency_code="RUB",
+            amount_rub=Decimal("5000"),
+        )
+    )
+    repo.spend = {
+        fuel.id: Decimal("-15000"),
+        taxi.id: Decimal("-9000"),
+    }
+
+    proposals = await svc.preview_generation(USER)
+
+    assert len(proposals) == 1
+    proposal = proposals[0]
+    assert proposal.category_id == taxi.id
+    assert proposal.category_path == "Транспорт → Такси"
+    assert proposal.monthly_amount == Decimal("3000.00")
+
+
+async def test_generate_creates_only_selected_proposals() -> None:
+    repo = FakeRecurringRepo()
+    rent = _category(name="Аренда")
+    internet = _category(name="Интернет")
+    svc = _service(repo, [rent, internet])
+    repo.spend = {
+        rent.id: Decimal("-90000"),
+        internet.id: Decimal("-3000"),
+    }
+
+    created = await svc.generate_from_categories(USER, [internet.id])
+
+    assert len(created) == 1
+    assert created[0].category_id == internet.id
+    assert created[0].monthly_amount == Decimal("1000.00")
+
+
+async def test_generate_rejects_stale_selection() -> None:
+    repo = FakeRecurringRepo()
+    category = _category(name="Связь")
+    svc = _service(repo, [category])
+    repo.spend = {category.id: Decimal("-3000")}
+
+    with pytest.raises(ValidationFailedError):
+        await svc.generate_from_categories(USER, [uuid.uuid4()])
+
+
+async def test_preview_rounds_estimate() -> None:
+    repo = FakeRecurringRepo()
+    category = _category(name="Связь")
+    svc = _service(repo, [category])
+    repo.spend = {category.id: Decimal("-100000")}
+
+    proposals = await svc.preview_generation(USER)
+
+    assert proposals[0].monthly_amount == Decimal("33333.33")
 
 
 async def test_list_returns_only_active() -> None:

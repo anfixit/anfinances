@@ -6,6 +6,7 @@ import { buildRecurringPlanSummary } from "@/features/recurring/planSummary"
 import {
   useArchiveRecurring,
   useGenerateFromCategories,
+  usePreviewGeneration,
   useRecurring,
 } from "@/features/recurring/hooks"
 import type { Recurring } from "@/features/recurring/types"
@@ -16,6 +17,7 @@ export function RecurringPage() {
   const recurring = useRecurring()
   const categoriesQ = useCategories()
   const archive = useArchiveRecurring()
+  const preview = usePreviewGeneration()
   const generate = useGenerateFromCategories()
   const [sheetOpen, setSheetOpen] = useState(false)
   const [editing, setEditing] = useState<Recurring | null>(null)
@@ -49,12 +51,38 @@ export function RecurringPage() {
   }
 
   const onGenerate = () => {
-    generate.mutate(undefined, {
-      onSuccess: (created) => {
-        window.alert(
-          created.length > 0
-            ? `Добавлено записей: ${String(created.length)}`
-            : "Новых категорий для плана не найдено.",
+    preview.mutate(undefined, {
+      onSuccess: (proposals) => {
+        if (proposals.length === 0) {
+          window.alert("Новых категорий для плана не найдено.")
+          return
+        }
+
+        const lines = proposals.map(
+          (proposal) =>
+            `${proposal.category_path}: ${formatMoney(
+              proposal.monthly_amount,
+              proposal.currency_code,
+            )}`,
+        )
+        const confirmed = window.confirm(
+          [
+            "Будут добавлены записи:",
+            "",
+            ...lines,
+            "",
+            "Продолжить?",
+          ].join("\n"),
+        )
+        if (!confirmed) return
+
+        generate.mutate(
+          proposals.map((proposal) => proposal.category_id),
+          {
+            onSuccess: (created) => {
+              window.alert(`Добавлено записей: ${String(created.length)}`)
+            },
+          },
         )
       },
     })
@@ -90,9 +118,11 @@ export function RecurringPage() {
           type="button"
           className="btn-outline"
           onClick={onGenerate}
-          disabled={generate.isPending}
+          disabled={preview.isPending || generate.isPending}
         >
-          {generate.isPending ? "Считаю…" : "Сгенерировать из категорий"}
+          {preview.isPending || generate.isPending
+            ? "Считаю…"
+            : "Сгенерировать из категорий"}
         </button>
       </p>
 
