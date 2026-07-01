@@ -61,3 +61,11 @@
     flex-wrap: wrap;
   }
 }
+
+.rec-warning {
+  margin: 12px 0;
+  padding: 12px 14px;
+  border-radius: var(--shape-m);
+  background: var(--error-container);
+  color: var(--on-error-container);
+}

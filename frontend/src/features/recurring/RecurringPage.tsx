@@ -2,6 +2,7 @@ import { useState } from "react"
 
 import { useCategories } from "@/features/categories/hooks"
 import { RecurringForm } from "@/features/recurring/RecurringForm"
+import { buildRecurringPlanSummary } from "@/features/recurring/planSummary"
 import {
   useArchiveRecurring,
   useGenerateFromCategories,
@@ -21,7 +22,13 @@ export function RecurringPage() {
 
   const catById = new Map((categoriesQ.data ?? []).map((c) => [c.id, c]))
   const items = recurring.data ?? []
-  const totalRub = items.reduce((sum, i) => sum + Number(i.amount_rub ?? 0), 0)
+  const planSummary = buildRecurringPlanSummary(
+    items,
+    categoriesQ.data ?? [],
+  )
+  const exceededCategories = planSummary.categories.filter(
+    (category) => category.isExceeded,
+  )
 
   const openCreate = () => {
     setEditing(null)
@@ -64,8 +71,19 @@ export function RecurringPage() {
 
       <p className="rec-help">
         Обязательные ежемесячные траты по категориям. Итого в месяц:{" "}
-        <strong className="num">{formatMoney(String(totalRub), "RUB")}</strong>
+        <strong className="num">
+          {formatMoney(String(planSummary.totalRub), "RUB")}
+        </strong>
       </p>
+
+      {exceededCategories.length > 0 && (
+        <div className="rec-warning" role="status">
+          Детализация превышает общий план: {" "}
+          {exceededCategories
+            .map((category) => category.categoryName)
+            .join(", ")}.
+        </div>
+      )}
 
       <p>
         <button
@@ -87,6 +105,14 @@ export function RecurringPage() {
       <ul className="rec-list">
         {items.map((item) => {
           const cat = catById.get(item.category_id)
+          const parent =
+            cat?.parent_id === null || cat?.parent_id === undefined
+              ? undefined
+              : catById.get(cat.parent_id)
+          const categoryPath =
+            parent === undefined
+              ? (cat?.name ?? "—")
+              : `${parent.name} → ${cat?.name ?? "—"}`
           const showRub =
             item.currency_code !== "RUB" && item.amount_rub !== null
           return (
@@ -94,7 +120,7 @@ export function RecurringPage() {
               <div className="rec-info">
                 <span className="rec-name">{item.name}</span>
                 <span className="rec-meta">
-                  {cat?.name ?? "—"}
+                  {categoryPath}
                   {item.required === "optional" ? " · необязательный" : ""}
                 </span>
               </div>
