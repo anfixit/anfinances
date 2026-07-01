@@ -5,6 +5,7 @@ from datetime import UTC, date, datetime
 from app.core.datetime import (
     date_range_utc,
     month_bounds_utc,
+    optional_date_range_utc,
     recent_full_months_utc,
 )
 
@@ -49,3 +50,25 @@ def test_recent_full_months_use_local_calendar() -> None:
 
     assert start == datetime(2026, 3, 31, 20, tzinfo=UTC)
     assert end == datetime(2026, 6, 30, 20, tzinfo=UTC)
+
+
+def test_optional_date_range_utc_uses_local_day() -> None:
+    start, end = optional_date_range_utc(
+        date(2026, 7, 1),
+        date(2026, 7, 1),
+        "Europe/Samara",
+    )
+
+    assert start == datetime(2026, 6, 30, 20, 0, tzinfo=UTC)
+    assert end == datetime(2026, 7, 1, 20, 0, tzinfo=UTC)
+
+
+def test_optional_date_range_utc_keeps_missing_bounds() -> None:
+    start, end = optional_date_range_utc(
+        None,
+        date(2026, 7, 1),
+        "Asia/Tashkent",
+    )
+
+    assert start is None
+    assert end == datetime(2026, 7, 1, 19, 0, tzinfo=UTC)

@@ -7,6 +7,7 @@ __all__ = [
     "DEFAULT_TIMEZONE",
     "date_range_utc",
     "month_bounds_utc",
+    "optional_date_range_utc",
     "recent_full_months_utc",
 ]
 
@@ -30,6 +31,34 @@ def date_range_utc(
         timezone,
     )
     return start_local.astimezone(UTC), end_local.astimezone(UTC)
+
+
+def optional_date_range_utc(
+    date_from: date | None,
+    date_to: date | None,
+    timezone_name: str,
+) -> tuple[datetime | None, datetime | None]:
+    """Вернуть UTC-границы необязательного диапазона дат.
+
+    Правая граница исключительная. Отсутствующая граница остаётся
+    ``None``.
+    """
+    start = None
+    end = None
+    timezone = ZoneInfo(timezone_name)
+
+    if date_from is not None:
+        start_local = datetime.combine(date_from, time.min, timezone)
+        start = start_local.astimezone(UTC)
+    if date_to is not None:
+        end_local = datetime.combine(
+            date_to + timedelta(days=1),
+            time.min,
+            timezone,
+        )
+        end = end_local.astimezone(UTC)
+
+    return start, end
 
 
 def month_bounds_utc(

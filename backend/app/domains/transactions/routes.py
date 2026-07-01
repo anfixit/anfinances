@@ -5,11 +5,12 @@ transfer_router — переводы /transfers/*
 """
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, status
 
+from app.core.datetime import optional_date_range_utc
 from app.core.dependencies import CurrentUser, DbSession, SettingsDep
 from app.core.enums import TransactionKind
 from app.core.schemas import ApiResponse
@@ -85,18 +86,23 @@ async def list_transactions(
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
     cursor_date: datetime | None = None,
     cursor_id: uuid.UUID | None = None,
-    date_from: datetime | None = None,
-    date_to: datetime | None = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
     account_id: uuid.UUID | None = None,
     category_id: uuid.UUID | None = None,
     kind: TransactionKind | None = None,
 ) -> ApiResponse[list[TransactionRead]]:
+    range_from, range_to = optional_date_range_utc(
+        date_from,
+        date_to,
+        user.timezone,
+    )
     flt = TransactionFilter(
         limit=limit,
         cursor_date=cursor_date,
         cursor_id=cursor_id,
-        date_from=date_from,
-        date_to=date_to,
+        date_from=range_from,
+        date_to=range_to,
         account_id=account_id,
         category_id=category_id,
         kind=kind,

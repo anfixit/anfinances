@@ -17,10 +17,10 @@ function triggerDownload(blob: Blob, filename: string): void {
 function rangeParams(from: string, to: string): Record<string, string> {
   const params: Record<string, string> = {}
   if (from) {
-    params.from = new Date(from).toISOString()
+    params.from = from
   }
   if (to) {
-    params.to = new Date(to).toISOString()
+    params.to = to
   }
   return params
 }

@@ -100,7 +100,7 @@ class SqlExportRepository:
         if date_from is not None:
             stmt = stmt.where(Transaction.date >= date_from)
         if date_to is not None:
-            stmt = stmt.where(Transaction.date <= date_to)
+            stmt = stmt.where(Transaction.date < date_to)
         stmt = stmt.order_by(Transaction.date, Transaction.id)
         result = await self._session.execute(stmt)
         return list(result.scalars().all())

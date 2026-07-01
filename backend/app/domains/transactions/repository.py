@@ -75,7 +75,7 @@ class SqlTransactionRepository:
         if flt.date_from is not None:
             stmt = stmt.where(Transaction.date >= flt.date_from)
         if flt.date_to is not None:
-            stmt = stmt.where(Transaction.date <= flt.date_to)
+            stmt = stmt.where(Transaction.date < flt.date_to)
         if flt.account_id is not None:
             stmt = stmt.where(Transaction.account_id == flt.account_id)
         if flt.category_id is not None:

@@ -5,11 +5,12 @@
 Read-only, commit не нужен.
 """
 
-from datetime import datetime
+from datetime import date
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, Response
 
+from app.core.datetime import optional_date_range_utc
 from app.core.dependencies import CurrentUser, DbSession
 from app.domains.export.repository import SqlExportRepository
 from app.domains.export.service import ExportService
@@ -21,8 +22,8 @@ _XLSX_MEDIA = (
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 )
 
-DateFrom = Annotated[datetime | None, Query(alias="from")]
-DateTo = Annotated[datetime | None, Query(alias="to")]
+DateFrom = Annotated[date | None, Query(alias="from")]
+DateTo = Annotated[date | None, Query(alias="to")]
 
 
 def get_export_service(db: DbSession) -> ExportService:
@@ -43,7 +44,16 @@ async def export_transactions_csv(
     date_from: DateFrom = None,
     date_to: DateTo = None,
 ) -> Response:
-    content = await service.transactions_csv(user.id, date_from, date_to)
+    range_from, range_to = optional_date_range_utc(
+        date_from,
+        date_to,
+        user.timezone,
+    )
+    content = await service.transactions_csv(
+        user.id,
+        range_from,
+        range_to,
+    )
     return Response(
         content=content,
         media_type=_CSV_MEDIA,
@@ -58,7 +68,16 @@ async def export_transactions_xlsx(
     date_from: DateFrom = None,
     date_to: DateTo = None,
 ) -> Response:
-    content = await service.transactions_xlsx(user.id, date_from, date_to)
+    range_from, range_to = optional_date_range_utc(
+        date_from,
+        date_to,
+        user.timezone,
+    )
+    content = await service.transactions_xlsx(
+        user.id,
+        range_from,
+        range_to,
+    )
     return Response(
         content=content,
         media_type=_XLSX_MEDIA,

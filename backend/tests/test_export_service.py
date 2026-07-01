@@ -61,7 +61,7 @@ class FakeExportRepo:
         if date_from is not None:
             out = [t for t in out if t.date >= date_from]
         if date_to is not None:
-            out = [t for t in out if t.date <= date_to]
+            out = [t for t in out if t.date < date_to]
         return out
 
     async def list_budgets(self, user_id):

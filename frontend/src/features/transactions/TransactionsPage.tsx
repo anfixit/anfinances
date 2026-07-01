@@ -144,9 +144,7 @@ export function TransactionsPage() {
               onChange={(e) =>
                 patchFilter(
                   "date_from",
-                  e.target.value
-                    ? new Date(e.target.value).toISOString()
-                    : "",
+                  e.target.value,
                 )
               }
             />
@@ -158,9 +156,7 @@ export function TransactionsPage() {
               onChange={(e) =>
                 patchFilter(
                   "date_to",
-                  e.target.value
-                    ? new Date(e.target.value).toISOString()
-                    : "",
+                  e.target.value,
                 )
               }
             />
