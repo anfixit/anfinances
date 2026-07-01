@@ -126,12 +126,13 @@ class FakeCategoryRepo:
 def _category(
     kind: CategoryKind = CategoryKind.EXPENSE,
     archived: bool = False,
+    parent_id: uuid.UUID | None = None,
 ) -> Category:
     cat = Category(
         user_id=USER,
         name="Развлечения",
         kind=kind,
-        parent_id=None,
+        parent_id=parent_id,
         sort_order=0,
     )
     cat.id = uuid.uuid4()
@@ -188,6 +189,51 @@ async def test_no_rollover_spent_and_remaining() -> None:
     assert view.rollover_amount == Decimal("0")
     assert view.available == Decimal("1000")
     assert view.remaining == Decimal("700")
+
+
+async def test_parent_budget_includes_child_spending() -> None:
+    repo = FakeBudgetRepo()
+    parent = _category()
+    child = _category(parent_id=parent.id)
+    _budget(repo, parent.id, "2026-01", "1000", rollover=False)
+    repo.txs.append(_spend(parent.id, "2026-01", "100"))
+    repo.txs.append(_spend(child.id, "2026-01", "300"))
+    svc = _service(repo, [parent, child])
+
+    [view] = await svc.list_budgets(USER, "2026-01")
+
+    assert view.spent == Decimal("400")
+    assert view.remaining == Decimal("600")
+
+
+async def test_child_budget_does_not_include_parent_spending() -> None:
+    repo = FakeBudgetRepo()
+    parent = _category()
+    child = _category(parent_id=parent.id)
+    _budget(repo, child.id, "2026-01", "1000", rollover=False)
+    repo.txs.append(_spend(parent.id, "2026-01", "100"))
+    repo.txs.append(_spend(child.id, "2026-01", "300"))
+    svc = _service(repo, [parent, child])
+
+    [view] = await svc.list_budgets(USER, "2026-01")
+
+    assert view.spent == Decimal("300")
+    assert view.remaining == Decimal("700")
+
+
+async def test_parent_rollover_includes_child_spending() -> None:
+    repo = FakeBudgetRepo()
+    parent = _category()
+    child = _category(parent_id=parent.id)
+    _budget(repo, parent.id, "2026-01", "1000", rollover=True)
+    _budget(repo, parent.id, "2026-02", "1000", rollover=True)
+    repo.txs.append(_spend(child.id, "2026-01", "300"))
+    svc = _service(repo, [parent, child])
+
+    [view] = await svc.list_budgets(USER, "2026-02")
+
+    assert view.rollover_amount == Decimal("700")
+    assert view.available == Decimal("1700")
 
 
 async def test_rollover_accumulation() -> None:

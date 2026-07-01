@@ -241,17 +241,22 @@ export function BudgetsPage() {
             )
           }
 
-          // Группа: итог по родителю + детям.
-          const groupCats = [parent, ...kids]
-          const avail = sumMoney(
-            groupCats
-              .map((c) => byCat.get(c.id)?.available)
-              .filter((v) => v !== undefined),
-          )
-          let spentTotal = 0
-          for (const c of groupCats) {
-            spentTotal += spentOf(c)
-          }
+          // Родительский лимит является общим конвертом.
+          // Лимиты подкатегорий не прибавляются к нему повторно.
+          const parentBudget = byCat.get(parent.id)
+          const avail = parentBudget
+            ? Number(parentBudget.available)
+            : sumMoney(
+                kids
+                  .map((child) => byCat.get(child.id)?.available)
+                  .filter((value) => value !== undefined),
+              )
+          const spentTotal = parentBudget
+            ? Number(parentBudget.spent)
+            : spentOf(parent) + kids.reduce(
+                (total, child) => total + spentOf(child),
+                0,
+              )
           const over = avail > 0 && spentTotal > avail
           const pct =
             avail > 0
@@ -286,7 +291,7 @@ export function BudgetsPage() {
               </div>
               {isOpen && (
                 <div className="group-children">
-                  {renderRow(parent, "Общий лимит (без подкатегории)", true)}
+                  {renderRow(parent, "Общий лимит", true)}
                   {kids.map((c) => renderRow(c, c.name, true))}
                 </div>
               )}

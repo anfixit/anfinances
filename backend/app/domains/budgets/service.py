@@ -6,8 +6,9 @@
 Σ всех планов − Σ всего потраченного за все месяцы ДО текущего.
 Такой подход переживает пропуски месяцев (забытый месяц не обнуляет
 накопление), а перерасход уходит в минус и уменьшает следующий
-месяц. Бюджет ведётся только по расходным категориям; потраченное
-матчится по точному ``category_id``.
+месяц. Бюджет ведётся только по расходным категориям. Бюджет
+родительской категории включает расходы её подкатегорий, а бюджет
+подкатегории учитывает только собственные расходы.
 """
 
 import uuid
@@ -29,6 +30,7 @@ from app.domains.budgets.schemas import (
     BudgetRead,
     BudgetUpdate,
 )
+from app.domains.categories.models import Category
 from app.domains.categories.repository import CategoryRepository
 
 __all__ = ["BudgetService"]
@@ -180,6 +182,8 @@ class BudgetService:
         if not budgets:
             return []
         start, end = month_bounds_utc(month_date, timezone_name)
+        categories = await self._categories.list_active(user_id)
+        category_scopes = _build_category_scopes(categories)
         spent_month = await self._repo.spent_by_category(user_id, start, end)
         need_rollover = any(b.rollover for b in budgets)
         planned_before: dict[uuid.UUID, Decimal] = {}
@@ -192,15 +196,29 @@ class BudgetService:
 
         views: list[BudgetRead] = []
         for budget in budgets:
-            # Расход хранится со знаком минус; для показа — модуль.
-            spent = abs(spent_month.get(budget.category_id, Decimal(0)))
+            scope = category_scopes.get(
+                budget.category_id,
+                frozenset({budget.category_id}),
+            )
+            spent_value = sum(
+                (
+                    spent_month.get(category_id, Decimal(0))
+                    for category_id in scope
+                ),
+                start=Decimal(0),
+            )
+            spent = abs(spent_value)
             if budget.rollover:
                 before_planned = planned_before.get(
                     budget.category_id, Decimal(0)
                 )
-                # spent_before со знаком (расход < 0): план + расход
-                # даёт «план минус потрачено» за всё прошлое.
-                before_spent = spent_before.get(budget.category_id, Decimal(0))
+                before_spent = sum(
+                    (
+                        spent_before.get(category_id, Decimal(0))
+                        for category_id in scope
+                    ),
+                    start=Decimal(0),
+                )
                 rollover_amount = before_planned + before_spent
             else:
                 rollover_amount = Decimal(0)
@@ -222,6 +240,23 @@ class BudgetService:
                 )
             )
         return views
+
+
+def _build_category_scopes(
+    categories: list[Category],
+) -> dict[uuid.UUID, frozenset[uuid.UUID]]:
+    """Вернуть категории, расходы которых входят в каждый бюджет."""
+    children: dict[uuid.UUID, set[uuid.UUID]] = {}
+    for category in categories:
+        if category.parent_id is not None:
+            children.setdefault(category.parent_id, set()).add(category.id)
+
+    return {
+        category.id: frozenset(
+            {category.id, *children.get(category.id, set())}
+        )
+        for category in categories
+    }
 
 
 def _month_to_date(month: str) -> date:
