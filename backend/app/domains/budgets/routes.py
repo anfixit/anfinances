@@ -59,7 +59,7 @@ async def list_budgets(
     service: ServiceDep,
     month: Annotated[str, Query(pattern=_MONTH_PATTERN)],
 ) -> ApiResponse[list[BudgetRead]]:
-    items = await service.list_budgets(user.id, month)
+    items = await service.list_budgets(user.id, month, user.timezone)
     return ApiResponse(data=items)
 
 
@@ -74,7 +74,11 @@ async def create_budget(
     service: ServiceDep,
     db: DbSession,
 ) -> ApiResponse[BudgetRead]:
-    budget = await service.create_budget(user.id, data)
+    budget = await service.create_budget(
+        user.id,
+        data,
+        user.timezone,
+    )
     await db.commit()
     return ApiResponse(data=budget)
 
@@ -86,7 +90,11 @@ async def import_budgets(
     service: ServiceDep,
     db: DbSession,
 ) -> ApiResponse[list[BudgetRead]]:
-    items = await service.import_budgets(user.id, data)
+    items = await service.import_budgets(
+        user.id,
+        data,
+        user.timezone,
+    )
     await db.commit()
     return ApiResponse(data=items)
 
@@ -99,7 +107,12 @@ async def update_budget(
     service: ServiceDep,
     db: DbSession,
 ) -> ApiResponse[BudgetRead]:
-    budget = await service.update_budget(budget_id, user.id, data)
+    budget = await service.update_budget(
+        budget_id,
+        user.id,
+        data,
+        user.timezone,
+    )
     await db.commit()
     return ApiResponse(data=budget)
 

@@ -51,7 +51,12 @@ async def cashflow(
     date_from: Annotated[date, Query(alias="from")],
     date_to: Annotated[date, Query(alias="to")],
 ) -> ApiResponse[CashflowResult]:
-    result = await service.cashflow(user.id, date_from, date_to)
+    result = await service.cashflow(
+        user.id,
+        date_from,
+        date_to,
+        user.timezone,
+    )
     return ApiResponse(data=result)
 
 
@@ -61,5 +66,5 @@ async def by_category(
     service: ServiceDep,
     month: Annotated[str, Query(pattern=r"^\d{4}-\d{2}$")],
 ) -> ApiResponse[ByCategoryResult]:
-    result = await service.by_category(user.id, month)
+    result = await service.by_category(user.id, month, user.timezone)
     return ApiResponse(data=result)

@@ -123,7 +123,7 @@ class SqlBudgetRepository:
                 Transaction.user_id == user_id,
                 Transaction.kind == TransactionKind.EXPENSE,
                 Transaction.date >= date_from,
-                Transaction.date <= date_to,
+                Transaction.date < date_to,
             )
             .group_by(Transaction.category_id)
         )

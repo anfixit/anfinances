@@ -13,9 +13,12 @@
 """
 
 import uuid
-from datetime import UTC, datetime
 from decimal import ROUND_HALF_UP, Decimal
 
+from app.core.datetime import (
+    DEFAULT_TIMEZONE,
+    recent_full_months_utc,
+)
 from app.core.enums import CategoryKind, RequiredKind
 from app.core.exceptions import NotFoundError, ValidationFailedError
 from app.domains.categories.repository import CategoryRepository
@@ -116,9 +119,14 @@ class RecurringService:
         item.is_archived = True
 
     async def generate_from_categories(
-        self, user_id: uuid.UUID
+        self,
+        user_id: uuid.UUID,
+        timezone_name: str = DEFAULT_TIMEZONE,
     ) -> list[RecurringExpense]:
-        date_from, date_to = _recent_window()
+        date_from, date_to = recent_full_months_utc(
+            _MONTHS_WINDOW,
+            timezone_name,
+        )
         spend = await self._repo.required_spend_by_category(
             user_id, date_from, date_to
         )
@@ -168,19 +176,3 @@ class RecurringService:
             raise ValidationFailedError(
                 "План-минимум ведётся только по расходным категориям."
             )
-
-
-def _recent_window() -> tuple[datetime, datetime]:
-    """Окно из последних _MONTHS_WINDOW полных месяцев в UTC.
-
-    Возвращает (начало, конец-исключительно): от первого числа
-    месяца N назад до первого числа текущего месяца.
-    """
-    now = datetime.now(UTC)
-    end = datetime(now.year, now.month, 1, tzinfo=UTC)
-    year, month = now.year, now.month - _MONTHS_WINDOW
-    while month <= 0:
-        month += 12
-        year -= 1
-    start = datetime(year, month, 1, tzinfo=UTC)
-    return start, end

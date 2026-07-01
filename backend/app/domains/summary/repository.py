@@ -81,7 +81,7 @@ class SqlSummaryRepository:
             .where(
                 Transaction.user_id == user_id,
                 Transaction.date >= date_from,
-                Transaction.date <= date_to,
+                Transaction.date < date_to,
                 Transaction.kind != TransactionKind.TRANSFER,
             )
             .group_by(Transaction.kind)
@@ -110,7 +110,7 @@ class SqlSummaryRepository:
             .where(
                 Transaction.user_id == user_id,
                 Transaction.date >= date_from,
-                Transaction.date <= date_to,
+                Transaction.date < date_to,
                 Transaction.kind == TransactionKind.EXPENSE,
             )
             .group_by(Transaction.category_id)

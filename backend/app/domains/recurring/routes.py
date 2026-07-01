@@ -77,7 +77,10 @@ async def generate_from_categories(
     service: ServiceDep,
     db: DbSession,
 ) -> ApiResponse[list[RecurringRead]]:
-    items = await service.generate_from_categories(user.id)
+    items = await service.generate_from_categories(
+        user.id,
+        user.timezone,
+    )
     await db.commit()
     return ApiResponse(data=[RecurringRead.model_validate(i) for i in items])
 

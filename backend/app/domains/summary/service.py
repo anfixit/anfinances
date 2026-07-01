@@ -7,11 +7,15 @@ Read-only домен. Баланс счёта = initial_balance + Σ amount
 Cashflow и разбивка по категориям — по запечённым amount_rub.
 """
 
-import calendar
 import uuid
-from datetime import UTC, date, datetime
+from datetime import date
 from decimal import Decimal
 
+from app.core.datetime import (
+    DEFAULT_TIMEZONE,
+    date_range_utc,
+    month_bounds_utc,
+)
 from app.core.exceptions import NotFoundError
 from app.domains.currencies.service import CurrencyService
 from app.domains.summary.repository import SummaryRepository
@@ -83,9 +87,13 @@ class SummaryService:
         user_id: uuid.UUID,
         date_from: date,
         date_to: date,
+        timezone_name: str = DEFAULT_TIMEZONE,
     ) -> CashflowResult:
-        start = datetime.combine(date_from, datetime.min.time(), tzinfo=UTC)
-        end = datetime.combine(date_to, datetime.max.time(), tzinfo=UTC)
+        start, end = date_range_utc(
+            date_from,
+            date_to,
+            timezone_name,
+        )
         income, expense = await self._repo.cashflow(user_id, start, end)
         # expense хранится отрицательным — модуль для отображения
         expense_abs = abs(expense)
@@ -98,9 +106,13 @@ class SummaryService:
         )
 
     async def by_category(
-        self, user_id: uuid.UUID, month: str
+        self,
+        user_id: uuid.UUID,
+        month: str,
+        timezone_name: str = DEFAULT_TIMEZONE,
     ) -> ByCategoryResult:
-        start, end = _month_bounds(month)
+        month_date = _month_to_date(month)
+        start, end = month_bounds_utc(month_date, timezone_name)
         rows = await self._repo.spending_by_category(user_id, start, end)
         items = [
             CategorySpending(category_id=cat_id, amount_rub=abs(total))
@@ -111,14 +123,10 @@ class SummaryService:
         return ByCategoryResult(month=month, items=items, total_rub=total_rub)
 
 
-def _month_bounds(month: str) -> tuple[datetime, datetime]:
-    """Границы месяца 'YYYY-MM' → (начало, конец) в UTC."""
+def _month_to_date(month: str) -> date:
+    """Преобразовать ``YYYY-MM`` в первое число месяца."""
     try:
-        year_s, mon_s = month.split("-")
-        year, mon = int(year_s), int(mon_s)
-        last_day = calendar.monthrange(year, mon)[1]
+        year_s, month_s = month.split("-")
+        return date(int(year_s), int(month_s), 1)
     except ValueError as exc:
         raise ValueError("Месяц должен быть в формате YYYY-MM.") from exc
-    start = datetime(year, mon, 1, tzinfo=UTC)
-    end = datetime(year, mon, last_day, 23, 59, 59, 999999, tzinfo=UTC)
-    return start, end

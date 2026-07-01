@@ -10,11 +10,11 @@
 матчится по точному ``category_id``.
 """
 
-import calendar
 import uuid
-from datetime import UTC, date, datetime
+from datetime import date
 from decimal import Decimal
 
+from app.core.datetime import DEFAULT_TIMEZONE, month_bounds_utc
 from app.core.enums import CategoryKind
 from app.core.exceptions import (
     AlreadyExistsError,
@@ -44,14 +44,25 @@ class BudgetService:
         self._categories = categories
 
     async def list_budgets(
-        self, user_id: uuid.UUID, month: str
+        self,
+        user_id: uuid.UUID,
+        month: str,
+        timezone_name: str = DEFAULT_TIMEZONE,
     ) -> list[BudgetRead]:
         month_date = _month_to_date(month)
         budgets = await self._repo.list_by_month(user_id, month_date)
-        return await self._enrich(user_id, month_date, budgets)
+        return await self._enrich(
+            user_id,
+            month_date,
+            budgets,
+            timezone_name,
+        )
 
     async def create_budget(
-        self, user_id: uuid.UUID, data: BudgetCreate
+        self,
+        user_id: uuid.UUID,
+        data: BudgetCreate,
+        timezone_name: str = DEFAULT_TIMEZONE,
     ) -> BudgetRead:
         month_date = _month_to_date(data.month)
         await self._validate_category(user_id, data.category_id)
@@ -72,7 +83,12 @@ class BudgetService:
                 rollover=data.rollover,
             )
         )
-        views = await self._enrich(user_id, month_date, [budget])
+        views = await self._enrich(
+            user_id,
+            month_date,
+            [budget],
+            timezone_name,
+        )
         return views[0]
 
     async def update_budget(
@@ -80,12 +96,18 @@ class BudgetService:
         budget_id: uuid.UUID,
         user_id: uuid.UUID,
         data: BudgetUpdate,
+        timezone_name: str = DEFAULT_TIMEZONE,
     ) -> BudgetRead:
         budget = await self._get(budget_id, user_id)
         fields = data.model_dump(exclude_unset=True)
         for key, value in fields.items():
             setattr(budget, key, value)
-        views = await self._enrich(user_id, budget.month, [budget])
+        views = await self._enrich(
+            user_id,
+            budget.month,
+            [budget],
+            timezone_name,
+        )
         return views[0]
 
     async def delete_budget(
@@ -95,7 +117,10 @@ class BudgetService:
         await self._repo.delete(budget)
 
     async def import_budgets(
-        self, user_id: uuid.UUID, data: BudgetImport
+        self,
+        user_id: uuid.UUID,
+        data: BudgetImport,
+        timezone_name: str = DEFAULT_TIMEZONE,
     ) -> list[BudgetRead]:
         month_date = _month_to_date(data.month)
         for item in data.items:
@@ -119,7 +144,12 @@ class BudgetService:
                 existing.notes = item.notes
                 existing.rollover = item.rollover
         budgets = await self._repo.list_by_month(user_id, month_date)
-        return await self._enrich(user_id, month_date, budgets)
+        return await self._enrich(
+            user_id,
+            month_date,
+            budgets,
+            timezone_name,
+        )
 
     async def _get(self, budget_id: uuid.UUID, user_id: uuid.UUID) -> Budget:
         budget = await self._repo.get(budget_id, user_id)
@@ -145,10 +175,11 @@ class BudgetService:
         user_id: uuid.UUID,
         month_date: date,
         budgets: list[Budget],
+        timezone_name: str,
     ) -> list[BudgetRead]:
         if not budgets:
             return []
-        start, end = _month_bounds(month_date)
+        start, end = month_bounds_utc(month_date, timezone_name)
         spent_month = await self._repo.spent_by_category(user_id, start, end)
         need_rollover = any(b.rollover for b in budgets)
         planned_before: dict[uuid.UUID, Decimal] = {}
@@ -202,20 +233,3 @@ def _month_to_date(month: str) -> date:
 def _date_to_month(value: date) -> str:
     """date → 'YYYY-MM'."""
     return f"{value.year:04d}-{value.month:02d}"
-
-
-def _month_bounds(value: date) -> tuple[datetime, datetime]:
-    """Границы месяца в UTC: (начало, конец включительно)."""
-    last_day = calendar.monthrange(value.year, value.month)[1]
-    start = datetime(value.year, value.month, 1, tzinfo=UTC)
-    end = datetime(
-        value.year,
-        value.month,
-        last_day,
-        23,
-        59,
-        59,
-        999999,
-        tzinfo=UTC,
-    )
-    return start, end
