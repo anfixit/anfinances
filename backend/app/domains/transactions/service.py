@@ -64,6 +64,36 @@ def _signed(amount: Decimal, kind: TransactionKind) -> Decimal:
     return amount
 
 
+async def _category_snapshot(
+    categories: CategoryRepository,
+    user_id: uuid.UUID,
+    category_id: uuid.UUID | None,
+    expected: CategoryKind,
+    *,
+    not_found: str,
+    archived: str,
+    kind_mismatch: str,
+) -> tuple[str | None, str | None]:
+    if category_id is None:
+        return None, None
+
+    category = await categories.get(category_id, user_id)
+    if category is None:
+        raise NotFoundError(not_found)
+    if category.is_archived:
+        raise ValidationFailedError(archived)
+    if category.kind != expected:
+        raise ValidationFailedError(kind_mismatch)
+
+    if category.parent_id is None:
+        return category.name, None
+
+    parent = await categories.get(category.parent_id, user_id)
+    if parent is None:
+        return category.name, None
+    return parent.name, category.name
+
+
 class TransactionService:
     def __init__(
         self,
@@ -97,7 +127,10 @@ class TransactionService:
         if account is None:
             raise NotFoundError("Счёт не найден.")
 
-        await self._validate_category(user_id, data.category_id, data.kind)
+        (
+            category_name_snapshot,
+            subcategory_name_snapshot,
+        ) = await self._validate_category(user_id, data.category_id, data.kind)
 
         rate = await self._currencies.rate_to_rub(account.currency_code)
         amount = _signed(data.amount, data.kind)
@@ -112,6 +145,10 @@ class TransactionService:
             amount_rub=amount_rub,
             exchange_rate=rate,
             category_id=data.category_id,
+            category_name_snapshot=category_name_snapshot,
+            subcategory_name_snapshot=subcategory_name_snapshot,
+            account_name_snapshot=account.name,
+            to_account_name_snapshot=None,
             required=data.required,
             date=data.date,
             comment=data.comment,
@@ -133,7 +170,10 @@ class TransactionService:
         fields = data.model_dump(exclude_unset=True)
 
         if "category_id" in fields:
-            await self._validate_category(
+            (
+                category_name_snapshot,
+                subcategory_name_snapshot,
+            ) = await self._validate_category(
                 user_id, fields["category_id"], tx.kind
             )
 
@@ -141,6 +181,10 @@ class TransactionService:
             if key == "amount":
                 continue
             setattr(tx, key, value)
+
+        if "category_id" in fields:
+            tx.category_name_snapshot = category_name_snapshot
+            tx.subcategory_name_snapshot = subcategory_name_snapshot
 
         if "amount" in fields:
             # на входе положительная сумма — заново проставляем
@@ -165,19 +209,22 @@ class TransactionService:
         user_id: uuid.UUID,
         category_id: uuid.UUID | None,
         kind: TransactionKind,
-    ) -> None:
-        if category_id is None:
-            return
-        category = await self._categories.get(category_id, user_id)
-        if category is None:
-            raise NotFoundError("Категория не найдена.")
-        if category.is_archived:
-            raise ValidationFailedError("Категория в архиве.")
+    ) -> tuple[str | None, str | None]:
         expected = _KIND_TO_CATEGORY.get(kind)
-        if expected is not None and category.kind != expected:
-            raise ValidationFailedError(
+        if expected is None:
+            return None, None
+
+        return await _category_snapshot(
+            self._categories,
+            user_id,
+            category_id,
+            expected,
+            not_found="Категория не найдена.",
+            archived="Категория в архиве.",
+            kind_mismatch=(
                 "Тип категории не совпадает с типом операции (расход/доход)."
-            )
+            ),
+        )
 
 
 class TransferService:
@@ -203,7 +250,10 @@ class TransferService:
         if dst is None:
             raise NotFoundError("Счёт-получатель не найден.")
 
-        await self._validate_fee_category(
+        (
+            fee_category_name_snapshot,
+            fee_subcategory_name_snapshot,
+        ) = await self._validate_fee_category(
             user_id, data.fee_category_id, data.fee_amount
         )
 
@@ -225,6 +275,10 @@ class TransferService:
                     amount_rub=-src_rub,
                     exchange_rate=src_rate,
                     category_id=None,
+                    category_name_snapshot=None,
+                    subcategory_name_snapshot=None,
+                    account_name_snapshot=src.name,
+                    to_account_name_snapshot=dst.name,
                     date=data.date,
                     comment=data.comment,
                 )
@@ -247,6 +301,10 @@ class TransferService:
                     amount_rub=src_rub,
                     exchange_rate=dst_rate,
                     category_id=None,
+                    category_name_snapshot=None,
+                    subcategory_name_snapshot=None,
+                    account_name_snapshot=dst.name,
+                    to_account_name_snapshot=src.name,
                     date=data.date,
                     comment=data.comment,
                 )
@@ -268,6 +326,12 @@ class TransferService:
                         amount_rub=-fee_rub,
                         exchange_rate=src_rate,
                         category_id=data.fee_category_id,
+                        category_name_snapshot=fee_category_name_snapshot,
+                        subcategory_name_snapshot=(
+                            fee_subcategory_name_snapshot
+                        ),
+                        account_name_snapshot=src.name,
+                        to_account_name_snapshot=None,
                         date=data.date,
                         comment="Комиссия за перевод",
                     )
@@ -292,7 +356,10 @@ class TransferService:
         if dst is None:
             raise NotFoundError("Счёт-получатель не найден.")
 
-        await self._validate_fee_category(
+        (
+            fee_category_name_snapshot,
+            fee_subcategory_name_snapshot,
+        ) = await self._validate_fee_category(
             user_id, data.fee_category_id, data.fee_amount
         )
 
@@ -301,6 +368,10 @@ class TransferService:
         dst_rate = src_rub / data.amount_to
 
         src_leg.account_id = src.id
+        src_leg.account_name_snapshot = src.name
+        src_leg.to_account_name_snapshot = dst.name
+        src_leg.category_name_snapshot = None
+        src_leg.subcategory_name_snapshot = None
         src_leg.amount = -data.amount_from
         src_leg.currency_code = src.currency_code
         src_leg.amount_rub = -src_rub
@@ -309,6 +380,10 @@ class TransferService:
         src_leg.comment = data.comment
 
         dst_leg.account_id = dst.id
+        dst_leg.account_name_snapshot = dst.name
+        dst_leg.to_account_name_snapshot = src.name
+        dst_leg.category_name_snapshot = None
+        dst_leg.subcategory_name_snapshot = None
         dst_leg.amount = data.amount_to
         dst_leg.currency_code = dst.currency_code
         dst_leg.amount_rub = src_rub
@@ -334,12 +409,20 @@ class TransferService:
                     amount_rub=-fee_rub,
                     exchange_rate=src_rate,
                     category_id=data.fee_category_id,
+                    category_name_snapshot=fee_category_name_snapshot,
+                    subcategory_name_snapshot=fee_subcategory_name_snapshot,
+                    account_name_snapshot=src.name,
+                    to_account_name_snapshot=None,
                     date=data.date,
                     comment="Комиссия за перевод",
                 )
             )
         else:
             fee_leg.account_id = src.id
+            fee_leg.account_name_snapshot = src.name
+            fee_leg.to_account_name_snapshot = None
+            fee_leg.category_name_snapshot = fee_category_name_snapshot
+            fee_leg.subcategory_name_snapshot = fee_subcategory_name_snapshot
             fee_leg.amount = -data.fee_amount
             fee_leg.currency_code = src.currency_code
             fee_leg.amount_rub = -fee_rub
@@ -401,19 +484,22 @@ class TransferService:
         user_id: uuid.UUID,
         fee_category_id: uuid.UUID | None,
         fee_amount: Decimal | None,
-    ) -> None:
+    ) -> tuple[str | None, str | None]:
         if fee_category_id is None:
-            return
+            return None, None
         if fee_amount is None:
             raise ValidationFailedError(
                 "Категория комиссии задана без суммы комиссии."
             )
-        category = await self._categories.get(fee_category_id, user_id)
-        if category is None:
-            raise NotFoundError("Категория комиссии не найдена.")
-        if category.is_archived:
-            raise ValidationFailedError("Категория комиссии в архиве.")
-        if category.kind != CategoryKind.EXPENSE:
-            raise ValidationFailedError(
+
+        return await _category_snapshot(
+            self._categories,
+            user_id,
+            fee_category_id,
+            CategoryKind.EXPENSE,
+            not_found="Категория комиссии не найдена.",
+            archived="Категория комиссии в архиве.",
+            kind_mismatch=(
                 "Комиссия учитывается только по расходной категории."
-            )
+            ),
+        )

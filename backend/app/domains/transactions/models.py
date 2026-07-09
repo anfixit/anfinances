@@ -80,4 +80,8 @@ class Transaction(UUIDMixin, TimestampMixin, Base):
     category_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("categories.id")
     )
+    category_name_snapshot: Mapped[str | None] = mapped_column(String)
+    subcategory_name_snapshot: Mapped[str | None] = mapped_column(String)
+    account_name_snapshot: Mapped[str | None] = mapped_column(String)
+    to_account_name_snapshot: Mapped[str | None] = mapped_column(String)
     comment: Mapped[str | None] = mapped_column(Text)

@@ -62,6 +62,10 @@ class TransactionRead(BaseModel):
     amount_rub: Decimal
     exchange_rate: Decimal
     category_id: uuid.UUID | None
+    category_name_snapshot: str | None
+    subcategory_name_snapshot: str | None
+    account_name_snapshot: str | None
+    to_account_name_snapshot: str | None
     date: datetime
     comment: str | None
     created_at: datetime
