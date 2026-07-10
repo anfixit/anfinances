@@ -1,10 +1,12 @@
 import { useState } from "react"
 
-import { useAccounts } from "@/features/accounts/hooks"
-import { useCategories } from "@/features/categories/hooks"
-import { compareCategoriesByName } from "@/features/categories/sort"
-import { categoryPath } from "@/features/categories/path"
 import { Sheet } from "@/components/Sheet"
+import { useAccounts } from "@/features/accounts/hooks"
+import type { Account } from "@/features/accounts/types"
+import { useCategories } from "@/features/categories/hooks"
+import { categoryPath, CATEGORY_PATH_SEP } from "@/features/categories/path"
+import type { Category } from "@/features/categories/types"
+import { compareCategoriesByName } from "@/features/categories/sort"
 import { TransactionSheet } from "@/features/transactions/TransactionSheet"
 import {
   useDeleteTransaction,
@@ -26,6 +28,87 @@ const KIND_TABS: { value: TransactionKind | "all"; label: string }[] = [
   { value: "income", label: "Доходы" },
   { value: "transfer", label: "Переводы" },
 ]
+
+const DELETED_ACCOUNT_LABEL = "Удалённый счёт"
+const UNCATEGORIZED_LABEL = "Без категории"
+
+function snapshotCategoryPath(transaction: Transaction): string | null {
+  if (transaction.category_name_snapshot === null) {
+    return null
+  }
+  if (transaction.subcategory_name_snapshot === null) {
+    return transaction.category_name_snapshot
+  }
+  return [
+    transaction.category_name_snapshot,
+    transaction.subcategory_name_snapshot,
+  ].join(CATEGORY_PATH_SEP)
+}
+
+function transactionCategoryLabel(
+  transaction: Transaction,
+  categoryById: ReadonlyMap<string, Category>,
+): string {
+  if (transaction.kind === "transfer") {
+    return "Перевод"
+  }
+  return (
+    snapshotCategoryPath(transaction) ??
+    categoryPath(categoryById, transaction.category_id) ??
+    UNCATEGORIZED_LABEL
+  )
+}
+
+function accountName(
+  transaction: Transaction,
+  accountById: ReadonlyMap<string, Account>,
+): string {
+  return (
+    transaction.account_name_snapshot ??
+    accountById.get(transaction.account_id)?.name ??
+    DELETED_ACCOUNT_LABEL
+  )
+}
+
+function otherTransferAccountName(
+  transaction: Transaction,
+  rows: readonly Transaction[],
+  accountById: ReadonlyMap<string, Account>,
+): string | null {
+  if (transaction.transfer_id === null) {
+    return null
+  }
+  if (transaction.to_account_name_snapshot !== null) {
+    return transaction.to_account_name_snapshot
+  }
+
+  const otherLeg = rows.find(
+    (row) =>
+      row.transfer_id === transaction.transfer_id &&
+      row.id !== transaction.id &&
+      row.kind === "transfer",
+  )
+  if (otherLeg === undefined) {
+    return null
+  }
+  return accountName(otherLeg, accountById)
+}
+
+function accountLine(
+  transaction: Transaction,
+  rows: readonly Transaction[],
+  accountById: ReadonlyMap<string, Account>,
+): string {
+  const current = accountName(transaction, accountById)
+  const other = otherTransferAccountName(transaction, rows, accountById)
+  if (transaction.kind !== "transfer" || other === null) {
+    return current
+  }
+  if (Number(transaction.amount) < 0) {
+    return `${current} → ${other}`
+  }
+  return `${other} → ${current}`
+}
 
 export function TransactionsPage() {
   const [filters, setFilters] = useState<TransactionFilters>({})
@@ -141,24 +224,14 @@ export function TransactionsPage() {
             <span>С даты</span>
             <input
               type="date"
-              onChange={(e) =>
-                patchFilter(
-                  "date_from",
-                  e.target.value,
-                )
-              }
+              onChange={(e) => patchFilter("date_from", e.target.value)}
             />
           </label>
           <label className="field">
             <span>По дату</span>
             <input
               type="date"
-              onChange={(e) =>
-                patchFilter(
-                  "date_to",
-                  e.target.value,
-                )
-              }
+              onChange={(e) => patchFilter("date_to", e.target.value)}
             />
           </label>
           <label className="field">
@@ -214,11 +287,8 @@ export function TransactionsPage() {
       <ul className="tx-list">
         {rows.map((t) => {
           const isIncome = Number(t.amount) >= 0
-          const label =
-            t.kind === "transfer"
-              ? "Перевод"
-              : (categoryPath(catById, t.category_id) ?? "Без категории")
-          const account = accById.get(t.account_id)
+          const label = transactionCategoryLabel(t, catById)
+          const account = accountLine(t, rows, accById)
           const editableTransferId =
             t.kind === "transfer" && Number(t.amount) < 0
               ? t.transfer_id
@@ -228,7 +298,7 @@ export function TransactionsPage() {
               <div className="tx-main">
                 <span className="tx-label">{label}</span>
                 <span className="tx-sub">
-                  {account?.name ?? "—"} · {formatDate(t.date)}
+                  {account} · {formatDate(t.date)}
                 </span>
                 {t.comment && <span className="tx-comment">{t.comment}</span>}
               </div>
@@ -255,23 +325,23 @@ export function TransactionsPage() {
                   </>
                 )}
                 {editableTransferId && (
-                    <>
-                      <button
-                        type="button"
-                        className="link"
-                        onClick={() => openTransferEdit(editableTransferId)}
-                      >
-                        Изменить перевод
-                      </button>
-                      <button
-                        type="button"
-                        className="link danger"
-                        onClick={() => remove(t)}
-                      >
-                        Удалить
-                      </button>
-                    </>
-                  )}
+                  <>
+                    <button
+                      type="button"
+                      className="link"
+                      onClick={() => openTransferEdit(editableTransferId)}
+                    >
+                      Изменить перевод
+                    </button>
+                    <button
+                      type="button"
+                      className="link danger"
+                      onClick={() => remove(t)}
+                    >
+                      Удалить
+                    </button>
+                  </>
+                )}
               </div>
             </li>
           )

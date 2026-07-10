@@ -13,6 +13,10 @@ export interface Transaction {
   amount_rub: Money
   exchange_rate: Money
   category_id: string | null
+  category_name_snapshot: string | null
+  subcategory_name_snapshot: string | null
+  account_name_snapshot: string | null
+  to_account_name_snapshot: string | null
   date: IsoDate
   comment: string | null
   created_at: IsoDate
