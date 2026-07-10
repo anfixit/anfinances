@@ -29,7 +29,13 @@ class CreditRepository(Protocol):
         self, credit_id: uuid.UUID, user_id: uuid.UUID
     ) -> bool: ...
 
+    async def list_payments(
+        self, credit_id: uuid.UUID, user_id: uuid.UUID
+    ) -> list[CreditPayment]: ...
+
     async def add(self, credit: Credit) -> Credit: ...
+
+    async def add_payment(self, payment: CreditPayment) -> CreditPayment: ...
 
 
 class SqlCreditRepository:
@@ -89,7 +95,25 @@ class SqlCreditRepository:
         )
         return result.scalar_one_or_none() is not None
 
+    async def list_payments(
+        self, credit_id: uuid.UUID, user_id: uuid.UUID
+    ) -> list[CreditPayment]:
+        result = await self._session.execute(
+            select(CreditPayment)
+            .where(
+                CreditPayment.credit_id == credit_id,
+                CreditPayment.user_id == user_id,
+            )
+            .order_by(CreditPayment.date.desc(), CreditPayment.id.desc())
+        )
+        return list(result.scalars().all())
+
     async def add(self, credit: Credit) -> Credit:
         self._session.add(credit)
         await self._session.flush()
         return credit
+
+    async def add_payment(self, payment: CreditPayment) -> CreditPayment:
+        self._session.add(payment)
+        await self._session.flush()
+        return payment

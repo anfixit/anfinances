@@ -82,7 +82,12 @@ class SqlSummaryRepository:
                 Transaction.user_id == user_id,
                 Transaction.date >= date_from,
                 Transaction.date < date_to,
-                Transaction.kind != TransactionKind.TRANSFER,
+                Transaction.kind.in_(
+                    (
+                        TransactionKind.INCOME,
+                        TransactionKind.EXPENSE,
+                    )
+                ),
             )
             .group_by(Transaction.kind)
         )

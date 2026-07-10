@@ -25,6 +25,7 @@ class TransactionKind(StrEnum):
     EXPENSE = "expense"
     INCOME = "income"
     TRANSFER = "transfer"
+    CREDIT_PAYMENT = "credit_payment"
 
 
 class RequiredKind(StrEnum):

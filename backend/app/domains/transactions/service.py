@@ -59,7 +59,7 @@ def _signed(amount: Decimal, kind: TransactionKind) -> Decimal:
 
     Доход — плюс, расход — минус. Сумма на входе всегда > 0.
     """
-    if kind == TransactionKind.EXPENSE:
+    if kind in {TransactionKind.EXPENSE, TransactionKind.CREDIT_PAYMENT}:
         return -amount
     return amount
 
@@ -166,6 +166,10 @@ class TransactionService:
             raise ValidationFailedError(
                 "Перевод нельзя править как обычную транзакцию."
             )
+        if tx.kind == TransactionKind.CREDIT_PAYMENT:
+            raise ValidationFailedError(
+                "Кредитный платёж редактируется в домене кредитов."
+            )
 
         fields = data.model_dump(exclude_unset=True)
 
@@ -201,6 +205,10 @@ class TransactionService:
         if tx.transfer_id is not None:
             raise ValidationFailedError(
                 "Удаляйте перевод целиком через домен переводов."
+            )
+        if tx.kind == TransactionKind.CREDIT_PAYMENT:
+            raise ValidationFailedError(
+                "Кредитный платёж удаляется в домене кредитов."
             )
         await self._repo.delete(tx)
 

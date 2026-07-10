@@ -1,22 +1,34 @@
 """Бизнес-логика кредитов.
 
-На этом этапе домен хранит кредитные обязательства, но ещё не
-создаёт платежи и не меняет transactions. Это защищает учёт от
-ошибки, где весь кредитный платёж становится расходом.
+Кредит хранится отдельно от счёта. Платёж по кредиту создаёт
+служебную TransactionKind.CREDIT_PAYMENT: она уменьшает баланс
+счёта оплаты, но не считается обычным расходом. Расходной частью
+кредитного платежа являются только проценты и комиссии.
 """
 
 import uuid
 from decimal import Decimal
 
+from app.core.enums import CategoryKind, TransactionKind
 from app.core.exceptions import (
     AlreadyExistsError,
     NotFoundError,
     ValidationFailedError,
 )
+from app.domains.accounts.models import Account
 from app.domains.accounts.repository import AccountRepository
-from app.domains.credits.models import Credit
+from app.domains.categories.models import Category
+from app.domains.categories.repository import CategoryRepository
+from app.domains.credits.models import Credit, CreditPayment
 from app.domains.credits.repository import CreditRepository
-from app.domains.credits.schemas import CreditCreate, CreditUpdate
+from app.domains.credits.schemas import (
+    CreditCreate,
+    CreditPaymentCreate,
+    CreditUpdate,
+)
+from app.domains.currencies.service import CurrencyService
+from app.domains.transactions.models import Transaction
+from app.domains.transactions.repository import TransactionRepository
 
 __all__ = ["CreditService"]
 
@@ -26,12 +38,24 @@ class CreditService:
         self,
         repo: CreditRepository,
         accounts: AccountRepository,
+        categories: CategoryRepository | None = None,
+        transactions: TransactionRepository | None = None,
+        currencies: CurrencyService | None = None,
     ) -> None:
         self._repo = repo
         self._accounts = accounts
+        self._categories = categories
+        self._transactions = transactions
+        self._currencies = currencies
 
     async def list_credits(self, user_id: uuid.UUID) -> list[Credit]:
         return await self._repo.list_active(user_id)
+
+    async def list_payments(
+        self, credit_id: uuid.UUID, user_id: uuid.UUID
+    ) -> list[CreditPayment]:
+        await self.get_credit(credit_id, user_id)
+        return await self._repo.list_payments(credit_id, user_id)
 
     async def get_credit(
         self, credit_id: uuid.UUID, user_id: uuid.UUID
@@ -102,6 +126,68 @@ class CreditService:
             setattr(credit, key, value)
         return credit
 
+    async def create_payment(
+        self,
+        credit_id: uuid.UUID,
+        user_id: uuid.UUID,
+        data: CreditPaymentCreate,
+    ) -> CreditPayment:
+        categories, transactions, currencies = self._payment_dependencies()
+        credit = await self.get_credit(credit_id, user_id)
+        if credit.is_archived:
+            raise ValidationFailedError("Архивный кредит нельзя погашать.")
+
+        account = await self._validate_payment_account(
+            data.payment_account_id,
+            user_id,
+            credit.currency_code,
+        )
+        await self._validate_payment_categories(categories, user_id, data)
+        self._validate_principal_amount(credit, data.principal_amount)
+
+        rate = await currencies.rate_to_rub(account.currency_code)
+        signed_total = -data.total_amount
+        tx = await transactions.add(
+            Transaction(
+                user_id=user_id,
+                transfer_id=None,
+                account_id=account.id,
+                kind=TransactionKind.CREDIT_PAYMENT,
+                amount=signed_total,
+                currency_code=account.currency_code,
+                amount_rub=signed_total * rate,
+                exchange_rate=rate,
+                category_id=None,
+                category_name_snapshot=None,
+                subcategory_name_snapshot=None,
+                account_name_snapshot=account.name,
+                to_account_name_snapshot=None,
+                required=None,
+                date=data.date,
+                comment=data.comment or f"Платёж по кредиту: {credit.name}",
+            )
+        )
+
+        payment = await self._repo.add_payment(
+            CreditPayment(
+                user_id=user_id,
+                credit_id=credit.id,
+                payment_account_id=account.id,
+                transaction_id=tx.id,
+                date=data.date,
+                total_amount=data.total_amount,
+                principal_amount=data.principal_amount,
+                interest_amount=data.interest_amount,
+                fee_amount=data.fee_amount,
+                currency_code=credit.currency_code,
+                interest_category_id=data.interest_category_id,
+                fee_category_id=data.fee_category_id,
+                comment=data.comment,
+            )
+        )
+        credit.principal_balance -= data.principal_amount
+        return payment
+
     async def archive_credit(
         self, credit_id: uuid.UUID, user_id: uuid.UUID
     ) -> None:
@@ -146,6 +232,104 @@ class CreditService:
                 ],
             )
 
+    async def _validate_payment_account(
+        self,
+        account_id: uuid.UUID,
+        user_id: uuid.UUID,
+        currency_code: str,
+    ) -> Account:
+        account = await self._accounts.get(account_id, user_id)
+        if account is None:
+            raise NotFoundError("Счёт оплаты не найден.")
+        if account.is_archived:
+            raise ValidationFailedError("Счёт оплаты в архиве.")
+        if account.currency_code != currency_code:
+            raise ValidationFailedError(
+                "Валюта счёта оплаты должна совпадать с валютой кредита.",
+                details=[
+                    {
+                        "field": "payment_account_id",
+                        "message": "Валюта счёта не совпадает.",
+                    }
+                ],
+            )
+        return account
+
+    async def _validate_payment_categories(
+        self,
+        categories: CategoryRepository,
+        user_id: uuid.UUID,
+        data: CreditPaymentCreate,
+    ) -> None:
+        await self._validate_expense_category(
+            categories,
+            user_id,
+            data.interest_category_id,
+            data.interest_amount,
+            field="interest_category_id",
+        )
+        await self._validate_expense_category(
+            categories,
+            user_id,
+            data.fee_category_id,
+            data.fee_amount,
+            field="fee_category_id",
+        )
+
+    async def _validate_expense_category(
+        self,
+        categories: CategoryRepository,
+        user_id: uuid.UUID,
+        category_id: uuid.UUID | None,
+        amount: Decimal,
+        *,
+        field: str,
+    ) -> Category | None:
+        if category_id is None:
+            return None
+        if amount == 0:
+            raise ValidationFailedError(
+                "Категория задана для нулевой части платежа.",
+                details=[
+                    {
+                        "field": field,
+                        "message": "Укажите сумму или уберите категорию.",
+                    }
+                ],
+            )
+        category = await categories.get(category_id, user_id)
+        if category is None:
+            raise NotFoundError("Категория платежа не найдена.")
+        if category.is_archived:
+            raise ValidationFailedError("Категория платежа в архиве.")
+        if category.kind != CategoryKind.EXPENSE:
+            raise ValidationFailedError(
+                "Проценты и комиссии относятся только к расходам.",
+                details=[
+                    {
+                        "field": field,
+                        "message": "Нужна расходная категория.",
+                    }
+                ],
+            )
+        return category
+
+    @staticmethod
+    def _validate_principal_amount(
+        credit: Credit,
+        principal_amount: Decimal,
+    ) -> None:
+        if principal_amount > credit.principal_balance:
+            raise ValidationFailedError(
+                "Тело платежа не может превышать остаток долга.",
+                details=[
+                    {
+                        "field": "principal_amount",
+                        "message": "Сумма больше остатка долга.",
+                    }
+                ],
+            )
+
     async def _update_initial_principal(
         self,
         credit: Credit,
@@ -168,3 +352,16 @@ class CreditService:
             )
         credit.principal_initial = principal_initial
         credit.principal_balance = principal_initial
+
+    def _payment_dependencies(
+        self,
+    ) -> tuple[CategoryRepository, TransactionRepository, CurrencyService]:
+        if self._categories is None:
+            raise RuntimeError("CategoryRepository is required for payments.")
+        if self._transactions is None:
+            raise RuntimeError(
+                "TransactionRepository is required for payments."
+            )
+        if self._currencies is None:
+            raise RuntimeError("CurrencyService is required for payments.")
+        return self._categories, self._transactions, self._currencies
