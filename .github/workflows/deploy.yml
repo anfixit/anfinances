@@ -444,9 +444,9 @@ jobs:
           SINGLE_USER_PASSWORD: ${{ secrets.SINGLE_USER_PASSWORD }}
         with:
           host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
+          username: admin
           key: ${{ secrets.SSH_KEY }}
-          port: ${{ secrets.SSH_PORT }}
+          port: 2810
           envs: GHCR_TOKEN,GHCR_USER,OWNER,SECRET_KEY,POSTGRES_PASSWORD,SINGLE_USER_EMAIL,SINGLE_USER_PASSWORD
           script: |
             set -euo pipefail
