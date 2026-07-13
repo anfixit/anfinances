@@ -80,7 +80,11 @@ services:
     depends_on:
       - frontend
     ports:
-      - "80:80"
+       # HTTP доступен только системному nginx на этом сервере.
+       # nginx :80 проксирует anfinances.ru в Caddy.
+      - "127.0.0.1:8080:80"
+
+        # Публичный HTTPS Anfinances.
       - "8443:8443"
     volumes:
       - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro

@@ -52,6 +52,9 @@ function transactionCategoryLabel(
   if (transaction.kind === "transfer") {
     return "Перевод"
   }
+  if (transaction.kind === "credit_payment") {
+    return "Платёж по кредиту"
+  }
   return (
     snapshotCategoryPath(transaction) ??
     categoryPath(categoryById, transaction.category_id) ??
@@ -293,6 +296,8 @@ export function TransactionsPage() {
             t.kind === "transfer" && Number(t.amount) < 0
               ? t.transfer_id
               : null
+          const editableTransaction =
+            !t.transfer_id && t.kind !== "credit_payment"
           return (
             <li key={t.id} className="tx-row">
               <div className="tx-main">
@@ -306,7 +311,7 @@ export function TransactionsPage() {
                 {formatMoney(t.amount, t.currency_code)}
               </span>
               <div className="tx-actions">
-                {!t.transfer_id && (
+                {editableTransaction && (
                   <>
                     <button
                       type="button"

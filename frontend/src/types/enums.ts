@@ -8,4 +8,8 @@ export type AccountType =
 
 export type CategoryKind = "expense" | "income" | "transfer"
 export type RequiredKind = "required" | "optional"
-export type TransactionKind = "expense" | "income" | "transfer"
+export type TransactionKind =
+  | "expense"
+  | "income"
+  | "transfer"
+  | "credit_payment"

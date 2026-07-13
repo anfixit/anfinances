@@ -10,6 +10,9 @@ export const queryKeys = {
   rates: ["currencies", "rates"] as const,
   myCurrencies: ["users", "me", "currencies"] as const,
   recurring: ["recurring"] as const,
+  credits: ["credits"] as const,
+  creditPayments: (creditId: string) =>
+    ["credits", creditId, "payments"] as const,
   transactions: (filters: Readonly<Record<string, unknown>>) =>
     ["transactions", filters] as const,
   budgets: (month: string) => ["budgets", month] as const,

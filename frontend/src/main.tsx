@@ -8,6 +8,7 @@ import "@/features/summary/summary.css"
 import "@/features/accounts/accounts.css"
 import "@/features/budgets/budgets.css"
 import "@/features/recurring/recurring.css"
+import "@/features/credits/credits.css"
 import "@/features/settings/settings.css"
 import "@/features/backup/backup.css"
 
