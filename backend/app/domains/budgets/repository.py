@@ -1,9 +1,10 @@
 """Доступ к БД для домена budgets.
 
 Содержит только запросы, без бизнес-логики и без commit —
-транзакцией управляет роут (ADR-013). Агрегаты по расходам берутся
-из ``transactions`` по запечённому ``amount_rub`` (расход хранится
-со знаком минус — Стратегия А).
+транзакцией управляет роут (ADR-013). Агрегаты включают обычные
+расходы из ``transactions`` и расходную
+часть кредитных платежей: проценты и комиссии. Все значения
+возвращаются со знаком минус.
 """
 
 import uuid
@@ -16,6 +17,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.enums import TransactionKind
 from app.domains.budgets.models import Budget
+from app.domains.credits.expense_projection import (
+    credit_expenses_by_category_rub,
+)
 from app.domains.transactions.models import Transaction
 
 __all__ = ["BudgetRepository", "SqlBudgetRepository"]
@@ -127,7 +131,22 @@ class SqlBudgetRepository:
             )
             .group_by(Transaction.category_id)
         )
-        return {row[0]: row[1] for row in result.all() if row[0] is not None}
+        spending = {
+            row[0]: row[1] for row in result.all() if row[0] is not None
+        }
+        credit_spending = await credit_expenses_by_category_rub(
+            self._session,
+            user_id,
+            date_from=date_from,
+            date_to=date_to,
+        )
+        for category_id, amount in credit_spending.items():
+            if category_id is None:
+                continue
+            spending[category_id] = (
+                spending.get(category_id, Decimal(0)) + amount
+            )
+        return spending
 
     async def planned_before(
         self, user_id: uuid.UUID, month: date
@@ -160,4 +179,18 @@ class SqlBudgetRepository:
             )
             .group_by(Transaction.category_id)
         )
-        return {row[0]: row[1] for row in result.all() if row[0] is not None}
+        spending = {
+            row[0]: row[1] for row in result.all() if row[0] is not None
+        }
+        credit_spending = await credit_expenses_by_category_rub(
+            self._session,
+            user_id,
+            date_to=before,
+        )
+        for category_id, amount in credit_spending.items():
+            if category_id is None:
+                continue
+            spending[category_id] = (
+                spending.get(category_id, Decimal(0)) + amount
+            )
+        return spending

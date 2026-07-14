@@ -10,6 +10,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.enums import TransactionKind
 from app.domains.accounts.models import Account
+from app.domains.credits.expense_projection import (
+    credit_expense_total_rub,
+    credit_expenses_by_category_rub,
+)
 from app.domains.transactions.models import Transaction
 
 __all__ = ["SummaryRepository", "SqlSummaryRepository"]
@@ -98,7 +102,13 @@ class SqlSummaryRepository:
                 income = total
             elif kind == TransactionKind.EXPENSE:
                 expense = total
-        return income, expense
+        credit_expense = await credit_expense_total_rub(
+            self._session,
+            user_id,
+            date_from,
+            date_to,
+        )
+        return income, expense + credit_expense
 
     async def spending_by_category(
         self,
@@ -120,4 +130,15 @@ class SqlSummaryRepository:
             )
             .group_by(Transaction.category_id)
         )
-        return [(row[0], row[1]) for row in result.all()]
+        spending = {row[0]: row[1] for row in result.all()}
+        credit_spending = await credit_expenses_by_category_rub(
+            self._session,
+            user_id,
+            date_from=date_from,
+            date_to=date_to,
+        )
+        for category_id, amount in credit_spending.items():
+            spending[category_id] = (
+                spending.get(category_id, Decimal(0)) + amount
+            )
+        return list(spending.items())
