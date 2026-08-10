@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query"
 import {
   getByCategory,
   getCashflow,
+  getDailyAllowance,
   getDashboard,
 } from "@/features/summary/summaryApi"
 import { queryKeys } from "@/lib/query/keys"
@@ -25,5 +26,12 @@ export function useByCategory(month: string) {
   return useQuery({
     queryKey: queryKeys.summary.byCategory(month),
     queryFn: () => getByCategory(month),
+  })
+}
+
+export function useDailyAllowance() {
+  return useQuery({
+    queryKey: queryKeys.summary.dailyAllowance,
+    queryFn: getDailyAllowance,
   })
 }

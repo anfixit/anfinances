@@ -17,6 +17,7 @@ import { useCategories } from "@/features/categories/hooks"
 import {
   useByCategory,
   useCashflow,
+  useDailyAllowance,
   useDashboard,
 } from "@/features/summary/hooks"
 import { formatMoney } from "@/lib/money"
@@ -72,6 +73,7 @@ export function DashboardPage() {
   const bounds = monthBounds(month)
 
   const dash = useDashboard()
+  const allowance = useDailyAllowance()
   const flow = useCashflow(bounds.from, bounds.to)
   const cats = useByCategory(month)
   const categoriesQ = useCategories()
@@ -154,6 +156,48 @@ export function DashboardPage() {
           </>
         )}
       </div>
+
+      {allowance.data && (
+        <div className="card allowance">
+          <span className="capital-label">
+            {allowance.data.is_short
+              ? "Не хватает на обязательства"
+              : "Можно тратить в день"}
+          </span>
+          <span
+            className={
+              allowance.data.is_short
+                ? "capital-value num expense"
+                : "capital-value num"
+            }
+          >
+            {allowance.data.is_short
+              ? formatMoney(allowance.data.safe_to_spend_rub, "RUB")
+              : formatMoney(allowance.data.per_day_rub, "RUB")}
+          </span>
+          <p className="allowance-note">
+            {allowance.data.days_left} дн. до{" "}
+            {new Date(allowance.data.until).toLocaleDateString("ru-RU")}.
+            Отложено на обязательства{" "}
+            <span className="num">
+              {formatMoney(allowance.data.obligations_rub, "RUB")}
+            </span>
+            .
+          </p>
+          {allowance.data.obligations.length > 0 && (
+            <ul className="allowance-list">
+              {allowance.data.obligations.map((o) => (
+                <li key={`${o.kind}-${o.name}`} className="acc-row">
+                  <span className="acc-name">{o.name}</span>
+                  <span className="num">
+                    {formatMoney(o.amount_rub, "RUB")}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
 
       <div className="month-switch">
         <button

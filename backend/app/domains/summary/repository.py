@@ -15,6 +15,7 @@ from app.domains.credits.expense_projection import (
     credit_expenses_by_category_rub,
 )
 from app.domains.credits.models import Credit
+from app.domains.recurring.models import RecurringExpense
 from app.domains.transactions.models import Transaction
 
 __all__ = ["SummaryRepository", "SqlSummaryRepository"]
@@ -28,6 +29,10 @@ class SummaryRepository(Protocol):
     ) -> dict[uuid.UUID, Decimal]: ...
 
     async def active_credits(self, user_id: uuid.UUID) -> list[Credit]: ...
+
+    async def active_recurring(
+        self, user_id: uuid.UUID
+    ) -> list[RecurringExpense]: ...
 
     async def cashflow(
         self,
@@ -80,6 +85,20 @@ class SqlSummaryRepository:
                 Credit.user_id == user_id,
                 Credit.is_archived.is_(False),
             )
+        )
+        return list(result.scalars().all())
+
+    async def active_recurring(
+        self, user_id: uuid.UUID
+    ) -> list[RecurringExpense]:
+        """План-минимум — обязательства для расчёта дневного лимита."""
+        result = await self._session.execute(
+            select(RecurringExpense)
+            .where(
+                RecurringExpense.user_id == user_id,
+                RecurringExpense.is_archived.is_(False),
+            )
+            .order_by(RecurringExpense.name)
         )
         return list(result.scalars().all())
 

@@ -112,3 +112,24 @@
   font-size: 0.9rem;
   color: var(--error, #b3261e);
 }
+
+/* Дневной лимит: из чего он сложился, видно тут же — иначе цифра
+   выглядит взятой с потолка и ей не верят. */
+.allowance {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.allowance-note {
+  margin: 4px 0 0;
+  font-size: 0.9rem;
+  color: var(--on-surface-variant, #5b5d72);
+}
+
+.allowance-list {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.9rem;
+}

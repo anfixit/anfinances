@@ -1,6 +1,7 @@
 import type {
   ByCategory,
   Cashflow,
+  DailyAllowance,
   Dashboard,
 } from "@/features/summary/types"
 import { api, unwrap } from "@/lib/api/client"
@@ -26,5 +27,11 @@ export async function getByCategory(month: string): Promise<ByCategory> {
     await api.get<ApiResponse<ByCategory>>("/summary/by-category", {
       params: { month },
     }),
+  )
+}
+
+export async function getDailyAllowance(): Promise<DailyAllowance> {
+  return unwrap(
+    await api.get<ApiResponse<DailyAllowance>>("/summary/daily-allowance"),
   )
 }

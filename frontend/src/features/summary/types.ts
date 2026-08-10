@@ -34,3 +34,22 @@ export interface ByCategory {
   items: CategorySpending[]
   total_rub: Money
 }
+
+export interface Obligation {
+  name: string
+  amount_rub: Money
+  kind: string
+}
+
+export interface DailyAllowance {
+  until: string
+  days_left: number
+  liquid_rub: Money
+  obligations_rub: Money
+  obligations: Obligation[]
+  safe_to_spend_rub: Money
+  per_day_rub: Money
+  is_short: boolean
+  is_total_complete: boolean
+  missing_rate_currencies: string[]
+}

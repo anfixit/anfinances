@@ -29,6 +29,10 @@ __all__ = ["ToolBox"]
 # Сколько путей категорий показывать модели в тексте ошибки.
 _MAX_HINTS = 40
 
+_ACCOUNT_TYPES = frozenset(
+    {"card", "cash", "card_credit", "savings", "investment"}
+)
+
 
 class _Client(Protocol):
     async def accounts(self) -> list[AccountRead]: ...
@@ -60,11 +64,18 @@ class ToolBox:
                 self.create_credit_payment,
                 self.update_transaction,
                 self.delete_transaction,
+                self.set_budget,
+                self.create_category,
+                self.create_account,
+                self.create_credit,
+                self.add_recurring,
                 self.list_accounts,
                 self.list_categories,
+                self.list_recurring,
                 self.get_capital,
                 self.get_by_category,
                 self.get_budget,
+                self.get_daily_allowance,
                 self.list_transactions,
                 self.get_credits,
                 self.get_credit_projection,
@@ -295,7 +306,213 @@ class ToolBox:
         await self._client.request("DELETE", f"/transactions/{transaction_id}")
         return "Операция удалена."
 
+    # --- настройка ------------------------------------------------
+
+    async def set_budget(
+        self,
+        month: str,
+        category_path: str,
+        planned: str,
+        notes: str | None = None,
+        rollover: bool = False,
+    ) -> str:
+        """Задать план по категории на месяц (месяц в формате YYYY-MM).
+
+        Если план по этой категории уже стоит — перезаписывает его.
+        rollover — переносить ли неистраченный остаток на следующий
+        месяц (для копилок вроде «на зимнюю резину»).
+        """
+        categories = await self._client.categories()
+        paths = build_category_paths(categories, kind="expense")
+        category = find_category_by_path(paths, category_path)
+        if category is None:
+            return _unknown_category(category_path, paths)
+
+        existing = await self._client.request(
+            "GET", "/budgets", params={"month": month}
+        )
+        current = next(
+            (
+                row
+                for row in existing or []
+                if str(row.get("category_id")) == category.id
+            ),
+            None,
+        )
+        body: dict[str, Any] = {"planned": str(planned), "rollover": rollover}
+        if notes:
+            body["notes"] = notes
+
+        if current is not None:
+            await self._client.request(
+                "PATCH", f"/budgets/{current['id']}", json=body
+            )
+            return f"План обновлён: {category.path} — {planned} за {month}."
+
+        body |= {"month": month, "category_id": category.id}
+        await self._client.request("POST", "/budgets", json=body)
+        return f"План задан: {category.path} — {planned} за {month}."
+
+    async def create_category(
+        self,
+        name: str,
+        kind: str = "expense",
+        parent: str | None = None,
+    ) -> str:
+        """Завести категорию или подкатегорию.
+
+        kind: expense или income. parent — название родительской
+        категории, если это подкатегория. Заводи новую только когда
+        существующая правда не подходит: лишние категории размывают
+        отчёты сильнее, чем неточная классификация.
+        """
+        categories = await self._client.categories()
+        body: dict[str, Any] = {"name": name, "kind": kind}
+        if parent:
+            paths = build_category_paths(categories, kind=kind)
+            found = find_category_by_path(paths, parent)
+            if found is None:
+                return _unknown_category(parent, paths)
+            body["parent_id"] = found.id
+
+        await self._client.request("POST", "/categories", json=body)
+        where = f" внутри «{parent}»" if parent else ""
+        return f"Категория «{name}» заведена{where}."
+
+    async def create_account(
+        self,
+        name: str,
+        account_type: str,
+        currency_code: str,
+        initial_balance: str = "0",
+    ) -> str:
+        """Завести счёт.
+
+        account_type: card (карта), cash (наличные), card_credit
+        (кредитная карта), savings (накопительный), investment.
+        initial_balance — остаток на момент заведения.
+        """
+        kind = account_type.strip().casefold()
+        if kind not in _ACCOUNT_TYPES:
+            return (
+                f"Неизвестный тип счёта «{account_type}». "
+                f"Доступные: {', '.join(sorted(_ACCOUNT_TYPES))}."
+            )
+        await self._client.request(
+            "POST",
+            "/accounts",
+            json={
+                "name": name,
+                "type": kind,
+                "currency_code": currency_code.strip().upper(),
+                "initial_balance": str(initial_balance),
+            },
+        )
+        return f"Счёт «{name}» заведён."
+
+    async def create_credit(
+        self,
+        name: str,
+        principal_initial: str,
+        currency_code: str = "RUB",
+        lender: str | None = None,
+        annual_rate: str | None = None,
+        term_months: int | None = None,
+        monthly_payment: str | None = None,
+        payment_day: int | None = None,
+        start_date: str | None = None,
+        account_name: str | None = None,
+    ) -> str:
+        """Завести кредит.
+
+        principal_initial — сумма, которую выдал банк.
+        account_name — счёт, с которого идут платежи.
+        Ставка, срок, обязательный платёж и день платежа нужны, чтобы
+        считать остаток срока: без них проекция графика не работает.
+        """
+        body: dict[str, Any] = {
+            "name": name,
+            "currency_code": currency_code.strip().upper(),
+            "principal_initial": str(principal_initial),
+        }
+        if lender:
+            body["lender"] = lender
+        if annual_rate:
+            body["annual_rate"] = str(annual_rate)
+        if term_months:
+            body["term_months"] = term_months
+        if monthly_payment:
+            body["monthly_payment"] = str(monthly_payment)
+        if payment_day:
+            body["payment_day"] = payment_day
+        if start_date:
+            body["start_date"] = start_date
+        if account_name:
+            accounts = await self._client.accounts()
+            account = _find_account(accounts, account_name)
+            if account is None:
+                names = ", ".join(a.name for a in accounts)
+                return f"Счёт не найден. Доступные: {names}"
+            body["linked_account_id"] = account.id
+
+        await self._client.request("POST", "/credits", json=body)
+        return f"Кредит «{name}» заведён."
+
+    async def add_recurring(
+        self,
+        name: str,
+        category_path: str,
+        monthly_amount: str,
+        currency_code: str = "RUB",
+        required: str = "required",
+        comments: str | None = None,
+    ) -> str:
+        """Добавить строку в план-минимум — то, что платится каждый месяц.
+
+        required: required (без этого не прожить: аренда, связь) или
+        optional (можно урезать). План-минимум резервируется при
+        расчёте дневного лимита, поэтому сюда идут только реально
+        обязательные ежемесячные траты.
+        """
+        categories = await self._client.categories()
+        paths = build_category_paths(categories, kind="expense")
+        category = find_category_by_path(paths, category_path)
+        if category is None:
+            return _unknown_category(category_path, paths)
+
+        body: dict[str, Any] = {
+            "name": name,
+            "category_id": category.id,
+            "monthly_amount": str(monthly_amount),
+            "currency_code": currency_code.strip().upper(),
+            "required": required,
+        }
+        if comments:
+            body["comments"] = comments
+
+        await self._client.request("POST", "/recurring", json=body)
+        return f"В план-минимум добавлено: {name} — {monthly_amount}."
+
     # --- чтение ---------------------------------------------------
+
+    async def get_daily_allowance(self, until: str | None = None) -> str:
+        """Сколько можно тратить в день, не сорвав обязательства.
+
+        Из денег на счетах вычитается неоплаченный план-минимум и
+        платежи по кредитам, которые наступят до горизонта, и только
+        остаток делится на оставшиеся дни. until — дата горизонта в
+        формате YYYY-MM-DD; по умолчанию конец текущего месяца.
+        """
+        params = {"until": until} if until else None
+        return str(
+            await self._client.request(
+                "GET", "/summary/daily-allowance", params=params
+            )
+        )
+
+    async def list_recurring(self) -> str:
+        """План-минимум: обязательные ежемесячные траты."""
+        return str(await self._client.request("GET", "/recurring"))
 
     async def list_accounts(self) -> str:
         """Счета пользователя с остатками и валютами."""

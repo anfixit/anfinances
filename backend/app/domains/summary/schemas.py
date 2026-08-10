@@ -11,8 +11,10 @@ __all__ = [
     "CashflowResult",
     "ByCategoryResult",
     "CategorySpending",
+    "DailyAllowanceResult",
     "DashboardResult",
     "MoneyAgeResult",
+    "Obligation",
 ]
 
 
@@ -49,6 +51,36 @@ class ByCategoryResult(BaseModel):
     month: str
     items: list[CategorySpending]
     total_rub: Decimal
+
+
+class Obligation(BaseModel):
+    """Трата, которая точно наступит до конца горизонта."""
+
+    name: str
+    amount_rub: Decimal
+    # recurring — план-минимум, credit — платёж по кредиту.
+    kind: str
+
+
+class DailyAllowanceResult(BaseModel):
+    """Сколько можно тратить в день, не сорвав обязательства.
+
+    Правило истинных расходов из ВНБ: остаток на счетах — ещё не
+    свободные деньги. Сначала резервируем то, что точно наступит,
+    и только остаток делим на оставшиеся дни.
+    """
+
+    until: date
+    days_left: int
+    liquid_rub: Decimal
+    obligations_rub: Decimal
+    obligations: list[Obligation]
+    safe_to_spend_rub: Decimal
+    per_day_rub: Decimal
+    # Обязательств больше, чем денег: дневной лимит обнуляется.
+    is_short: bool
+    is_total_complete: bool
+    missing_rate_currencies: list[str]
 
 
 class MoneyAgeResult(BaseModel):

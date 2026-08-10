@@ -16,6 +16,7 @@ from app.domains.summary.repository import SqlSummaryRepository
 from app.domains.summary.schemas import (
     ByCategoryResult,
     CashflowResult,
+    DailyAllowanceResult,
     DashboardResult,
     MoneyAgeResult,
 )
@@ -43,6 +44,20 @@ async def money_age(
 ) -> ApiResponse[MoneyAgeResult]:
     """Насколько траты месяца покрыты доходом предыдущего."""
     result = await service.money_age(user.id, user.timezone)
+    return ApiResponse(data=result)
+
+
+@router.get(
+    "/daily-allowance",
+    response_model=ApiResponse[DailyAllowanceResult],
+)
+async def daily_allowance(
+    user: CurrentUser,
+    service: ServiceDep,
+    until: date | None = None,
+) -> ApiResponse[DailyAllowanceResult]:
+    """Сколько можно тратить в день, не сорвав обязательства."""
+    result = await service.daily_allowance(user.id, user.timezone, until)
     return ApiResponse(data=result)
 
 

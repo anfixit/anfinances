@@ -10,7 +10,7 @@ Cashflow и разбивка по категориям учитывают обы
 """
 
 import uuid
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
@@ -27,8 +27,10 @@ from app.domains.summary.schemas import (
     ByCategoryResult,
     CashflowResult,
     CategorySpending,
+    DailyAllowanceResult,
     DashboardResult,
     MoneyAgeResult,
+    Obligation,
 )
 
 __all__ = ["SummaryService"]
@@ -171,6 +173,154 @@ class SummaryService:
             coverage=coverage,
             is_covered=coverage is None or coverage >= 1,
         )
+
+    async def daily_allowance(
+        self,
+        user_id: uuid.UUID,
+        timezone_name: str = DEFAULT_TIMEZONE,
+        until: date | None = None,
+        now: datetime | None = None,
+    ) -> DailyAllowanceResult:
+        """Сколько можно тратить в день до конца горизонта.
+
+        Остаток на счетах — ещё не свободные деньги. Сначала
+        резервируем обязательства, которые точно наступят до
+        ``until``, и только то, что осталось, делим на дни.
+        По умолчанию горизонт — конец текущего месяца.
+        """
+        moment = (now or datetime.now(UTC)).astimezone(ZoneInfo(timezone_name))
+        today = moment.date()
+        horizon = until or _end_of_month(today)
+        # Горизонт в прошлом — не повод падать: считаем на сегодня.
+        horizon = max(horizon, today)
+        days_left = (horizon - today).days + 1
+
+        liquid, missing = await self._liquid_rub(user_id)
+        obligations = await self._obligations(
+            user_id, today, horizon, timezone_name, missing
+        )
+        reserved = sum((o.amount_rub for o in obligations), Decimal(0))
+
+        safe = liquid - reserved
+        # Отрицательный дневной лимит — бессмысленная цифра: тратить
+        # «минус восемьсот в день» нельзя, а вот знать о нехватке нужно.
+        per_day = (
+            (safe / days_left).quantize(Decimal("0.01"))
+            if safe > 0
+            else Decimal(0)
+        )
+
+        missing_rates = sorted(missing)
+        return DailyAllowanceResult(
+            until=horizon,
+            days_left=days_left,
+            liquid_rub=liquid,
+            obligations_rub=reserved,
+            obligations=obligations,
+            safe_to_spend_rub=safe,
+            per_day_rub=per_day,
+            is_short=safe < 0,
+            is_total_complete=not missing_rates,
+            missing_rate_currencies=missing_rates,
+        )
+
+    async def _liquid_rub(
+        self, user_id: uuid.UUID
+    ) -> tuple[Decimal, set[str]]:
+        """Деньги на активных счетах, пересчитанные в рубли."""
+        accounts = await self._repo.active_accounts(user_id)
+        balances = await self._repo.balances_by_account(user_id)
+        missing: set[str] = set()
+        total = Decimal(0)
+        for account in accounts:
+            balance = (
+                balances.get(account.id, Decimal(0)) + account.initial_balance
+            )
+            try:
+                rate = await self._currencies.rate_to_rub(
+                    account.currency_code
+                )
+            except NotFoundError:
+                missing.add(account.currency_code)
+            else:
+                total += balance * rate
+        return total, missing
+
+    async def _obligations(
+        self,
+        user_id: uuid.UUID,
+        today: date,
+        horizon: date,
+        timezone_name: str,
+        missing: set[str],
+    ) -> list[Obligation]:
+        """Что точно спишется до горизонта: план-минимум и кредиты."""
+        obligations: list[Obligation] = []
+
+        # План-минимум: резервируем только неоплаченный остаток.
+        # Уже потраченное по категории второй раз откладывать незачем.
+        start, end = month_bounds_utc(
+            date(today.year, today.month, 1), timezone_name
+        )
+        spent_rows = await self._repo.spending_by_category(user_id, start, end)
+        spent = {cat_id: abs(total) for cat_id, total in spent_rows}
+
+        for item in await self._repo.active_recurring(user_id):
+            planned = item.amount_rub or Decimal(0)
+            left = planned - spent.get(item.category_id, Decimal(0))
+            if left > 0:
+                obligations.append(
+                    Obligation(
+                        name=item.name, amount_rub=left, kind="recurring"
+                    )
+                )
+
+        for credit in await self._repo.active_credits(user_id):
+            payment = credit.monthly_payment
+            if not payment or not credit.payment_day:
+                continue
+            try:
+                rate = await self._currencies.rate_to_rub(credit.currency_code)
+            except NotFoundError:
+                missing.add(credit.currency_code)
+                continue
+            due_dates = _due_dates(credit.payment_day, today, horizon)
+            for due in due_dates:
+                obligations.append(
+                    Obligation(
+                        name=f"Платёж по кредиту {due.isoformat()}",
+                        amount_rub=payment * rate,
+                        kind="credit",
+                    )
+                )
+
+        return obligations
+
+
+def _end_of_month(value: date) -> date:
+    """Последний день месяца, в котором лежит ``value``."""
+    return _shift_month(date(value.year, value.month, 1), 1) - timedelta(
+        days=1
+    )
+
+
+def _due_dates(payment_day: int, today: date, horizon: date) -> list[date]:
+    """Даты платежей строго после сегодня и не позже горизонта.
+
+    Платёж этого месяца, который уже прошёл, не резервируется:
+    деньги за него либо ушли, либо просрочены, и в остатке на счёте
+    это уже видно.
+    """
+    dates: list[date] = []
+    cursor = date(today.year, today.month, 1)
+    while cursor <= horizon:
+        last_day = (_shift_month(cursor, 1) - timedelta(days=1)).day
+        # 31-го нет в каждом месяце: списывают в последний день.
+        due = date(cursor.year, cursor.month, min(payment_day, last_day))
+        if today < due <= horizon:
+            dates.append(due)
+        cursor = _shift_month(cursor, 1)
+    return dates
 
 
 def _shift_month(value: date, offset: int) -> date:

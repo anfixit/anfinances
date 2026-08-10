@@ -49,6 +49,25 @@ def test_prompt_states_credit_split_rule() -> None:
     assert "процент" in lowered
 
 
+def test_prompt_carries_all_four_ynab_rules() -> None:
+    """Без правил бот записывает траты, но бюджет не ведёт."""
+    lowered = SYSTEM_PROMPT.casefold()
+    assert "своя работа" in lowered
+    assert "истинные расходы" in lowered
+    assert "перенеси" in lowered
+    assert "доход прошлого месяца" in lowered
+
+
+def test_prompt_sends_daily_limit_to_the_tool() -> None:
+    """Считать лимит в уме — верный способ соврать числом."""
+    assert "get_daily_allowance" in SYSTEM_PROMPT
+
+
+def test_prompt_allows_setting_up_the_site() -> None:
+    assert "set_budget" in SYSTEM_PROMPT
+    assert "не отправляй её на сайт" in SYSTEM_PROMPT.casefold()
+
+
 def test_no_timestamp_in_cached_prefix() -> None:
     """Волатильное в кэшируемом префиксе обнуляло бы кэш."""
     first = build_system_blocks(ACCOUNTS, CATEGORIES, "Europe/Moscow")

@@ -21,5 +21,6 @@ export const queryKeys = {
     cashflow: (range: Readonly<Record<string, unknown>>) =>
       ["summary", "cashflow", range] as const,
     byCategory: (month: string) => ["summary", "by-category", month] as const,
+    dailyAllowance: ["summary", "daily-allowance"] as const,
   },
 } as const

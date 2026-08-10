@@ -14,6 +14,7 @@ DEFAULTS = {"RUB": "Альфа", "UZS": "Наличные сумы"}
 class _FakeClient:
     def __init__(self) -> None:
         self.calls: list[tuple[str, str, dict[str, Any]]] = []
+        self.budgets: list[dict[str, Any]] = []
         self._accounts = [
             AccountRead(
                 id="a-1",
@@ -44,6 +45,7 @@ class _FakeClient:
             CategoryRead(
                 id="c-5", name="Проценты", kind="expense", parent_id="c-4"
             ),
+            CategoryRead(id="c-6", name="Софт", kind="expense"),
         ]
 
     async def accounts(self) -> list[AccountRead]:
@@ -54,6 +56,10 @@ class _FakeClient:
 
     async def request(self, method: str, path: str, **kwargs: Any) -> Any:
         self.calls.append((method, path, kwargs))
+        if method == "GET" and path == "/budgets":
+            return list(self.budgets)
+        if method == "POST" and path == "/categories":
+            return {"id": "c-new", "name": "Новая", "kind": "expense"}
         if method == "POST" and path == "/transactions":
             return {"id": "tx-1"}
         if method == "POST" and path.endswith("/payments"):
@@ -287,6 +293,8 @@ async def test_readonly_tools_hit_expected_paths() -> None:
     await box.get_credits()
     await box.get_credit_projection(credit_id="cr-1")
     await box.get_money_age()
+    await box.get_daily_allowance()
+    await box.list_recurring()
     assert [(m, p) for m, p, _ in client.calls] == [
         ("GET", "/summary/dashboard"),
         ("GET", "/summary/by-category"),
@@ -295,7 +303,114 @@ async def test_readonly_tools_hit_expected_paths() -> None:
         ("GET", "/credits"),
         ("GET", "/credits/cr-1/projection"),
         ("GET", "/summary/money-age"),
+        ("GET", "/summary/daily-allowance"),
+        ("GET", "/recurring"),
     ]
+
+
+async def test_set_budget_creates_when_absent() -> None:
+    box, client = _toolbox()
+    await box.set_budget(
+        month="2026-09", category_path="Еда → Кофейни", planned="19500"
+    )
+    assert client.calls[0][:2] == ("GET", "/budgets")
+    method, path, kwargs = client.calls[1]
+    assert (method, path) == ("POST", "/budgets")
+    assert kwargs["json"] == {
+        "month": "2026-09",
+        "category_id": "c-2",
+        "planned": "19500",
+        "rollover": False,
+    }
+
+
+async def test_set_budget_updates_when_already_there() -> None:
+    """Повторная просьба не должна падать «уже есть»."""
+    box, client = _toolbox()
+    client.budgets = [{"id": "b-1", "category_id": "c-2", "planned": "100"}]
+    await box.set_budget(
+        month="2026-09", category_path="Еда → Кофейни", planned="19500"
+    )
+    method, path, kwargs = client.calls[1]
+    assert (method, path) == ("PATCH", "/budgets/b-1")
+    assert kwargs["json"]["planned"] == "19500"
+
+
+async def test_set_budget_refuses_unknown_category() -> None:
+    box, client = _toolbox()
+    result = await box.set_budget(
+        month="2026-09", category_path="Такого нет", planned="1"
+    )
+    assert "не найдена" in result.casefold()
+    assert client.calls == []
+
+
+async def test_create_category_resolves_parent_by_name() -> None:
+    box, client = _toolbox()
+    await box.create_category(name="Подписки", kind="expense", parent="Софт")
+    method, path, kwargs = client.calls[0]
+    assert (method, path) == ("POST", "/categories")
+    assert kwargs["json"]["name"] == "Подписки"
+    assert kwargs["json"]["parent_id"] == "c-6"
+
+
+async def test_create_category_rejects_unknown_parent() -> None:
+    box, client = _toolbox()
+    result = await box.create_category(
+        name="Подписки", kind="expense", parent="Нету"
+    )
+    assert "не найдена" in result.casefold()
+    assert client.calls == []
+
+
+async def test_create_account_posts_type_and_currency() -> None:
+    box, client = _toolbox()
+    await box.create_account(
+        name="Новый", account_type="card", currency_code="rub"
+    )
+    method, path, kwargs = client.calls[0]
+    assert (method, path) == ("POST", "/accounts")
+    assert kwargs["json"]["type"] == "card"
+    assert kwargs["json"]["currency_code"] == "RUB"
+
+
+async def test_create_account_rejects_unknown_type() -> None:
+    box, client = _toolbox()
+    result = await box.create_account(
+        name="Новый", account_type="кошелёк", currency_code="RUB"
+    )
+    assert "тип счёта" in result.casefold()
+    assert client.calls == []
+
+
+async def test_add_recurring_uses_category_path() -> None:
+    box, client = _toolbox()
+    await box.add_recurring(
+        name="Аренда", category_path="Еда → Кофейни", monthly_amount="19500"
+    )
+    method, path, kwargs = client.calls[0]
+    assert (method, path) == ("POST", "/recurring")
+    assert kwargs["json"]["category_id"] == "c-2"
+    assert kwargs["json"]["monthly_amount"] == "19500"
+    assert kwargs["json"]["required"] == "required"
+
+
+async def test_create_credit_posts_terms() -> None:
+    box, client = _toolbox()
+    await box.create_credit(
+        name="Альфа Кредит",
+        principal_initial="685840",
+        currency_code="RUB",
+        annual_rate="21.59",
+        term_months=60,
+        monthly_payment="10700",
+        payment_day=4,
+        account_name="Альфа",
+    )
+    method, path, kwargs = client.calls[0]
+    assert (method, path) == ("POST", "/credits")
+    assert kwargs["json"]["principal_initial"] == "685840"
+    assert kwargs["json"]["linked_account_id"] == "a-1"
 
 
 async def test_toolbox_exposes_all_tools() -> None:
@@ -308,11 +423,18 @@ async def test_toolbox_exposes_all_tools() -> None:
         "create_credit_payment",
         "update_transaction",
         "delete_transaction",
+        "set_budget",
+        "create_category",
+        "create_account",
+        "create_credit",
+        "add_recurring",
         "list_accounts",
         "list_categories",
+        "list_recurring",
         "get_capital",
         "get_by_category",
         "get_budget",
+        "get_daily_allowance",
         "list_transactions",
         "get_credits",
         "get_credit_projection",
