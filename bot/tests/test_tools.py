@@ -15,6 +15,7 @@ class _FakeClient:
     def __init__(self) -> None:
         self.calls: list[tuple[str, str, dict[str, Any]]] = []
         self.budgets: list[dict[str, Any]] = []
+        self.transactions: list[dict[str, Any]] = []
         self._accounts = [
             AccountRead(
                 id="a-1",
@@ -58,6 +59,8 @@ class _FakeClient:
         self.calls.append((method, path, kwargs))
         if method == "GET" and path == "/budgets":
             return list(self.budgets)
+        if method == "GET" and path == "/transactions":
+            return list(self.transactions)
         if method == "POST" and path == "/categories":
             return {"id": "c-new", "name": "Новая", "kind": "expense"}
         if method == "POST" and path == "/transactions":
@@ -421,6 +424,7 @@ async def test_toolbox_exposes_all_tools() -> None:
         "create_income",
         "create_transfer",
         "create_credit_payment",
+        "import_statement",
         "update_transaction",
         "delete_transaction",
         "set_budget",
@@ -440,3 +444,88 @@ async def test_toolbox_exposes_all_tools() -> None:
         "get_credit_projection",
         "get_money_age",
     }
+
+
+def _row(**over: Any) -> dict[str, Any]:
+    base = {
+        "date": "2026-08-01",
+        "amount": "300",
+        "kind": "expense",
+        "category_path": "Еда → Кофейни",
+    }
+    base.update(over)
+    return base
+
+
+async def test_statement_import_posts_all_rows_at_once() -> None:
+    """Двести операций двумястами вызовами — долго и дорого."""
+    box, client = _toolbox()
+    result = await box.import_statement(
+        account_name="Альфа",
+        rows=[_row(), _row(amount="450", comment="такси")],
+    )
+    posts = [c for c in client.calls if c[0] == "POST"]
+    assert len(posts) == 1
+    assert posts[0][1] == "/import/transactions"
+    items = posts[0][2]["json"]["items"]
+    assert len(items) == 2
+    assert items[0]["account_id"] == "a-1"
+    assert items[0]["category_id"] == "c-2"
+    assert items[1]["comment"] == "такси"
+    assert "2" in result
+
+
+async def test_statement_import_skips_existing_rows() -> None:
+    """Повторная выгрузка за тот же период не должна задваивать."""
+    box, client = _toolbox()
+    client.transactions = [
+        {
+            "account_id": "a-1",
+            "amount": "300.0000",
+            "date": "2026-08-01T09:00:00+00:00",
+            "kind": "expense",
+        }
+    ]
+    result = await box.import_statement(
+        account_name="Альфа",
+        rows=[_row(), _row(amount="450")],
+    )
+    post = next(c for c in client.calls if c[0] == "POST")
+    items = post[2]["json"]["items"]
+    assert len(items) == 1
+    assert items[0]["amount"] == "450"
+    assert "1" in result
+
+
+async def test_statement_import_reports_unknown_categories() -> None:
+    """Молча пропустить строку — потерять операцию незаметно."""
+    box, client = _toolbox()
+    result = await box.import_statement(
+        account_name="Альфа",
+        rows=[_row(), _row(category_path="Ерунда")],
+    )
+    assert "ерунда" in result.casefold()
+    assert not [c for c in client.calls if c[0] == "POST"]
+
+
+async def test_statement_import_needs_a_known_account() -> None:
+    box, client = _toolbox()
+    result = await box.import_statement(account_name="Нету", rows=[_row()])
+    assert "счёт не найден" in result.casefold()
+    assert client.calls == []
+
+
+async def test_statement_import_rejects_empty_input() -> None:
+    box, client = _toolbox()
+    result = await box.import_statement(account_name="Альфа", rows=[])
+    assert "пуст" in result.casefold()
+    assert client.calls == []
+
+
+async def test_statement_import_duplicate_inside_one_file_is_kept() -> None:
+    """Две одинаковые покупки за день — обычное дело, не дубль."""
+    box, client = _toolbox()
+    await box.import_statement(account_name="Альфа", rows=[_row(), _row()])
+    post = next(c for c in client.calls if c[0] == "POST")
+    items = post[2]["json"]["items"]
+    assert len(items) == 2

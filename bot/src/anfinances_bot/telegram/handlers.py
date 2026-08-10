@@ -18,6 +18,7 @@ from anfinances_bot.anfinances.client import (
     AnfinancesUnavailableError,
 )
 from anfinances_bot.anfinances.schemas import AccountRead
+from anfinances_bot.documents import DocumentUnreadableError
 from anfinances_bot.speech import SpeechUnavailableError
 from anfinances_bot.telegram.formatting import (
     split_message,
@@ -34,6 +35,7 @@ logger = logging.getLogger("anfinances_bot.handlers")
 __all__ = [
     "Session",
     "handle_callback",
+    "handle_user_document",
     "handle_user_text",
     "handle_user_voice",
 ]
@@ -48,6 +50,7 @@ MODEL_DOWN = (
 )
 SPEECH_DOWN = "Не смогла разобрать голосовое. Напиши, пожалуйста, текстом."
 FIX_PROMPT = "Что исправить? Напиши, например: «это был транспорт»."
+DOC_UNREADABLE = "Не смогла прочитать файл."
 
 
 @dataclass
@@ -149,10 +152,47 @@ async def handle_user_voice(
     await handle_user_text(message, deps, session)
 
 
-async def _run(
-    message: Any, deps: _Deps, session: Session, prompt: str
+async def handle_user_document(
+    message: Any, deps: _Deps, session: Session, reader: Any
 ) -> None:
-    """Прогнать фразу через агента и ответить нужным способом."""
+    """Принять файл выписки и отдать его содержимое агенту."""
+    try:
+        name, text = await reader(message)
+    except DocumentUnreadableError as exc:
+        logger.warning("Файл не прочитан", exc_info=True)
+        await _say(message, f"{DOC_UNREADABLE} {exc}")
+        return
+
+    await _say(message, f"Читаю {name}…")
+    await _run(
+        message,
+        deps,
+        session,
+        (
+            f"Это банковская выписка из файла {name}. Разбери её: "
+            "определи, где дата, сумма и назначение платежа, отдели "
+            "расходы от доходов, подбери категории из существующего "
+            "дерева и занеси всё разом через import_statement. "
+            "Если непонятно, по какому счёту выписка, — спроси.\n\n"
+            f"{text}"
+        ),
+        remember_as=f"[прислала банковскую выписку {name}]",
+    )
+
+
+async def _run(
+    message: Any,
+    deps: _Deps,
+    session: Session,
+    prompt: str,
+    remember_as: str | None = None,
+) -> None:
+    """Прогнать фразу через агента и ответить нужным способом.
+
+    ``remember_as`` кладётся в историю вместо ``prompt``: выписка
+    на десятки тысяч знаков иначе уезжала бы в модель на каждом
+    следующем сообщении.
+    """
     try:
         reply = await deps.resolve(prompt, session.history)
     except AnfinancesUnavailableError:
@@ -167,7 +207,7 @@ async def _run(
         await _say(message, f"Не получилось: {exc}")
         return
 
-    session.remember(prompt, reply.text)
+    session.remember(remember_as or prompt, reply.text)
 
     if reply.created_transaction_id is not None:
         await _say(

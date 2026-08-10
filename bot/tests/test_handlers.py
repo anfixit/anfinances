@@ -9,10 +9,12 @@ from anfinances_bot.anfinances.client import (
     AnfinancesUnavailableError,
 )
 from anfinances_bot.anfinances.schemas import AccountRead
+from anfinances_bot.documents import DocumentUnreadableError
 from anfinances_bot.speech import SpeechUnavailableError
 from anfinances_bot.telegram.handlers import (
     Session,
     handle_callback,
+    handle_user_document,
     handle_user_text,
     handle_user_voice,
 )
@@ -217,3 +219,45 @@ async def test_voice_success_goes_through_text_path() -> None:
     await handle_user_voice(message, deps, Session(), _ok)
     assert "Услышала" in message.sent[0].text
     assert message.sent[1].markup is not None
+
+
+async def test_document_text_reaches_the_agent() -> None:
+    message = _Message("")
+    deps = _Deps(AgentReply(text="Занесено операций: 2."))
+
+    async def _reader(_: Any) -> tuple[str, str]:
+        return "vypiska.csv", "дата;сумма\n01.08.2026;-300"
+
+    await handle_user_document(message, deps, Session(), _reader)
+
+    text, _ = deps.seen[0]
+    assert "vypiska.csv" in text
+    assert "01.08.2026;-300" in text
+    assert "выписк" in text.casefold()
+
+
+async def test_unreadable_document_is_reported() -> None:
+    message = _Message("")
+
+    async def _failing(_: Any) -> tuple[str, str]:
+        raise DocumentUnreadableError("это не текст")
+
+    await handle_user_document(
+        message, _Deps(AgentReply(text="")), Session(), _failing
+    )
+    assert "не смогла прочитать" in message.sent[0].text.casefold()
+    assert not message.sent[0].markup
+
+
+async def test_statement_body_does_not_stay_in_history() -> None:
+    """Выписка в истории уезжала бы в модель на каждом сообщении."""
+    session = Session()
+    deps = _Deps(AgentReply(text="Занесено операций: 2."))
+
+    async def _reader(_: Any) -> tuple[str, str]:
+        return "vypiska.csv", "строка;" * 5000
+
+    await handle_user_document(_Message(""), deps, session, _reader)
+
+    assert len(session.history[0]["content"]) < 200
+    assert "vypiska.csv" in session.history[0]["content"]

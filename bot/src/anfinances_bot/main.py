@@ -20,12 +20,17 @@ from anfinances_bot.agent.tools import ToolBox
 from anfinances_bot.anfinances.client import AnfinancesClient
 from anfinances_bot.anfinances.schemas import UserProfile
 from anfinances_bot.config import get_bot_settings
+from anfinances_bot.documents import (
+    DocumentUnreadableError,
+    read_statement,
+)
 from anfinances_bot.proactive_loop import run_proactive_loop
 from anfinances_bot.speech import SpeechUnavailableError, transcribe
 from anfinances_bot.telegram.access import AllowlistMiddleware
 from anfinances_bot.telegram.handlers import (
     Session,
     handle_callback,
+    handle_user_document,
     handle_user_text,
     handle_user_voice,
 )
@@ -145,6 +150,25 @@ async def main() -> None:
     @dispatcher.message(F.text)
     async def _on_text(message: Message) -> None:
         await handle_user_text(message, deps, _session(message.chat.id))
+
+    async def _download_and_read(message: Message) -> tuple[str, str]:
+        """Скачать присланный файл и прочитать его как текст."""
+        document = message.document
+        if document is None:
+            raise DocumentUnreadableError("В сообщении нет файла.")
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "statement"
+            await bot.download(document, destination=path)
+            return document.file_name or "выписка", read_statement(path)
+
+    @dispatcher.message(F.document)
+    async def _on_document(message: Message) -> None:
+        await handle_user_document(
+            message,
+            deps,
+            _session(message.chat.id),
+            _download_and_read,
+        )
 
     @dispatcher.message(F.voice)
     async def _on_voice(message: Message) -> None:

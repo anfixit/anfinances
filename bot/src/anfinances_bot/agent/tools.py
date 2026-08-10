@@ -12,10 +12,11 @@
 
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 from zoneinfo import ZoneInfo
 
 from anthropic import beta_async_tool
+from pydantic import BaseModel
 
 from anfinances_bot.anfinances.schemas import AccountRead, CategoryRead
 from anfinances_bot.resolve.accounts import resolve_account
@@ -24,7 +25,7 @@ from anfinances_bot.resolve.categories import (
     find_category_by_path,
 )
 
-__all__ = ["ToolBox"]
+__all__ = ["StatementRow", "ToolBox"]
 
 # Сколько путей категорий показывать модели в тексте ошибки.
 _MAX_HINTS = 40
@@ -32,6 +33,16 @@ _MAX_HINTS = 40
 _ACCOUNT_TYPES = frozenset(
     {"card", "cash", "card_credit", "savings", "investment"}
 )
+
+
+class StatementRow(BaseModel):
+    """Одна строка банковской выписки, уже разобранная моделью."""
+
+    date: str
+    amount: str
+    kind: Literal["expense", "income"]
+    category_path: str
+    comment: str | None = None
 
 
 class _Client(Protocol):
@@ -62,6 +73,7 @@ class ToolBox:
                 self.create_income,
                 self.create_transfer,
                 self.create_credit_payment,
+                self.import_statement,
                 self.update_transaction,
                 self.delete_transaction,
                 self.set_budget,
@@ -305,6 +317,110 @@ class ToolBox:
         """
         await self._client.request("DELETE", f"/transactions/{transaction_id}")
         return "Операция удалена."
+
+    async def import_statement(
+        self, account_name: str, rows: list[StatementRow]
+    ) -> str:
+        """Занести разом операции из банковской выписки.
+
+        Все строки должны быть по одному счёту. Категории проставь
+        сам по назначению платежа, опираясь на дерево категорий и на
+        прошлые операции; выдумывать новые пути нельзя.
+
+        Строки, которые уже есть в anfinances (та же дата, счёт и
+        сумма), пропускаются — повторная выгрузка за тот же период
+        не задваивает операции.
+        """
+        if not rows:
+            return "Список операций пуст — нечего заносить."
+
+        accounts = await self._client.accounts()
+        account = _find_account(accounts, account_name)
+        if account is None:
+            names = ", ".join(a.name for a in accounts)
+            return f"Счёт не найден. Доступные: {names}"
+
+        categories = await self._client.categories()
+        trees = {
+            kind: build_category_paths(categories, kind=kind)
+            for kind in ("expense", "income")
+        }
+
+        resolved: list[dict[str, Any]] = []
+        unknown: set[str] = set()
+        for raw in rows:
+            # Модель присылает JSON; в тестах и при прямом вызове —
+            # уже готовые объекты. Принимаем и то, и другое.
+            row = StatementRow.model_validate(raw)
+            paths = trees.get(row.kind, [])
+            found = find_category_by_path(paths, row.category_path)
+            if found is None:
+                unknown.add(row.category_path)
+                continue
+            item: dict[str, Any] = {
+                "account_id": account.id,
+                "kind": row.kind,
+                "amount": str(row.amount),
+                "date": self._moment(row.date),
+                "category_id": found.id,
+            }
+            if row.comment:
+                item["comment"] = row.comment
+            resolved.append(item)
+
+        # Молча пропустить строку — потерять операцию незаметно.
+        # Лучше не заносить ничего и показать, что не разобралось.
+        if unknown:
+            return (
+                "Не нашла категории: "
+                + ", ".join(sorted(unknown))
+                + ". Подбери существующие пути и повтори — "
+                "ничего не занесено."
+            )
+
+        seen = await self._existing_keys(account.id, resolved)
+        fresh: list[dict[str, Any]] = []
+        duplicates = 0
+        for item in resolved:
+            key = (item["date"][:10], _norm_amount(item["amount"]))
+            if key in seen:
+                duplicates += 1
+                continue
+            fresh.append(item)
+
+        if not fresh:
+            return (
+                f"Все {duplicates} операций уже были записаны раньше — "
+                "ничего не добавила."
+            )
+
+        await self._client.request(
+            "POST", "/import/transactions", json={"items": fresh}
+        )
+        tail = f", пропущено дублей: {duplicates}" if duplicates else ""
+        return f"Занесено операций: {len(fresh)}{tail}."
+
+    async def _existing_keys(
+        self, account_id: str, items: list[dict[str, Any]]
+    ) -> set[tuple[str, Decimal]]:
+        """Что по этому счёту уже записано в диапазоне выписки."""
+        if not items:
+            return set()
+        dates = sorted(item["date"][:10] for item in items)
+        rows = await self._client.request(
+            "GET",
+            "/transactions",
+            params={
+                "account_id": account_id,
+                "date_from": dates[0],
+                "date_to": dates[-1],
+                "limit": 100,
+            },
+        )
+        return {
+            (str(row["date"])[:10], _norm_amount(str(row["amount"])))
+            for row in rows or []
+        }
 
     # --- настройка ------------------------------------------------
 
@@ -677,3 +793,11 @@ def _find_account(
             return account
     matches = [a for a in accounts if needle in a.name.casefold()]
     return matches[0] if len(matches) == 1 else None
+
+
+def _norm_amount(value: str) -> Decimal:
+    """Сравнивать суммы как числа: «300» и «300.0000» — одно и то же."""
+    try:
+        return abs(Decimal(value))
+    except InvalidOperation:
+        return Decimal(0)
