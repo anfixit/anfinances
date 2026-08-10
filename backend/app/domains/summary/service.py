@@ -10,8 +10,9 @@ Cashflow и разбивка по категориям учитывают обы
 """
 
 import uuid
-from datetime import date
+from datetime import UTC, date, datetime
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 
 from app.core.datetime import (
     DEFAULT_TIMEZONE,
@@ -27,6 +28,7 @@ from app.domains.summary.schemas import (
     CashflowResult,
     CategorySpending,
     DashboardResult,
+    MoneyAgeResult,
 )
 
 __all__ = ["SummaryService"]
@@ -123,6 +125,47 @@ class SummaryService:
         items.sort(key=lambda x: x.amount_rub, reverse=True)
         total_rub = sum((i.amount_rub for i in items), Decimal(0))
         return ByCategoryResult(month=month, items=items, total_rub=total_rub)
+
+    async def money_age(
+        self,
+        user_id: uuid.UUID,
+        timezone_name: str = DEFAULT_TIMEZONE,
+        now: datetime | None = None,
+    ) -> MoneyAgeResult:
+        """Доход прошлого месяца против расходов текущего.
+
+        Четвёртое правило ВНБ. Месяцы режутся по таймзоне
+        пользователя, а не по UTC — иначе у ташкентского вечера
+        31 числа месяц окажется предыдущим.
+        """
+        moment = (now or datetime.now(UTC)).astimezone(ZoneInfo(timezone_name))
+        current = date(moment.year, moment.month, 1)
+        previous = _shift_month(current, -1)
+
+        prev_start, prev_end = month_bounds_utc(previous, timezone_name)
+        income, _ = await self._repo.cashflow(user_id, prev_start, prev_end)
+
+        cur_start, cur_end = month_bounds_utc(current, timezone_name)
+        _, expense = await self._repo.cashflow(user_id, cur_start, cur_end)
+        # Расход хранится отрицательным — берём модуль.
+        expense_abs = abs(expense)
+
+        coverage = None if expense_abs == 0 else income / expense_abs
+        return MoneyAgeResult(
+            previous_month=previous.strftime("%Y-%m"),
+            current_month=current.strftime("%Y-%m"),
+            previous_month_income_rub=income,
+            current_month_expense_rub=expense_abs,
+            coverage=coverage,
+            is_covered=coverage is None or coverage >= 1,
+        )
+
+
+def _shift_month(value: date, offset: int) -> date:
+    """Сдвинуть первое число месяца на ``offset`` месяцев."""
+    index = value.year * 12 + value.month - 1 + offset
+    year, month = divmod(index, 12)
+    return date(year, month + 1, 1)
 
 
 def _month_to_date(month: str) -> date:

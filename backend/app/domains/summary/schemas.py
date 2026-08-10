@@ -12,6 +12,7 @@ __all__ = [
     "ByCategoryResult",
     "CategorySpending",
     "DashboardResult",
+    "MoneyAgeResult",
 ]
 
 
@@ -47,3 +48,19 @@ class ByCategoryResult(BaseModel):
     month: str
     items: list[CategorySpending]
     total_rub: Decimal
+
+
+class MoneyAgeResult(BaseModel):
+    """Насколько траты текущего месяца покрыты доходом прошлого.
+
+    Четвёртое правило ВНБ: жить на доход предыдущего месяца.
+    ``coverage`` — доля: 1.0 значит ровно покрыто, больше — запас,
+    ``None`` — трат в текущем месяце ещё не было.
+    """
+
+    previous_month: str
+    current_month: str
+    previous_month_income_rub: Decimal
+    current_month_expense_rub: Decimal
+    coverage: Decimal | None
+    is_covered: bool
