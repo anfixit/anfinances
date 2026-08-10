@@ -14,6 +14,7 @@ from app.domains.credits.expense_projection import (
     credit_expense_total_rub,
     credit_expenses_by_category_rub,
 )
+from app.domains.credits.models import Credit
 from app.domains.transactions.models import Transaction
 
 __all__ = ["SummaryRepository", "SqlSummaryRepository"]
@@ -25,6 +26,8 @@ class SummaryRepository(Protocol):
     async def balances_by_account(
         self, user_id: uuid.UUID
     ) -> dict[uuid.UUID, Decimal]: ...
+
+    async def active_credits(self, user_id: uuid.UUID) -> list[Credit]: ...
 
     async def cashflow(
         self,
@@ -69,6 +72,16 @@ class SqlSummaryRepository:
             .group_by(Transaction.account_id)
         )
         return {row[0]: row[1] for row in result.all()}
+
+    async def active_credits(self, user_id: uuid.UUID) -> list[Credit]:
+        """Непогашенные кредиты — обязательства для расчёта капитала."""
+        result = await self._session.execute(
+            select(Credit).where(
+                Credit.user_id == user_id,
+                Credit.is_archived.is_(False),
+            )
+        )
+        return list(result.scalars().all())
 
     async def cashflow(
         self,

@@ -17,6 +17,7 @@ from app.domains.summary.schemas import (
     ByCategoryResult,
     CashflowResult,
     DashboardResult,
+    MoneyAgeResult,
 )
 from app.domains.summary.service import SummaryService
 
@@ -34,6 +35,15 @@ def get_summary_service(
 
 
 ServiceDep = Annotated[SummaryService, Depends(get_summary_service)]
+
+
+@router.get("/money-age", response_model=ApiResponse[MoneyAgeResult])
+async def money_age(
+    user: CurrentUser, service: ServiceDep
+) -> ApiResponse[MoneyAgeResult]:
+    """Насколько траты месяца покрыты доходом предыдущего."""
+    result = await service.money_age(user.id, user.timezone)
+    return ApiResponse(data=result)
 
 
 @router.get("/dashboard", response_model=ApiResponse[DashboardResult])

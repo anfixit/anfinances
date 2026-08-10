@@ -17,6 +17,7 @@ from app.domains.credits.schemas import (
     CreditCreate,
     CreditPaymentCreate,
     CreditPaymentRead,
+    CreditProjectionRead,
     CreditRead,
     CreditUpdate,
 )
@@ -79,6 +80,22 @@ async def create_credit(
     credit = await service.create_credit(user.id, data)
     await db.commit()
     return ApiResponse(data=CreditRead.model_validate(credit))
+
+
+@router.get(
+    "/{credit_id}/projection",
+    response_model=ApiResponse[CreditProjectionRead],
+)
+async def credit_projection(
+    credit_id: uuid.UUID,
+    user: CurrentUser,
+    service: ServiceDep,
+) -> ApiResponse[CreditProjectionRead]:
+    """Остаток срока и разбивка ближайшего платежа."""
+    result = await service.projection(credit_id, user.id)
+    return ApiResponse(
+        data=CreditProjectionRead.model_validate(result, from_attributes=True)
+    )
 
 
 @router.get("/{credit_id}", response_model=ApiResponse[CreditRead])

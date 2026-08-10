@@ -1124,7 +1124,7 @@ git commit -m "feat(bot): создать сервис и конфигураци�
   default_currency: str)`, `AccountRead(id: str, name: str,
   currency_code: str, current_balance: Decimal | None)`,
   `CategoryRead(id: str, name: str, kind: str, parent_id: str | None)`.
-- Исключение `AnfinancesUnavailable` — сеть недоступна или 5xx.
+- Исключение `AnfinancesUnavailableError` — сеть недоступна или 5xx.
 
 - [ ] **Step 1: Написать падающий тест**
 
@@ -1139,7 +1139,7 @@ import respx
 
 from anfinances_bot.anfinances.client import (
     AnfinancesClient,
-    AnfinancesUnavailable,
+    AnfinancesUnavailableError,
 )
 from anfinances_bot.config import BotSettings
 
@@ -1222,7 +1222,7 @@ async def test_server_error_raises_unavailable(monkeypatch) -> None:
     )
 
     client = AnfinancesClient(_settings(monkeypatch))
-    with pytest.raises(AnfinancesUnavailable):
+    with pytest.raises(AnfinancesUnavailableError):
         await client.accounts()
     await client.aclose()
 
@@ -1234,7 +1234,7 @@ async def test_network_error_raises_unavailable(monkeypatch) -> None:
     )
 
     client = AnfinancesClient(_settings(monkeypatch))
-    with pytest.raises(AnfinancesUnavailable):
+    with pytest.raises(AnfinancesUnavailableError):
         await client.accounts()
     await client.aclose()
 
@@ -1337,14 +1337,14 @@ from anfinances_bot.config import BotSettings
 
 logger = logging.getLogger("anfinances_bot.client")
 
-__all__ = ["AnfinancesClient", "AnfinancesError", "AnfinancesUnavailable"]
+__all__ = ["AnfinancesClient", "AnfinancesError", "AnfinancesUnavailableError"]
 
 
 class AnfinancesError(RuntimeError):
     """Ошибка обращения к anfinances."""
 
 
-class AnfinancesUnavailable(AnfinancesError):
+class AnfinancesUnavailableError(AnfinancesError):
     """Сайт недоступен: сеть, таймаут или 5xx."""
 
 
@@ -1370,9 +1370,9 @@ class AnfinancesClient:
         try:
             response = await self._http.post("/auth/login", json=payload)
         except httpx.HTTPError as exc:
-            raise AnfinancesUnavailable(str(exc)) from exc
+            raise AnfinancesUnavailableError(str(exc)) from exc
         if response.status_code >= 500:
-            raise AnfinancesUnavailable(f"login {response.status_code}")
+            raise AnfinancesUnavailableError(f"login {response.status_code}")
         if response.status_code != 200:
             raise AnfinancesError(
                 "Не удалось войти в anfinances: проверьте "
@@ -1393,7 +1393,7 @@ class AnfinancesClient:
             response = await self._send(method, path, **kwargs)
 
         if response.status_code >= 500:
-            raise AnfinancesUnavailable(
+            raise AnfinancesUnavailableError(
                 f"{method} {path} → {response.status_code}"
             )
         if response.status_code >= 400:
@@ -1411,7 +1411,7 @@ class AnfinancesClient:
                 method, path, headers=headers, **kwargs
             )
         except httpx.HTTPError as exc:
-            raise AnfinancesUnavailable(str(exc)) from exc
+            raise AnfinancesUnavailableError(str(exc)) from exc
 
     async def me(self) -> UserProfile:
         return UserProfile.model_validate(
@@ -3422,7 +3422,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from anfinances_bot.agent.runner import AgentReply, AgentUnavailable
-from anfinances_bot.anfinances.client import AnfinancesUnavailable
+from anfinances_bot.anfinances.client import AnfinancesUnavailableError
 from anfinances_bot.anfinances.schemas import AccountRead
 from anfinances_bot.telegram.handlers import handle_user_text
 
@@ -3490,7 +3490,7 @@ async def test_plain_answer_has_no_markup() -> None:
 
 async def test_site_down_is_reported_honestly() -> None:
     message = _Message("кофе 300")
-    deps = _Deps(AnfinancesUnavailable("нет сети"))
+    deps = _Deps(AnfinancesUnavailableError("нет сети"))
     await handle_user_text(message, deps)
     assert "не смогла записать" in message.sent[0].text.casefold()
 
@@ -3525,7 +3525,7 @@ from typing import Any, Protocol
 from anfinances_bot.agent.runner import AgentReply, AgentUnavailable
 from anfinances_bot.anfinances.client import (
     AnfinancesError,
-    AnfinancesUnavailable,
+    AnfinancesUnavailableError,
 )
 from anfinances_bot.telegram.keyboards import (
     account_choice,
@@ -3553,7 +3553,7 @@ class _Deps(Protocol):
 async def handle_user_text(message: Any, deps: _Deps) -> None:
     try:
         reply = await deps.resolve(message.text)
-    except AnfinancesUnavailable:
+    except AnfinancesUnavailableError:
         logger.warning("anfinances недоступен", exc_info=True)
         await message.answer(SITE_DOWN)
         return

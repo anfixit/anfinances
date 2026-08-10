@@ -25,9 +25,11 @@ depends_on: str | Sequence[str] | None = None
 _CONSTRAINTS = {
     "ck_transactions_amount_nonzero": "amount <> 0",
     "ck_transactions_expense_negative": (
-        "kind NOT IN ('EXPENSE', 'CREDIT_PAYMENT') OR amount < 0"
+        "CAST(kind AS TEXT) NOT IN ('EXPENSE', 'CREDIT_PAYMENT') OR amount < 0"
     ),
-    "ck_transactions_income_positive": "kind <> 'INCOME' OR amount > 0",
+    "ck_transactions_income_positive": (
+        "CAST(kind AS TEXT) <> 'INCOME' OR amount > 0"
+    ),
     "ck_transactions_sign_agreement": (
         "(amount > 0 AND amount_rub > 0) OR (amount < 0 AND amount_rub < 0)"
     ),

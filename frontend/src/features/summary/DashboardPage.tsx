@@ -120,6 +120,14 @@ export function DashboardPage() {
             <span className="capital-value num">
               {formatMoney(dash.data.total_capital_rub, "RUB")}
             </span>
+            {Number(dash.data.total_credit_debt_rub) > 0 && (
+              <p className="capital-debt">
+                В том числе долг по кредитам:{" "}
+                <span className="num">
+                  −{formatMoney(dash.data.total_credit_debt_rub, "RUB")}
+                </span>
+              </p>
+            )}
             {!dash.data.is_total_complete && (
               <p className="capital-warning" role="status">
                 Итог рассчитан не полностью: нет курса для {" "}

@@ -20,6 +20,10 @@ from app.domains.accounts.repository import AccountRepository
 from app.domains.categories.models import Category
 from app.domains.categories.repository import CategoryRepository
 from app.domains.credits.models import Credit, CreditPayment
+from app.domains.credits.projection import (
+    CreditProjection,
+    project_credit,
+)
 from app.domains.credits.repository import CreditRepository
 from app.domains.credits.schemas import (
     CreditCreate,
@@ -57,6 +61,44 @@ class CreditService:
         await self.get_credit(credit_id, user_id)
         return await self._repo.list_payments(credit_id, user_id)
 
+    async def projection(
+        self, credit_id: uuid.UUID, user_id: uuid.UUID
+    ) -> CreditProjection:
+        """Срок и разбивка ближайшего платежа по текущему остатку.
+
+        Отсчёт процентов ведётся от даты последнего платежа, а если
+        платежей ещё не было — от даты выдачи кредита.
+        """
+        credit = await self.get_credit(credit_id, user_id)
+        if (
+            credit.annual_rate is None
+            or credit.monthly_payment is None
+            or credit.payment_day is None
+        ):
+            raise ValidationFailedError(
+                "Для расчёта графика нужны ставка, ежемесячный платёж "
+                "и день платежа."
+            )
+
+        payments = await self._repo.list_payments(credit_id, user_id)
+        if payments:
+            since = max(p.date for p in payments).date()
+        elif credit.start_date is not None:
+            since = credit.start_date
+        else:
+            raise ValidationFailedError(
+                "Нет ни одного платежа и не задана дата выдачи — "
+                "не от чего считать проценты."
+            )
+
+        return project_credit(
+            balance=credit.principal_balance,
+            annual_rate=credit.annual_rate,
+            monthly_payment=credit.monthly_payment,
+            payment_day=credit.payment_day,
+            since=since,
+        )
+
     async def get_credit(
         self, credit_id: uuid.UUID, user_id: uuid.UUID
     ) -> Credit:
@@ -86,6 +128,7 @@ class CreditService:
             principal_balance=data.principal_initial,
             annual_rate=data.annual_rate,
             term_months=data.term_months,
+            monthly_payment=data.monthly_payment,
             start_date=data.start_date,
             payment_day=data.payment_day,
             linked_account_id=data.linked_account_id,

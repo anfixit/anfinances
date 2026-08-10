@@ -58,11 +58,12 @@ class Transaction(UUIDMixin, TimestampMixin, Base):
         ),
         # Метки в БД — имена членов перечисления, заглавными.
         CheckConstraint(
-            "kind NOT IN ('EXPENSE', 'CREDIT_PAYMENT') OR amount < 0",
+            "CAST(kind AS TEXT) NOT IN ('EXPENSE', 'CREDIT_PAYMENT')"
+            " OR amount < 0",
             name="ck_transactions_expense_negative",
         ),
         CheckConstraint(
-            "kind <> 'INCOME' OR amount > 0",
+            "CAST(kind AS TEXT) <> 'INCOME' OR amount > 0",
             name="ck_transactions_income_positive",
         ),
         CheckConstraint(
