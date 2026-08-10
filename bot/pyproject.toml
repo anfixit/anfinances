@@ -1,0 +1,60 @@
+[project]
+name = "anfinances-bot"
+version = "0.1.0"
+description = "anfinances — телеграм-бот: ввод трат голосом и текстом."
+readme = "README.md"
+requires-python = ">=3.13,<3.14"
+license = "AGPL-3.0-or-later"
+authors = [{ name = "anfinances" }]
+
+dependencies = [
+    # ── Telegram ──
+    "aiogram>=3.15.0",
+    # ── Модель и распознавание речи ──
+    "anthropic>=0.69.0",
+    "openai>=1.60.0",
+    # ── Обращения к anfinances API ──
+    "httpx>=0.28.0",
+    # ── Настройки + валидация ──
+    "pydantic>=2.9.0",
+    "pydantic-settings>=2.6.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3.0",
+    "pytest-asyncio>=0.24.0",
+    "ruff>=0.8.0",
+    "mypy>=1.13.0",
+    "respx>=0.22.0",
+]
+
+[tool.uv]
+package = false  # это приложение, а не библиотека
+
+[tool.ruff]
+line-length = 79
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "N", "UP", "B", "S", "C4", "SIM", "RUF"]
+ignore = [
+    # Комментарии и строки на русском: правила про «неоднозначные»
+    # символы срабатывают на каждой кириллической о, у, е.
+    "RUF001",
+    "RUF002",
+    "RUF003",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101", "S105", "S106"]  # assert и тестовые «секреты»
+
+[tool.mypy]
+python_version = "3.13"
+strict = true
+mypy_path = "src"
+plugins = ["pydantic.mypy"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+pythonpath = ["src"]

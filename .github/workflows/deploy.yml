@@ -202,6 +202,66 @@ jobs:
 
             Проверены unit и integration тесты backend.
 
+  bot:
+    needs:
+      - notify-start
+
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: bot
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Record start time
+        id: timer
+        shell: bash
+        run: echo "started=$(date +%s)" >> "$GITHUB_OUTPUT"
+
+      - name: Install bot dependencies
+        run: uv sync --frozen
+
+      - name: Ruff
+        run: uv run ruff check . && uv run ruff format --check .
+
+      - name: Mypy
+        run: uv run mypy src
+
+      - name: Run tests
+        run: uv run pytest -q
+
+      - name: Calculate duration
+        if: always()
+        id: duration
+        shell: bash
+        run: |
+          ended=$(date +%s)
+          seconds=$((ended - ${{ steps.timer.outputs.started }}))
+          minutes=$((seconds / 60))
+          rest=$((seconds % 60))
+          echo "value=${minutes} мин ${rest} сек" >> "$GITHUB_OUTPUT"
+
+      - name: Notify Telegram
+        if: always()
+        uses: ./.github/actions/tg-notify
+        with:
+          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          chat: ${{ secrets.TELEGRAM_CHAT_ID }}
+          stage: Проверка бота
+          status: ${{ job.status }}
+          duration: ${{ steps.duration.outputs.value }}
+          details: |
+            Команды:
+            <code>uv run ruff check .</code>
+            <code>uv run mypy src</code>
+            <code>uv run pytest -q</code>
+
   frontend:
     needs:
       - notify-start
@@ -424,6 +484,7 @@ jobs:
 
   deploy:
     needs:
+      - bot
       - build-backend
       - build-frontend
 
@@ -600,6 +661,7 @@ jobs:
       - notify-start
       - lint
       - test
+      - bot
       - frontend
       - build-backend
       - build-frontend
