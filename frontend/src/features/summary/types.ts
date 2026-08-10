@@ -11,6 +11,7 @@ export interface AccountBalance {
 export interface Dashboard {
   accounts: AccountBalance[]
   total_capital_rub: Money
+  total_credit_debt_rub: Money
   is_total_complete: boolean
   missing_rate_currencies: string[]
 }

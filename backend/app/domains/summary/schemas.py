@@ -27,6 +27,7 @@ class AccountBalance(BaseModel):
 class DashboardResult(BaseModel):
     accounts: list[AccountBalance]
     total_capital_rub: Decimal
+    total_credit_debt_rub: Decimal
     is_total_complete: bool
     missing_rate_currencies: list[str]
 

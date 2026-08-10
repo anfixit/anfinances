@@ -78,10 +78,22 @@ class SummaryService:
                 )
             )
 
+        # Кредит — обязательство, а не счёт. Без явного вычитания
+        # итог показывал бы владельца богаче ровно на сумму долга.
+        debt = Decimal(0)
+        for credit in await self._repo.active_credits(user_id):
+            try:
+                rate = await self._currencies.rate_to_rub(credit.currency_code)
+            except NotFoundError:
+                missing_rate_currencies.add(credit.currency_code)
+            else:
+                debt += credit.principal_balance * rate
+
         missing_rates = sorted(missing_rate_currencies)
         return DashboardResult(
             accounts=items,
-            total_capital_rub=total,
+            total_capital_rub=total - debt,
+            total_credit_debt_rub=debt,
             is_total_complete=not missing_rates,
             missing_rate_currencies=missing_rates,
         )

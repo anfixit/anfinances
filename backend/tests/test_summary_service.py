@@ -24,6 +24,10 @@ class FakeRepo:
     async def active_accounts(self, user_id):
         return self._accounts
 
+    async def active_credits(self, user_id):
+        # Кредитов в этих сценариях нет — капитал только по счетам.
+        return []
+
     async def balances_by_account(self, user_id):
         return self._balances
 
