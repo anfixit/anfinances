@@ -482,9 +482,84 @@ jobs:
             Базовый build image:
             <code>node:22-alpine</code>
 
-  deploy:
+  build-bot:
     needs:
       - bot
+
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Record start time
+        id: timer
+        shell: bash
+        run: echo "started=$(date +%s)" >> "$GITHUB_OUTPUT"
+
+      - name: Prepare bot image name
+        id: img
+        shell: bash
+        run: |
+          owner="$(echo "${{ github.repository_owner }}" | tr 'A-Z' 'a-z')"
+          echo "ref=${REGISTRY}/${owner}/anfinances-bot" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push bot image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./bot
+          file: ./bot/Dockerfile
+          push: true
+          tags: |
+            ${{ steps.img.outputs.ref }}:latest
+            ${{ steps.img.outputs.ref }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Calculate duration
+        if: always()
+        id: duration
+        shell: bash
+        run: |
+          ended=$(date +%s)
+          seconds=$((ended - ${{ steps.timer.outputs.started }}))
+          minutes=$((seconds / 60))
+          rest=$((seconds % 60))
+          echo "value=${minutes} мин ${rest} сек" >> "$GITHUB_OUTPUT"
+
+      - name: Notify Telegram
+        if: always()
+        uses: ./.github/actions/tg-notify
+        with:
+          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          chat: ${{ secrets.TELEGRAM_CHAT_ID }}
+          stage: Сборка bot Docker image
+          status: ${{ job.status }}
+          duration: ${{ steps.duration.outputs.value }}
+          details: |
+            Образ:
+            <code>${{ steps.img.outputs.ref }}:latest</code>
+
+            Дополнительный тег:
+            <code>${{ github.sha }}</code>
+
+            Registry:
+            <code>ghcr.io</code>
+
+  deploy:
+    needs:
+      - build-bot
       - build-backend
       - build-frontend
 
@@ -512,12 +587,19 @@ jobs:
           POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
           SINGLE_USER_EMAIL: ${{ secrets.SINGLE_USER_EMAIL }}
           SINGLE_USER_PASSWORD: ${{ secrets.SINGLE_USER_PASSWORD }}
+          TELEGRAM_BOT_TOKEN_FINANCE: ${{ secrets.TELEGRAM_BOT_TOKEN_FINANCE }}
+          TELEGRAM_ALLOWED_USER_IDS: ${{ secrets.TELEGRAM_ALLOWED_USER_IDS }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          BOT_DEFAULT_ACCOUNTS: ${{ secrets.BOT_DEFAULT_ACCOUNTS }}
+          BOT_QUIET_HOURS: ${{ secrets.BOT_QUIET_HOURS }}
+          BOT_BUDGET_MEETING_DAY: ${{ secrets.BOT_BUDGET_MEETING_DAY }}
         with:
           host: ${{ secrets.SSH_HOST }}
           username: admin
           key: ${{ secrets.SSH_KEY }}
           port: 2810
-          envs: GHCR_TOKEN,GHCR_USER,OWNER,SECRET_KEY,POSTGRES_PASSWORD,SINGLE_USER_EMAIL,SINGLE_USER_PASSWORD
+          envs: GHCR_TOKEN,GHCR_USER,OWNER,SECRET_KEY,POSTGRES_PASSWORD,SINGLE_USER_EMAIL,SINGLE_USER_PASSWORD,TELEGRAM_BOT_TOKEN_FINANCE,TELEGRAM_ALLOWED_USER_IDS,ANTHROPIC_API_KEY,OPENAI_API_KEY,BOT_DEFAULT_ACCOUNTS,BOT_QUIET_HOURS,BOT_BUDGET_MEETING_DAY
           script: |
             set -euo pipefail
 
@@ -529,6 +611,7 @@ jobs:
 
             export IMAGE_BACKEND="ghcr.io/${owner_lc}/anfinances-backend:latest"
             export IMAGE_FRONTEND="ghcr.io/${owner_lc}/anfinances-frontend:latest"
+            export IMAGE_BOT="ghcr.io/${owner_lc}/anfinances-bot:latest"
             export POSTGRES_PASSWORD
 
             umask 077
@@ -539,6 +622,19 @@ jobs:
             AUTH_MODE=single_user
             SINGLE_USER_EMAIL=$SINGLE_USER_EMAIL
             SINGLE_USER_PASSWORD=$SINGLE_USER_PASSWORD
+            EOF
+
+            mkdir -p bot
+            cat > bot/.env <<EOF
+            TELEGRAM_BOT_TOKEN=$TELEGRAM_BOT_TOKEN_FINANCE
+            TELEGRAM_ALLOWED_USER_IDS=$TELEGRAM_ALLOWED_USER_IDS
+            ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY
+            OPENAI_API_KEY=$OPENAI_API_KEY
+            SINGLE_USER_EMAIL=$SINGLE_USER_EMAIL
+            SINGLE_USER_PASSWORD=$SINGLE_USER_PASSWORD
+            BOT_DEFAULT_ACCOUNTS=$BOT_DEFAULT_ACCOUNTS
+            BOT_QUIET_HOURS=${BOT_QUIET_HOURS:-23-9}
+            BOT_BUDGET_MEETING_DAY=${BOT_BUDGET_MEETING_DAY:-1}
             EOF
 
             echo "$GHCR_TOKEN" |

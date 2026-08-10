@@ -1,0 +1,182 @@
+"""Обработчики сообщений.
+
+Ни один сбой не должен приводить к тихой потере операции: если
+записать не удалось, бот говорит об этом прямо, а не делает вид,
+что всё прошло.
+
+Разговор помнит несколько последних ходов — иначе «а на сбере?»
+не к чему привязать, а кнопки под карточкой некуда возвращать.
+"""
+
+import logging
+from dataclasses import dataclass, field
+from typing import Any, Protocol
+
+from anfinances_bot.agent.runner import AgentReply, AgentUnavailableError
+from anfinances_bot.anfinances.client import (
+    AnfinancesError,
+    AnfinancesUnavailableError,
+)
+from anfinances_bot.anfinances.schemas import AccountRead
+from anfinances_bot.speech import SpeechUnavailableError
+from anfinances_bot.telegram.keyboards import (
+    account_choice,
+    parse_callback,
+    transaction_card,
+)
+
+logger = logging.getLogger("anfinances_bot.handlers")
+
+__all__ = [
+    "Session",
+    "handle_callback",
+    "handle_user_text",
+    "handle_user_voice",
+]
+
+SITE_DOWN = (
+    "Не смогла записать: anfinances сейчас недоступен. "
+    "Повтори через пару минут — я ничего не потеряла и не записала."
+)
+MODEL_DOWN = (
+    "Не смогла разобрать фразу: модель недоступна. "
+    "Запиши, пожалуйста, через сайт."
+)
+SPEECH_DOWN = "Не смогла разобрать голосовое. Напиши, пожалуйста, текстом."
+FIX_PROMPT = "Что исправить? Напиши, например: «это был транспорт»."
+
+
+@dataclass
+class Session:
+    """Память одного чата: последние ходы и незакрытые уточнения."""
+
+    MAX_HISTORY = 12
+
+    history: list[dict[str, Any]] = field(default_factory=list)
+    pending_accounts: list[AccountRead] = field(default_factory=list)
+    pending_fix_id: str | None = None
+
+    def remember(self, question: str, answer: str) -> None:
+        self.history.append({"role": "user", "content": question})
+        self.history.append({"role": "assistant", "content": answer})
+        # Держим окно коротким: длинная история дороже, чем полезнее.
+        del self.history[: -self.MAX_HISTORY]
+
+
+class _Deps(Protocol):
+    async def resolve(
+        self, text: str, history: list[dict[str, Any]]
+    ) -> AgentReply: ...
+
+
+async def handle_user_text(
+    message: Any, deps: _Deps, session: Session
+) -> None:
+    prompt = message.text
+    if session.pending_fix_id is not None:
+        prompt = f"Исправь операцию с id {session.pending_fix_id}: {prompt}"
+        session.pending_fix_id = None
+    await _run(message, deps, session, prompt)
+
+
+async def handle_callback(
+    callback: Any, deps: _Deps, session: Session
+) -> None:
+    """Обработать нажатие кнопки под сообщением бота."""
+    try:
+        action, value = parse_callback(callback.data or "")
+    except ValueError:
+        logger.warning("Неразбираемый callback: %r", callback.data)
+        await callback.answer()
+        return
+
+    await callback.answer()
+
+    if action == "fix":
+        session.pending_fix_id = value
+        await callback.message.answer(FIX_PROMPT)
+        return
+
+    if action == "del":
+        await _run(
+            callback.message,
+            deps,
+            session,
+            f"Удали операцию с id {value}.",
+        )
+        return
+
+    if action == "acc":
+        chosen = next(
+            (a for a in session.pending_accounts if a.id == value), None
+        )
+        session.pending_accounts = []
+        if chosen is None:
+            await callback.message.answer(
+                "Не помню, о какой операции речь. Повтори, пожалуйста."
+            )
+            return
+        await _run(
+            callback.message,
+            deps,
+            session,
+            f"Счёт: {chosen.name}. Запиши операцию, о которой шла речь.",
+        )
+        return
+
+    logger.warning("Неизвестное действие кнопки: %s", action)
+
+
+async def handle_user_voice(
+    message: Any, deps: _Deps, session: Session, transcriber: Any
+) -> None:
+    """Расшифровать голосовое и обработать как текст."""
+    try:
+        text = await transcriber(message)
+    except SpeechUnavailableError:
+        logger.warning("Расшифровка не удалась", exc_info=True)
+        await message.answer(SPEECH_DOWN)
+        return
+
+    # Показываем расшифровку: Whisper ошибается, и это надо видеть.
+    await message.answer(f"Услышала: {text}")
+    message.text = text
+    await handle_user_text(message, deps, session)
+
+
+async def _run(
+    message: Any, deps: _Deps, session: Session, prompt: str
+) -> None:
+    """Прогнать фразу через агента и ответить нужным способом."""
+    try:
+        reply = await deps.resolve(prompt, session.history)
+    except AnfinancesUnavailableError:
+        logger.warning("anfinances недоступен", exc_info=True)
+        await message.answer(SITE_DOWN)
+        return
+    except AgentUnavailableError:
+        logger.warning("Модель недоступна", exc_info=True)
+        await message.answer(MODEL_DOWN)
+        return
+    except AnfinancesError as exc:
+        await message.answer(f"Не получилось: {exc}")
+        return
+
+    session.remember(prompt, reply.text)
+
+    if reply.created_transaction_id is not None:
+        await message.answer(
+            reply.text,
+            reply_markup=transaction_card(reply.created_transaction_id),
+        )
+        return
+
+    if reply.pending_accounts:
+        session.pending_accounts = list(reply.pending_accounts)
+        await message.answer(
+            reply.text or "С какого счёта?",
+            reply_markup=account_choice(reply.pending_accounts),
+        )
+        return
+
+    await message.answer(reply.text or "Не поняла, повтори иначе.")

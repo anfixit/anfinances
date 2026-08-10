@@ -255,6 +255,29 @@ async def test_credit_payment_attaches_interest_category() -> None:
     assert client.calls[0][2]["json"]["interest_category_id"] == "c-5"
 
 
+async def test_update_sends_only_given_fields() -> None:
+    box, client = _toolbox()
+    await box.update_transaction(
+        transaction_id="tx-1", category_path="Еда → Кофейни"
+    )
+    method, path, kwargs = client.calls[0]
+    assert (method, path) == ("PATCH", "/transactions/tx-1")
+    assert kwargs["json"] == {"category_id": "c-2"}
+
+
+async def test_update_without_fields_changes_nothing() -> None:
+    box, client = _toolbox()
+    result = await box.update_transaction(transaction_id="tx-1")
+    assert "нечего менять" in result.casefold()
+    assert client.calls == []
+
+
+async def test_delete_transaction_hits_endpoint() -> None:
+    box, client = _toolbox()
+    await box.delete_transaction(transaction_id="tx-1")
+    assert client.calls[0][:2] == ("DELETE", "/transactions/tx-1")
+
+
 async def test_readonly_tools_hit_expected_paths() -> None:
     box, client = _toolbox()
     await box.get_capital()
@@ -283,6 +306,8 @@ async def test_toolbox_exposes_all_tools() -> None:
         "create_income",
         "create_transfer",
         "create_credit_payment",
+        "update_transaction",
+        "delete_transaction",
         "list_accounts",
         "list_categories",
         "get_capital",

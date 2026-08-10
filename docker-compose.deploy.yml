@@ -12,7 +12,7 @@
 #   docker compose -f docker-compose.deploy.yml up -d
 #   docker compose -f docker-compose.deploy.yml exec backend alembic upgrade head
 #
-# Переменные IMAGE_BACKEND / IMAGE_FRONTEND прокидывает pipeline.
+# Переменные IMAGE_BACKEND / IMAGE_FRONTEND / IMAGE_BOT прокидывает pipeline.
 # Домен задаётся в caddy/Caddyfile и в CORS_ORIGINS ниже (один sed на оба).
 
 services:
@@ -62,6 +62,19 @@ services:
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
     expose:
       - "8000"
+
+  bot:
+    image: ${IMAGE_BOT}
+    container_name: anfinances-bot
+    restart: always
+    depends_on:
+      - backend
+    # Бот ходит в сайт по внутренней сети и наружу не публикуется:
+    # с Telegram и моделью он общается сам, исходящими запросами.
+    environment:
+      ANFINANCES_BASE_URL: http://backend:8000/api/v1
+    env_file:
+      - ./bot/.env
 
   frontend:
     image: ${IMAGE_FRONTEND}

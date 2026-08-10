@@ -58,6 +58,8 @@ class ToolBox:
                 self.create_income,
                 self.create_transfer,
                 self.create_credit_payment,
+                self.update_transaction,
+                self.delete_transaction,
                 self.list_accounts,
                 self.list_categories,
                 self.get_capital,
@@ -247,6 +249,51 @@ class ToolBox:
             f"(тело {principal_amount}, проценты {interest_amount}), "
             f"{resolution.account.name}"
         )
+
+    async def update_transaction(
+        self,
+        transaction_id: str,
+        amount: str | None = None,
+        category_path: str | None = None,
+        kind: str = "expense",
+        when: str | None = None,
+        comment: str | None = None,
+    ) -> str:
+        """Поправить уже записанную операцию.
+
+        Меняются только переданные поля. Счёт и тип операции сменить
+        нельзя: если ошибка в них, удали операцию и запиши заново.
+        kind нужен, чтобы искать категорию в нужном дереве.
+        """
+        body: dict[str, Any] = {}
+        if amount:
+            body["amount"] = str(amount)
+        if when:
+            body["date"] = self._moment(when)
+        if comment is not None:
+            body["comment"] = comment
+        if category_path:
+            categories = await self._client.categories()
+            paths = build_category_paths(categories, kind=kind)
+            found = find_category_by_path(paths, category_path)
+            if found is None:
+                return _unknown_category(category_path, paths)
+            body["category_id"] = found.id
+        if not body:
+            return "Нечего менять: не передано ни одно поле."
+
+        await self._client.request(
+            "PATCH", f"/transactions/{transaction_id}", json=body
+        )
+        return "Операция исправлена."
+
+    async def delete_transaction(self, transaction_id: str) -> str:
+        """Удалить операцию, записанную по ошибке.
+
+        Только операции: счета, категории и кредиты бот не удаляет.
+        """
+        await self._client.request("DELETE", f"/transactions/{transaction_id}")
+        return "Операция удалена."
 
     # --- чтение ---------------------------------------------------
 
