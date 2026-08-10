@@ -46,16 +46,25 @@ jobs:
           run_url="${SERVER_URL}/${REPOSITORY}/actions/runs/${RUN_ID}"
           commit_url="${SERVER_URL}/${REPOSITORY}/commit/${SHA}"
 
+          # Сообщение уходит с parse_mode=HTML, а сообщение коммита —
+          # произвольный текст. Трейлер вида <mail@example.com>
+          # телеграм принимает за открывающий тег и отвечает 400,
+          # роняя весь деплой на первом же шаге. Экранируем.
+          esc() {
+            printf '%s' "$1" |
+              sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g'
+          }
+
           text="🚀 <b>Деплой anfinances начат</b>
 
-          Репозиторий: <code>${REPOSITORY}</code>
-          Ветка: <code>${REF_NAME}</code>
+          Репозиторий: <code>$(esc "$REPOSITORY")</code>
+          Ветка: <code>$(esc "$REF_NAME")</code>
           Commit: <a href=\"${commit_url}\">${short_sha}</a>
-          Автор запуска: <code>${ACTOR}</code>
+          Автор запуска: <code>$(esc "$ACTOR")</code>
           Workflow run: <a href=\"${run_url}\">#${RUN_NUMBER}</a>
 
           <b>Сообщение commit:</b>
-          ${COMMIT_MESSAGE}
+          $(esc "$COMMIT_MESSAGE")
 
           <b>План:</b>
           1. Проверка backend

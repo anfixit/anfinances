@@ -85,17 +85,27 @@ runs:
             ;;
         esac
 
+        # Сообщение уходит с parse_mode=HTML, поэтому любой текст,
+        # пришедший снаружи (сообщение коммита, имя ветки, ник), надо
+        # экранировать. Иначе трейлер вида <mail@example.com> телеграм
+        # принимает за открывающий тег, отвечает 400 — и весь деплой
+        # падает на уведомлении, не начав работу.
+        esc() {
+          printf '%s' "$1" |
+            sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g'
+        }
+
         short_sha="${SHA:0:7}"
         run_url="${SERVER_URL}/${REPOSITORY}/actions/runs/${RUN_ID}"
         commit_url="${SERVER_URL}/${REPOSITORY}/commit/${SHA}"
 
-        text="${icon} <b>${STAGE}</b>
+        text="${icon} <b>$(esc "$STAGE")</b>
 
         Статус: <b>${status_text}</b>
-        Репозиторий: <code>${REPOSITORY}</code>
-        Ветка: <code>${REF_NAME}</code>
+        Репозиторий: <code>$(esc "$REPOSITORY")</code>
+        Ветка: <code>$(esc "$REF_NAME")</code>
         Commit: <a href=\"${commit_url}\">${short_sha}</a>
-        Запустил: <code>${ACTOR}</code>
+        Запустил: <code>$(esc "$ACTOR")</code>
         Workflow run: <a href=\"${run_url}\">#${RUN_NUMBER}</a>"
 
         if [ -n "$DURATION" ]; then
@@ -103,6 +113,9 @@ runs:
         Время: <code>${DURATION}</code>"
         fi
 
+        # DETAILS намеренно содержит разметку (<code>, <b>) и приходит
+        # из наших же шагов — его не экранируем. Всё, что приходит
+        # извне, вызывающая сторона обязана экранировать сама.
         if [ -n "$DETAILS" ]; then
           text="${text}
 
