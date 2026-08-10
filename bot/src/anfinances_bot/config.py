@@ -43,7 +43,7 @@ class BotSettings(BaseSettings):
     # NoDecode по той же причине, что и у списка ID выше.
     bot_quiet_hours: Annotated[tuple[int, int], NoDecode] = (23, 9)
     # 29–31 есть не в каждом месяце: совещание бы пропускалось.
-    bot_budget_meeting_day: int = Field(default=1, ge=1, le=28)
+    bot_budget_meeting_day: int = Field(default=15, ge=1, le=28)
 
     @field_validator("telegram_allowed_user_ids", mode="before")
     @classmethod

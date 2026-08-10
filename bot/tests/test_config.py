@@ -110,3 +110,15 @@ def test_defaults_point_into_compose_network(monkeypatch: Any) -> None:
     settings = BotSettings()
     assert settings.anfinances_base_url == "http://backend:8000/api/v1"
     assert settings.speech_model == "whisper-1"
+
+
+def test_meeting_day_defaults_to_the_middle_of_month(monkeypatch: Any) -> None:
+    """Совещание в середине месяца — ещё можно что-то поправить."""
+    _apply(monkeypatch)
+    assert BotSettings().bot_budget_meeting_day == 15
+
+
+def test_meeting_day_comes_from_environment(monkeypatch: Any) -> None:
+    """Значение из секрета должно перебивать умолчание."""
+    _apply(monkeypatch, BOT_BUDGET_MEETING_DAY="5")
+    assert BotSettings().bot_budget_meeting_day == 5
