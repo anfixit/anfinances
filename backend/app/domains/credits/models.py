@@ -57,6 +57,9 @@ class Credit(UUIDMixin, TimestampMixin, Base):
     )
     annual_rate: Mapped[Decimal | None] = mapped_column(Numeric(9, 4))
     term_months: Mapped[int | None] = mapped_column(Integer)
+    # Обязательный ежемесячный платёж. Без него не посчитать
+    # остаток срока: он выводится из остатка, ставки и платежа.
+    monthly_payment: Mapped[Decimal | None] = mapped_column(Numeric(18, 4))
     start_date: Mapped[date | None] = mapped_column(Date)
     payment_day: Mapped[int | None] = mapped_column(Integer)
     linked_account_id: Mapped[uuid.UUID | None] = mapped_column(

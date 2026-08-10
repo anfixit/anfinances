@@ -8,6 +8,8 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 __all__ = [
     "CreditCreate",
+    "CreditProjectionRead",
+    "ScheduledPaymentRead",
     "CreditPaymentCreate",
     "CreditPaymentRead",
     "CreditRead",
@@ -22,6 +24,7 @@ class CreditCreate(BaseModel):
     principal_initial: Decimal = Field(gt=0)
     annual_rate: Decimal | None = Field(default=None, ge=0)
     term_months: int | None = Field(default=None, gt=0)
+    monthly_payment: Decimal | None = Field(default=None, gt=0)
     start_date: date | None = None
     payment_day: int | None = Field(default=None, ge=1, le=31)
     linked_account_id: uuid.UUID | None = None
@@ -34,6 +37,7 @@ class CreditUpdate(BaseModel):
     principal_initial: Decimal | None = Field(default=None, gt=0)
     annual_rate: Decimal | None = Field(default=None, ge=0)
     term_months: int | None = Field(default=None, gt=0)
+    monthly_payment: Decimal | None = Field(default=None, gt=0)
     start_date: date | None = None
     payment_day: int | None = Field(default=None, ge=1, le=31)
     linked_account_id: uuid.UUID | None = None
@@ -51,6 +55,7 @@ class CreditRead(BaseModel):
     principal_balance: Decimal
     annual_rate: Decimal | None
     term_months: int | None
+    monthly_payment: Decimal | None
     start_date: date | None
     payment_day: int | None
     linked_account_id: uuid.UUID | None
@@ -101,3 +106,24 @@ class CreditPaymentRead(BaseModel):
     comment: str | None
     created_at: datetime
     updated_at: datetime
+
+
+class ScheduledPaymentRead(BaseModel):
+    date: date
+    total: Decimal
+    principal: Decimal
+    interest: Decimal
+
+
+class CreditProjectionRead(BaseModel):
+    """Проекция графика: срок и разбивка ближайшего платежа.
+
+    Ничего не хранится — всё считается от текущего остатка долга,
+    поэтому досрочное погашение сразу укорачивает срок.
+    """
+
+    remaining_payments: int
+    last_payment_date: date | None
+    last_payment_amount: Decimal | None
+    total_interest_remaining: Decimal
+    next_payment: ScheduledPaymentRead | None
