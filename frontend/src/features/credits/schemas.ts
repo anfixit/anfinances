@@ -50,6 +50,7 @@ export const creditFormSchema = z.object({
   principal_initial: positiveMoney,
   annual_rate: optionalMoney,
   term_months: optionalPositiveInteger,
+  monthly_payment: optionalMoney,
   start_date: z.string().nullable(),
   payment_day: optionalPaymentDay,
   linked_account_id: z.string().nullable(),

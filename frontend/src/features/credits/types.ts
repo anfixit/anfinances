@@ -10,6 +10,7 @@ export interface Credit {
   principal_balance: Money
   annual_rate: Money | null
   term_months: number | null
+  monthly_payment: Money | null
   start_date: string | null
   payment_day: number | null
   linked_account_id: string | null

@@ -44,6 +44,9 @@ export function CreditForm({ credit, onDone }: CreditFormProps) {
       ? ""
       : String(credit.term_months),
   )
+  const [monthlyPayment, setMonthlyPayment] = useState(
+    credit?.monthly_payment ?? "",
+  )
   const [startDate, setStartDate] = useState(credit?.start_date ?? "")
   const [paymentDay, setPaymentDay] = useState(
     credit?.payment_day === null || credit?.payment_day === undefined
@@ -79,6 +82,7 @@ export function CreditForm({ credit, onDone }: CreditFormProps) {
       principal_initial: principalInitial,
       annual_rate: annualRate,
       term_months: termMonths,
+      monthly_payment: monthlyPayment,
       start_date: emptyToNull(startDate),
       payment_day: paymentDay,
       linked_account_id: emptyToNull(linkedAccountId),
@@ -95,6 +99,7 @@ export function CreditForm({ credit, onDone }: CreditFormProps) {
       principal_initial: principalInitial.trim(),
       annual_rate: emptyToNull(annualRate),
       term_months: emptyNumberToNull(termMonths),
+      monthly_payment: emptyToNull(monthlyPayment),
       start_date: emptyToNull(startDate),
       payment_day: emptyNumberToNull(paymentDay),
       linked_account_id: emptyToNull(linkedAccountId),
@@ -180,6 +185,22 @@ export function CreditForm({ credit, onDone }: CreditFormProps) {
           value={termMonths}
           onChange={(e) => setTermMonths(e.target.value)}
         />
+      </label>
+
+      <label className="field">
+        <span>Ежемесячный платёж</span>
+        <input
+          type="number"
+          inputMode="decimal"
+          min="0"
+          step="0.01"
+          value={monthlyPayment}
+          onChange={(e) => setMonthlyPayment(e.target.value)}
+        />
+        <small>
+          Обязательный платёж по договору. По нему считается остаток
+          срока: досрочное погашение укорачивает его само.
+        </small>
       </label>
 
       <label className="field">
