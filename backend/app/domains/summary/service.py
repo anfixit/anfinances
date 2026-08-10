@@ -196,10 +196,35 @@ class SummaryService:
         days_left = (horizon - today).days + 1
 
         liquid, missing = await self._liquid_rub(user_id)
-        obligations = await self._obligations(
-            user_id, today, horizon, timezone_name, missing
+        month_start = date(today.year, today.month, 1)
+        start, end = month_bounds_utc(month_start, timezone_name)
+        spent_rows = await self._repo.spending_by_category(user_id, start, end)
+        # Траты без категории в резервы не входят: их не с чем сверить.
+        spent = {
+            cat_id: abs(total)
+            for cat_id, total in spent_rows
+            if cat_id is not None
+        }
+
+        obligations, committed = await self._obligations(
+            user_id, today, horizon, spent, missing
         )
         reserved = sum((o.amount_rub for o in obligations), Decimal(0))
+
+        # Планы по категориям сверх обязательств. Дневной лимит их не
+        # трогает: план — это намерение, а не счёт к оплате.
+        planned_left = Decimal(0)
+        for budget in await self._repo.budgets_for_month(user_id, month_start):
+            # По одной категории могут стоять и план, и план-минимум.
+            # Резервируем большее из двух, а не сумму.
+            already = committed.get(budget.category_id, Decimal(0))
+            left = (
+                budget.planned
+                - spent.get(budget.category_id, Decimal(0))
+                - already
+            )
+            if left > 0:
+                planned_left += left
 
         safe = liquid - reserved
         # Отрицательный дневной лимит — бессмысленная цифра: тратить
@@ -219,7 +244,10 @@ class SummaryService:
             obligations=obligations,
             safe_to_spend_rub=safe,
             per_day_rub=per_day,
+            planned_remaining_rub=planned_left,
+            unallocated_rub=safe - planned_left,
             is_short=safe < 0,
+            is_overplanned=safe - planned_left < 0,
             is_total_complete=not missing_rates,
             missing_rate_currencies=missing_rates,
         )
@@ -251,20 +279,19 @@ class SummaryService:
         user_id: uuid.UUID,
         today: date,
         horizon: date,
-        timezone_name: str,
+        spent: dict[uuid.UUID, Decimal],
         missing: set[str],
-    ) -> list[Obligation]:
-        """Что точно спишется до горизонта: план-минимум и кредиты."""
+    ) -> tuple[list[Obligation], dict[uuid.UUID, Decimal]]:
+        """Что точно спишется до горизонта: план-минимум и кредиты.
+
+        Вторым значением — сколько уже зарезервировано по каждой
+        категории, чтобы план на ту же категорию не посчитали дважды.
+        """
         obligations: list[Obligation] = []
+        committed: dict[uuid.UUID, Decimal] = {}
 
         # План-минимум: резервируем только неоплаченный остаток.
         # Уже потраченное по категории второй раз откладывать незачем.
-        start, end = month_bounds_utc(
-            date(today.year, today.month, 1), timezone_name
-        )
-        spent_rows = await self._repo.spending_by_category(user_id, start, end)
-        spent = {cat_id: abs(total) for cat_id, total in spent_rows}
-
         for item in await self._repo.active_recurring(user_id):
             planned = item.amount_rub or Decimal(0)
             left = planned - spent.get(item.category_id, Decimal(0))
@@ -273,6 +300,9 @@ class SummaryService:
                     Obligation(
                         name=item.name, amount_rub=left, kind="recurring"
                     )
+                )
+                committed[item.category_id] = (
+                    committed.get(item.category_id, Decimal(0)) + left
                 )
 
         for credit in await self._repo.active_credits(user_id):
@@ -294,7 +324,7 @@ class SummaryService:
                     )
                 )
 
-        return obligations
+        return obligations, committed
 
 
 def _end_of_month(value: date) -> date:

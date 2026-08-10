@@ -1,7 +1,7 @@
 """Агрегатные read-only запросы для домена summary."""
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Protocol
 
@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.enums import TransactionKind
 from app.domains.accounts.models import Account
+from app.domains.budgets.models import Budget
 from app.domains.credits.expense_projection import (
     credit_expense_total_rub,
     credit_expenses_by_category_rub,
@@ -33,6 +34,10 @@ class SummaryRepository(Protocol):
     async def active_recurring(
         self, user_id: uuid.UUID
     ) -> list[RecurringExpense]: ...
+
+    async def budgets_for_month(
+        self, user_id: uuid.UUID, month: date
+    ) -> list[Budget]: ...
 
     async def cashflow(
         self,
@@ -99,6 +104,18 @@ class SqlSummaryRepository:
                 RecurringExpense.is_archived.is_(False),
             )
             .order_by(RecurringExpense.name)
+        )
+        return list(result.scalars().all())
+
+    async def budgets_for_month(
+        self, user_id: uuid.UUID, month: date
+    ) -> list[Budget]:
+        """Планы по категориям на месяц — первое правило ВНБ."""
+        result = await self._session.execute(
+            select(Budget).where(
+                Budget.user_id == user_id,
+                Budget.month == month,
+            )
         )
         return list(result.scalars().all())
 

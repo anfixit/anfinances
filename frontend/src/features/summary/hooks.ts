@@ -5,6 +5,7 @@ import {
   getCashflow,
   getDailyAllowance,
   getDashboard,
+  getMoneyAge,
 } from "@/features/summary/summaryApi"
 import { queryKeys } from "@/lib/query/keys"
 
@@ -33,5 +34,12 @@ export function useDailyAllowance() {
   return useQuery({
     queryKey: queryKeys.summary.dailyAllowance,
     queryFn: getDailyAllowance,
+  })
+}
+
+export function useMoneyAge() {
+  return useQuery({
+    queryKey: queryKeys.summary.moneyAge,
+    queryFn: getMoneyAge,
   })
 }

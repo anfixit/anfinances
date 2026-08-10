@@ -3,6 +3,7 @@ import type {
   Cashflow,
   DailyAllowance,
   Dashboard,
+  MoneyAge,
 } from "@/features/summary/types"
 import { api, unwrap } from "@/lib/api/client"
 import type { ApiResponse } from "@/types/api"
@@ -34,4 +35,8 @@ export async function getDailyAllowance(): Promise<DailyAllowance> {
   return unwrap(
     await api.get<ApiResponse<DailyAllowance>>("/summary/daily-allowance"),
   )
+}
+
+export async function getMoneyAge(): Promise<MoneyAge> {
+  return unwrap(await api.get<ApiResponse<MoneyAge>>("/summary/money-age"))
 }

@@ -22,5 +22,6 @@ export const queryKeys = {
       ["summary", "cashflow", range] as const,
     byCategory: (month: string) => ["summary", "by-category", month] as const,
     dailyAllowance: ["summary", "daily-allowance"] as const,
+    moneyAge: ["summary", "money-age"] as const,
   },
 } as const

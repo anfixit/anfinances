@@ -19,6 +19,7 @@ import {
   useCashflow,
   useDailyAllowance,
   useDashboard,
+  useMoneyAge,
 } from "@/features/summary/hooks"
 import { formatMoney } from "@/lib/money"
 
@@ -74,6 +75,7 @@ export function DashboardPage() {
 
   const dash = useDashboard()
   const allowance = useDailyAllowance()
+  const age = useMoneyAge()
   const flow = useCashflow(bounds.from, bounds.to)
   const cats = useByCategory(month)
   const categoriesQ = useCategories()
@@ -158,44 +160,88 @@ export function DashboardPage() {
       </div>
 
       {allowance.data && (
-        <div className="card allowance">
-          <span className="capital-label">
-            {allowance.data.is_short
-              ? "Не хватает на обязательства"
-              : "Можно тратить в день"}
-          </span>
-          <span
-            className={
-              allowance.data.is_short
-                ? "capital-value num expense"
-                : "capital-value num"
-            }
-          >
-            {allowance.data.is_short
-              ? formatMoney(allowance.data.safe_to_spend_rub, "RUB")
-              : formatMoney(allowance.data.per_day_rub, "RUB")}
-          </span>
-          <p className="allowance-note">
-            {allowance.data.days_left} дн. до{" "}
-            {new Date(allowance.data.until).toLocaleDateString("ru-RU")}.
-            Отложено на обязательства{" "}
-            <span className="num">
-              {formatMoney(allowance.data.obligations_rub, "RUB")}
+        <div className="rules-row">
+          <div className="card allowance">
+            <span className="capital-label">
+              {allowance.data.is_short
+                ? "Не хватает на обязательства"
+                : "Можно тратить в день"}
             </span>
-            .
-          </p>
-          {allowance.data.obligations.length > 0 && (
-            <ul className="allowance-list">
-              {allowance.data.obligations.map((o) => (
-                <li key={`${o.kind}-${o.name}`} className="acc-row">
-                  <span className="acc-name">{o.name}</span>
-                  <span className="num">
-                    {formatMoney(o.amount_rub, "RUB")}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
+            <span
+              className={
+                allowance.data.is_short
+                  ? "capital-value num expense"
+                  : "capital-value num"
+              }
+            >
+              {allowance.data.is_short
+                ? formatMoney(allowance.data.safe_to_spend_rub, "RUB")
+                : formatMoney(allowance.data.per_day_rub, "RUB")}
+            </span>
+            <p className="allowance-note">
+              {allowance.data.days_left} дн. до{" "}
+              {new Date(allowance.data.until).toLocaleDateString("ru-RU")}.
+              Отложено на обязательства{" "}
+              <span className="num">
+                {formatMoney(allowance.data.obligations_rub, "RUB")}
+              </span>
+              .
+            </p>
+            {allowance.data.obligations.length > 0 && (
+              <ul className="allowance-list">
+                {allowance.data.obligations.map((o) => (
+                  <li key={`${o.kind}-${o.name}`} className="acc-row">
+                    <span className="acc-name">{o.name}</span>
+                    <span className="num">
+                      {formatMoney(o.amount_rub, "RUB")}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          <div className="card allowance">
+            <span className="capital-label">
+              {allowance.data.is_overplanned
+                ? "Распланировано больше, чем есть"
+                : "Не распределено"}
+            </span>
+            <span
+              className={
+                allowance.data.is_overplanned
+                  ? "capital-value num expense"
+                  : "capital-value num"
+              }
+            >
+              {formatMoney(allowance.data.unallocated_rub, "RUB")}
+            </span>
+            <p className="allowance-note">
+              {allowance.data.is_overplanned
+                ? "Планы не обеспечены деньгами — урежьте что-нибудь."
+                : "Первое правило: у каждого рубля должна быть работа. Разложите остаток по категориям в бюджете."}
+            </p>
+            <p className="allowance-note">
+              В планах на месяц ещё не истрачено{" "}
+              <span className="num">
+                {formatMoney(allowance.data.planned_remaining_rub, "RUB")}
+              </span>
+              .
+            </p>
+            {age.data && (
+              <p
+                className={
+                  age.data.is_covered ? "allowance-note" : "capital-debt"
+                }
+              >
+                {age.data.is_covered
+                  ? "Живёте на доход прошлого месяца."
+                  : "Тратите быстрее, чем зарабатывали в прошлом месяце."}{" "}
+                {formatMoney(age.data.current_month_expense_rub, "RUB")} из{" "}
+                {formatMoney(age.data.previous_month_income_rub, "RUB")}.
+              </p>
+            )}
+          </div>
         </div>
       )}
 

@@ -77,8 +77,15 @@ class DailyAllowanceResult(BaseModel):
     obligations: list[Obligation]
     safe_to_spend_rub: Decimal
     per_day_rub: Decimal
+    # Первое правило: неистраченный остаток планов по категориям и
+    # то, что не получило никакой работы. В здоровом бюджете
+    # unallocated_rub близок к нулю.
+    planned_remaining_rub: Decimal
+    unallocated_rub: Decimal
     # Обязательств больше, чем денег: дневной лимит обнуляется.
     is_short: bool
+    # Распланировано больше, чем есть на счетах.
+    is_overplanned: bool
     is_total_complete: bool
     missing_rate_currencies: list[str]
 

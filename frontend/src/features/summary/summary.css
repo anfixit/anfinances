@@ -133,3 +133,11 @@
   list-style: none;
   font-size: 0.9rem;
 }
+
+/* Два числа правил ВНБ рядом: дневной лимит и нераспределённое.
+   На узком экране складываются в колонку. */
+.rules-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+}

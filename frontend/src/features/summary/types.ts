@@ -49,7 +49,19 @@ export interface DailyAllowance {
   obligations: Obligation[]
   safe_to_spend_rub: Money
   per_day_rub: Money
+  planned_remaining_rub: Money
+  unallocated_rub: Money
   is_short: boolean
+  is_overplanned: boolean
   is_total_complete: boolean
   missing_rate_currencies: string[]
+}
+
+export interface MoneyAge {
+  previous_month: string
+  current_month: string
+  previous_month_income_rub: Money
+  current_month_expense_rub: Money
+  coverage: string | null
+  is_covered: boolean
 }

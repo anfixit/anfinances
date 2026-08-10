@@ -44,6 +44,12 @@ class _Recurring:
         self.amount_rub = amount_rub
 
 
+class _Budget:
+    def __init__(self, category_id: uuid.UUID, planned: Decimal) -> None:
+        self.category_id = category_id
+        self.planned = planned
+
+
 class _Repo:
     def __init__(
         self,
@@ -51,11 +57,18 @@ class _Repo:
         credits: list[_Credit],
         recurring: list[_Recurring],
         spent: dict[uuid.UUID, Decimal] | None = None,
+        budgets: list[_Budget] | None = None,
     ) -> None:
         self._accounts = accounts
         self._credits = credits
         self._recurring = recurring
         self._spent = spent or {}
+        self._budgets = budgets or []
+
+    async def budgets_for_month(
+        self, user_id: uuid.UUID, month: date
+    ) -> list[Any]:
+        return list(self._budgets)
 
     async def active_accounts(self, user_id: uuid.UUID) -> list[Any]:
         return list(self._accounts)
@@ -93,11 +106,12 @@ def _service(
     credits: list[_Credit] | None = None,
     recurring: list[_Recurring] | None = None,
     spent: dict[uuid.UUID, Decimal] | None = None,
+    budgets: list[_Budget] | None = None,
 ) -> SummaryService:
     return SummaryService(
         cast(
             Any,
-            _Repo(accounts, credits or [], recurring or [], spent),
+            _Repo(accounts, credits or [], recurring or [], spent, budgets),
         ),
         cast(Any, _Currencies()),
     )
@@ -271,3 +285,80 @@ async def test_past_horizon_is_rejected() -> None:
     )
     # Горизонт в прошлом — считаем по сегодняшний день, не падаем.
     assert result.days_left == 1
+
+
+async def test_unallocated_subtracts_category_plans() -> None:
+    """Первое правило: свободны только нераспланированные деньги."""
+    food = uuid.uuid4()
+    service = _service(
+        [_Account("Альфа", "RUB", Decimal("60000"))],
+        budgets=[_Budget(food, Decimal("20000"))],
+    )
+    result = await service.daily_allowance(
+        uuid.uuid4(), "Europe/Moscow", now=_NOW
+    )
+    # Планы не трогают дневной лимит: это не обязательства.
+    assert result.safe_to_spend_rub == Decimal("60000")
+    assert result.planned_remaining_rub == Decimal("20000")
+    assert result.unallocated_rub == Decimal("40000")
+
+
+async def test_plan_and_recurring_on_one_category_count_once() -> None:
+    """План и план-минимум по одной категории — не двойной резерв."""
+    rent_category = uuid.uuid4()
+    rent = _Recurring("Аренда", Decimal("19500"))
+    rent.category_id = rent_category
+    service = _service(
+        [_Account("Альфа", "RUB", Decimal("60000"))],
+        recurring=[rent],
+        budgets=[_Budget(rent_category, Decimal("19500"))],
+    )
+    result = await service.daily_allowance(
+        uuid.uuid4(), "Europe/Moscow", now=_NOW
+    )
+    assert result.obligations_rub == Decimal("19500")
+    assert result.unallocated_rub == Decimal("40500")
+
+
+async def test_bigger_of_plan_and_recurring_wins() -> None:
+    """Аренда выросла — резервируем большее из двух, а не сумму."""
+    rent_category = uuid.uuid4()
+    rent = _Recurring("Аренда", Decimal("19500"))
+    rent.category_id = rent_category
+    service = _service(
+        [_Account("Альфа", "RUB", Decimal("60000"))],
+        recurring=[rent],
+        budgets=[_Budget(rent_category, Decimal("21000"))],
+    )
+    result = await service.daily_allowance(
+        uuid.uuid4(), "Europe/Moscow", now=_NOW
+    )
+    assert result.unallocated_rub == Decimal("39000")
+
+
+async def test_spent_plan_frees_the_money() -> None:
+    food = uuid.uuid4()
+    service = _service(
+        [_Account("Альфа", "RUB", Decimal("60000"))],
+        budgets=[_Budget(food, Decimal("20000"))],
+        spent={food: Decimal("-20000")},
+    )
+    result = await service.daily_allowance(
+        uuid.uuid4(), "Europe/Moscow", now=_NOW
+    )
+    assert result.planned_remaining_rub == Decimal("0")
+    assert result.unallocated_rub == Decimal("60000")
+
+
+async def test_overplanned_month_shows_negative_unallocated() -> None:
+    """Распланировано больше, чем есть, — это надо видеть."""
+    food = uuid.uuid4()
+    service = _service(
+        [_Account("Альфа", "RUB", Decimal("10000"))],
+        budgets=[_Budget(food, Decimal("30000"))],
+    )
+    result = await service.daily_allowance(
+        uuid.uuid4(), "Europe/Moscow", now=_NOW
+    )
+    assert result.unallocated_rub == Decimal("-20000")
+    assert result.is_overplanned is True
