@@ -4061,6 +4061,111 @@ git commit -m "fix(deploy): вернуть сайт на 443 и починить
 
 ---
 
+## Task 17: Причесать внешний вид сайта
+
+**Приоритет: самый низкий.** Делать в последнюю очередь, после всего
+остального. Не блокирует ничего.
+
+**Files:**
+- Modify: `frontend/src/index.css:286-310` (блок `.nav`)
+- Возможно: `frontend/src/app/Layout.tsx` (подписи пунктов меню)
+
+**Interfaces:** нет программных интерфейсов; изменения стилевые.
+
+**Симптом (со скриншота владельца).** Пункт «План-минимум» не помещается
+в одну строку и переносится. Из-за этого вся полоса навигации становится
+выше, а подписи остальных пунктов оказываются прижаты к верху своих
+растянутых коробок — выравнивание выглядит съехавшим.
+
+**Причина, уже найденная.** В `.nav` задано `display: flex` без
+`align-items`, то есть действует значение по умолчанию `stretch`:
+элементы растягиваются по высоте самого высокого. При этом у `.nav a`
+нет `white-space: nowrap`, поэтому длинная подпись переносится и
+задаёт эту высоту.
+
+- [ ] **Step 1: Написать тест на вёрстку**
+
+Добавить в `frontend/src/app/Layout.test.tsx` (создать файл, если его нет)
+проверку, что все пункты меню отрисованы и подпись не разорвана:
+
+```tsx
+import { render, screen } from "@testing-library/react"
+import { MemoryRouter } from "react-router-dom"
+import { describe, expect, it } from "vitest"
+
+import { Layout } from "./Layout"
+
+describe("Layout", () => {
+  it("рисует пункт «План-минимум» одной подписью", () => {
+    render(
+      <MemoryRouter>
+        <Layout />
+      </MemoryRouter>,
+    )
+    expect(screen.getByText("План-минимум")).toBeInTheDocument()
+  })
+})
+```
+
+- [ ] **Step 2: Прогнать тест и убедиться, что он падает или проходит**
+
+Run: `cd frontend && pnpm exec vitest run src/app/Layout.test.tsx`
+Expected: тест зелёный — он фиксирует наличие пункта; сам перенос строки
+проверяется глазами, поэтому основная проверка визуальная (шаг 5).
+
+- [ ] **Step 3: Починить стили**
+
+В `frontend/src/index.css` заменить блоки `.nav` и `.nav a`:
+
+```css
+.nav {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.nav a {
+  color: color-mix(in srgb, var(--on-app-bar) 80%, transparent);
+  text-decoration: none;
+  padding: 8px 16px;
+  border-radius: var(--shape-full);
+  font-weight: 500;
+  white-space: nowrap;
+  transition:
+    background var(--spring),
+    color var(--emphasized);
+}
+```
+
+Добавлены две строки: `align-items: center` в контейнер и
+`white-space: nowrap` в ссылку.
+
+- [ ] **Step 4: Прогнать проверки фронтенда**
+
+Run: `cd frontend && pnpm exec tsc -b && pnpm exec eslint . && pnpm exec vitest run && pnpm build`
+Expected: всё чисто.
+
+- [ ] **Step 5: Проверить глазами**
+
+Открыть сайт на широком экране и на узком. Убедиться, что подписи
+пунктов не переносятся, полоса навигации одной высоты, подписи по центру
+по вертикали. На узком экране должно оставаться прежнее поведение —
+мобильное меню, оно скрывает `.nav--desktop`.
+
+- [ ] **Step 6: Коммит**
+
+```bash
+git add frontend/src/index.css frontend/src/app/Layout.test.tsx
+git commit -m "fix(frontend): выровнять полосу навигации"
+```
+
+**Отдельно, если владелец захочет.** Общая ревизия внешнего вида
+(«выглядит не очень») — это уже не одна правка, а самостоятельный
+подпроект с разбором каждого экрана. Его стоит открывать отдельным
+спеком, а не добавлять сюда.
+
+---
+
 # Порядок и зависимости
 
 ```
