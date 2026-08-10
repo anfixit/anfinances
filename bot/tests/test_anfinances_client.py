@@ -24,7 +24,7 @@ def _settings(monkeypatch: Any) -> BotSettings:
         "OPENAI_API_KEY": "sk-test",
         "SINGLE_USER_EMAIL": "me@example.com",
         "SINGLE_USER_PASSWORD": "very-long-password-value",
-        "BOT_DEFAULT_ACCOUNT_NAME": "Альфа",
+        "BOT_DEFAULT_ACCOUNTS": "RUB=Альфа",
     }.items():
         monkeypatch.setenv(key, value)
     return BotSettings()

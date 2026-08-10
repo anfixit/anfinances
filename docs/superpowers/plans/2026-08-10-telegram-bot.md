@@ -847,7 +847,7 @@ def _env(**overrides: str) -> dict[str, str]:
         "OPENAI_API_KEY": "sk-test",
         "SINGLE_USER_EMAIL": "me@example.com",
         "SINGLE_USER_PASSWORD": "very-long-password-value",
-        "BOT_DEFAULT_ACCOUNT_NAME": "Альфа",
+        "BOT_DEFAULT_ACCOUNTS": "RUB=Альфа",
     }
     base.update(overrides)
     return base
@@ -1154,7 +1154,7 @@ def _settings(monkeypatch) -> BotSettings:
         "OPENAI_API_KEY": "sk-test",
         "SINGLE_USER_EMAIL": "me@example.com",
         "SINGLE_USER_PASSWORD": "very-long-password-value",
-        "BOT_DEFAULT_ACCOUNT_NAME": "Альфа",
+        "BOT_DEFAULT_ACCOUNTS": "RUB=Альфа",
     }.items():
         monkeypatch.setenv(key, value)
     return BotSettings()
@@ -3921,7 +3921,7 @@ CMD ["uv", "run", "--no-dev", "python", "-m", "anfinances_bot.main"]
       OPENAI_API_KEY: ${OPENAI_API_KEY:?set it}
       SINGLE_USER_EMAIL: ${SINGLE_USER_EMAIL:?set it}
       SINGLE_USER_PASSWORD: ${SINGLE_USER_PASSWORD:?set it}
-      BOT_DEFAULT_ACCOUNT_NAME: ${BOT_DEFAULT_ACCOUNT_NAME:?set it}
+      BOT_DEFAULT_ACCOUNTS: ${BOT_DEFAULT_ACCOUNTS:?set it}
       BOT_QUIET_HOURS: ${BOT_QUIET_HOURS:-23-9}
       BOT_BUDGET_MEETING_DAY: ${BOT_BUDGET_MEETING_DAY:-1}
 ```
@@ -4057,6 +4057,196 @@ Expected: апекс отдаёт `HTTP/2 200`, `www` отдаёт `HTTP/2 301` 
 ```bash
 git add caddy/Caddyfile docker-compose.deploy.yml docs/deployment.md
 git commit -m "fix(deploy): вернуть сайт на 443 и починить www"
+```
+
+---
+
+## Task 16b: Капитал должен учитывать кредиты
+
+**Приоритет: до того, как владелец заведёт кредит в разделе «Кредиты».**
+
+**Files:**
+- Modify: `backend/app/domains/summary/repository.py`
+- Modify: `backend/app/domains/summary/service.py`
+- Modify: `backend/app/domains/summary/schemas.py`
+- Create: `backend/tests/test_summary_capital_with_credits.py`
+
+**Interfaces:**
+- Consumes: `Credit.principal_balance`, `Credit.currency_code`,
+  `Credit.is_archived`; `CurrencyService.rate_to_rub`.
+- Produces: `SummaryRepository.active_credits(user_id) -> list[Credit]`;
+  поле `total_credit_debt_rub: Decimal` в `DashboardResult`;
+  `total_capital_rub` начинает вычитать долг.
+
+**Почему.** `dashboard()` считает капитал только по счетам — кредиты в него не
+входят (проверено: в `summary/service.py` нет ни одного обращения к домену
+credits). Пока долг заведён счётом с отрицательным балансом, итог верен. Как
+только владелец перенесёт кредит в раздел «Кредиты» и отправит счёт в архив,
+капитал подскочит на сумму долга и покажет его богаче, чем он есть.
+
+Разбивку «активы / обязательства / доступно» отдельными строками делает AF-007;
+здесь задача уже — чтобы итоговое число не врало.
+
+- [ ] **Step 1: Написать падающий тест**
+
+Создать `backend/tests/test_summary_capital_with_credits.py`:
+
+```python
+"""Капитал уменьшается на остаток долга по кредитам."""
+
+import uuid
+from decimal import Decimal
+from typing import Any, cast
+
+from app.domains.summary.service import SummaryService
+
+
+class _Account:
+    def __init__(
+        self, name: str, currency: str, initial: Decimal
+    ) -> None:
+        self.id = uuid.uuid4()
+        self.name = name
+        self.currency_code = currency
+        self.initial_balance = initial
+
+
+class _Credit:
+    def __init__(self, currency: str, balance: Decimal) -> None:
+        self.currency_code = currency
+        self.principal_balance = balance
+
+
+class _Repo:
+    def __init__(
+        self, accounts: list[_Account], credits: list[_Credit]
+    ) -> None:
+        self._accounts = accounts
+        self._credits = credits
+
+    async def active_accounts(self, user_id: uuid.UUID) -> list[Any]:
+        return list(self._accounts)
+
+    async def balances_by_account(
+        self, user_id: uuid.UUID
+    ) -> dict[uuid.UUID, Decimal]:
+        return {}
+
+    async def active_credits(self, user_id: uuid.UUID) -> list[Any]:
+        return list(self._credits)
+
+
+class _Currencies:
+    async def rate_to_rub(self, code: str) -> Decimal:
+        return {"RUB": Decimal(1), "UZS": Decimal("0.0072")}[code]
+
+
+def _service(
+    accounts: list[_Account], credits: list[_Credit]
+) -> SummaryService:
+    return SummaryService(
+        cast(Any, _Repo(accounts, credits)), cast(Any, _Currencies())
+    )
+
+
+async def test_debt_reduces_capital() -> None:
+    service = _service(
+        [_Account("Альфа", "RUB", Decimal("100000"))],
+        [_Credit("RUB", Decimal("280650.24"))],
+    )
+    result = await service.dashboard(uuid.uuid4())
+    assert result.total_credit_debt_rub == Decimal("280650.24")
+    assert result.total_capital_rub == Decimal("-180650.24")
+
+
+async def test_no_credits_leaves_capital_unchanged() -> None:
+    service = _service(
+        [_Account("Альфа", "RUB", Decimal("1000"))], []
+    )
+    result = await service.dashboard(uuid.uuid4())
+    assert result.total_credit_debt_rub == Decimal(0)
+    assert result.total_capital_rub == Decimal("1000")
+
+
+async def test_foreign_currency_debt_is_converted() -> None:
+    service = _service(
+        [_Account("Альфа", "RUB", Decimal("1000"))],
+        [_Credit("UZS", Decimal("100000"))],
+    )
+    result = await service.dashboard(uuid.uuid4())
+    assert result.total_credit_debt_rub == Decimal("720.0000")
+    assert result.total_capital_rub == Decimal("280.0000")
+```
+
+- [ ] **Step 2: Прогнать тест и убедиться, что он падает**
+
+Run: `cd backend && uv run pytest tests/test_summary_capital_with_credits.py -v`
+Expected: FAIL — у `DashboardResult` нет поля `total_credit_debt_rub`.
+
+- [ ] **Step 3: Добавить чтение кредитов в репозиторий**
+
+В `backend/app/domains/summary/repository.py` дополнить протокол
+`SummaryRepository` методом и реализовать его в `SqlSummaryRepository`:
+
+```python
+    async def active_credits(self, user_id: uuid.UUID) -> list[Credit]:
+        result = await self._session.execute(
+            select(Credit).where(
+                Credit.user_id == user_id,
+                Credit.is_archived.is_(False),
+            )
+        )
+        return list(result.scalars().all())
+```
+
+Импорт: `from app.domains.credits.models import Credit`.
+
+- [ ] **Step 4: Добавить поле в схему**
+
+В `backend/app/domains/summary/schemas.py`, в `DashboardResult`:
+
+```python
+    total_credit_debt_rub: Decimal
+```
+
+- [ ] **Step 5: Вычесть долг в сервисе**
+
+В `dashboard()`, перед формированием `DashboardResult`:
+
+```python
+        # Кредиты — обязательства, а не счета. Без них итог показывал
+        # бы владельца богаче, чем он есть, ровно на сумму долга.
+        debt = Decimal(0)
+        for credit in await self._repo.active_credits(user_id):
+            try:
+                rate = await self._currencies.rate_to_rub(
+                    credit.currency_code
+                )
+            except NotFoundError:
+                missing_rate_currencies.add(credit.currency_code)
+            else:
+                debt += credit.principal_balance * rate
+```
+
+и в возвращаемом объекте: `total_capital_rub=total - debt`,
+`total_credit_debt_rub=debt`.
+
+- [ ] **Step 6: Прогнать тест и убедиться, что он проходит**
+
+Run: `cd backend && uv run pytest tests/test_summary_capital_with_credits.py -v`
+Expected: PASS — три теста.
+
+- [ ] **Step 7: Прогнать весь набор проверок**
+
+Run: `cd backend && uv run ruff check . && uv run ruff format --check . && uv run mypy app && uv run pytest -q`
+Expected: всё чисто. Существующие тесты дашборда могут потребовать
+добавления нового поля — поправить их.
+
+- [ ] **Step 8: Коммит**
+
+```bash
+git add backend/app/domains/summary/ backend/tests/test_summary_capital_with_credits.py
+git commit -m "fix(summary): вычитать долг по кредитам из капитала"
 ```
 
 ---

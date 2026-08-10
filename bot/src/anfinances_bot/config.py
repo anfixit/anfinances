@@ -36,7 +36,10 @@ class BotSettings(BaseSettings):
     single_user_email: str
     single_user_password: SecretStr
 
-    bot_default_account_name: str
+    # Умолчания по валютам: "RUB=Альфа,UZS=Uzcard Капитал".
+    # Одного счёта на всё не хватает — у владельца три валюты, и
+    # рублёвое умолчание не помогло бы ни сумам, ни долларам.
+    bot_default_accounts: Annotated[dict[str, str], NoDecode]
     # NoDecode по той же причине, что и у списка ID выше.
     bot_quiet_hours: Annotated[tuple[int, int], NoDecode] = (23, 9)
     # 29–31 есть не в каждом месяце: совещание бы пропускалось.
@@ -57,6 +60,33 @@ class BotSettings(BaseSettings):
         """Пустой список открыл бы финансы любому, кто найдёт бота."""
         if not value:
             raise ValueError("TELEGRAM_ALLOWED_USER_IDS не может быть пустым.")
+        return value
+
+    @field_validator("bot_default_accounts", mode="before")
+    @classmethod
+    def _parse_default_accounts(cls, value: object) -> object:
+        """Принять "RUB=Альфа,UZS=Uzcard Капитал"."""
+        if not isinstance(value, str):
+            return value
+        parsed: dict[str, str] = {}
+        for chunk in value.split(","):
+            if not chunk.strip():
+                continue
+            if "=" not in chunk:
+                raise ValueError(
+                    "BOT_DEFAULT_ACCOUNTS должен быть вида "
+                    "RUB=Альфа,UZS=Uzcard Капитал."
+                )
+            code, name = chunk.split("=", 1)
+            parsed[code.strip().upper()] = name.strip()
+        return parsed
+
+    @field_validator("bot_default_accounts")
+    @classmethod
+    def _reject_empty_defaults(cls, value: dict[str, str]) -> dict[str, str]:
+        """Без умолчаний бот переспрашивал бы счёт на каждой трате."""
+        if not value:
+            raise ValueError("BOT_DEFAULT_ACCOUNTS не может быть пустым.")
         return value
 
     @field_validator("bot_quiet_hours", mode="before")

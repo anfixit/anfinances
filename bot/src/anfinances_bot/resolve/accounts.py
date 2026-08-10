@@ -27,19 +27,25 @@ def resolve_account(
     named: str | None,
     currency_code: str | None,
     history_account_id: str | None,
-    default_name: str,
+    default_names: dict[str, str],
 ) -> AccountResolution:
     """Разрешить счёт по пяти правилам сверху вниз.
 
     Первое сработавшее правило выигрывает. Если не сработало ни одно —
     возвращаем кандидатов, чтобы спросить пользователя кнопками.
+
+    ``default_names`` — умолчания по валютам: ``{"RUB": "Альфа", ...}``.
+    Одного умолчания на всё не хватает: у владельца счета в трёх
+    валютах, и рублёвое умолчание не помогло бы ни сумам, ни долларам.
     """
     # 1. Счёт назван во фразе: «со сбера», «альфа картой», «наличными».
+    #    Сначала точное имя, потом единственное вхождение подстроки.
+    #    Неоднозначную подстроку не разрешаем: «Капитал» подходит трём
+    #    счетам, и взять первый попавшийся — тихо ошибиться.
     if named:
-        needle = named.casefold()
-        for account in accounts:
-            if needle in account.name.casefold():
-                return AccountResolution(account, [])
+        picked = _by_name(accounts, named)
+        if picked is not None:
+            return AccountResolution(picked, [])
 
     in_currency = [
         a
@@ -57,12 +63,27 @@ def resolve_account(
             if account.id == history_account_id:
                 return AccountResolution(account, [])
 
-    # 4. Счёт по умолчанию, если он той же валюты. Сравниваем имя
-    #    целиком: «Альфа» не должна цеплять «Альфа копилка».
-    needle = default_name.casefold()
-    for account in in_currency:
-        if account.name.casefold() == needle:
-            return AccountResolution(account, [])
+    # 4. Умолчание для валюты операции. Имя сверяется целиком:
+    #    «Альфа» не должна цеплять «Альфа Бизнес».
+    if currency_code is not None:
+        wanted = default_names.get(currency_code)
+        if wanted:
+            needle = wanted.casefold()
+            for account in in_currency:
+                if account.name.casefold() == needle:
+                    return AccountResolution(account, [])
 
     # 5. Ничего не помогло — пусть выберет пользователь.
     return AccountResolution(None, in_currency)
+
+
+def _by_name(accounts: list[AccountRead], named: str) -> AccountRead | None:
+    """Найти счёт по названному имени: точное, затем однозначное."""
+    needle = named.casefold()
+
+    for account in accounts:
+        if account.name.casefold() == needle:
+            return account
+
+    matches = [a for a in accounts if needle in a.name.casefold()]
+    return matches[0] if len(matches) == 1 else None

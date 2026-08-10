@@ -16,7 +16,9 @@ def _env(**overrides: str) -> dict[str, str]:
         "OPENAI_API_KEY": "sk-test",
         "SINGLE_USER_EMAIL": "me@example.com",
         "SINGLE_USER_PASSWORD": "very-long-password-value",
-        "BOT_DEFAULT_ACCOUNT_NAME": "Альфа",
+        "BOT_DEFAULT_ACCOUNTS": (
+            "RUB=Альфа,UZS=Uzcard Капитал,USD=Visa Капитал"
+        ),
     }
     base.update(overrides)
     return base
@@ -63,6 +65,34 @@ def test_bad_quiet_hours_rejected(monkeypatch: Any) -> None:
 def test_meeting_day_out_of_range_rejected(monkeypatch: Any) -> None:
     """29–31 числа есть не в каждом месяце — совещание бы пропускалось."""
     _apply(monkeypatch, BOT_BUDGET_MEETING_DAY="31")
+    with pytest.raises(ValidationError):
+        BotSettings()
+
+
+def test_parses_default_accounts_by_currency(monkeypatch: Any) -> None:
+    """Одного умолчания мало: счета в трёх валютах."""
+    _apply(monkeypatch)
+    assert BotSettings().bot_default_accounts == {
+        "RUB": "Альфа",
+        "UZS": "Uzcard Капитал",
+        "USD": "Visa Капитал",
+    }
+
+
+def test_default_accounts_currency_is_upper_cased(monkeypatch: Any) -> None:
+    _apply(monkeypatch, BOT_DEFAULT_ACCOUNTS=" rub = Альфа ")
+    assert BotSettings().bot_default_accounts == {"RUB": "Альфа"}
+
+
+def test_default_accounts_without_equals_rejected(monkeypatch: Any) -> None:
+    _apply(monkeypatch, BOT_DEFAULT_ACCOUNTS="Альфа")
+    with pytest.raises(ValidationError):
+        BotSettings()
+
+
+def test_empty_default_accounts_rejected(monkeypatch: Any) -> None:
+    """Без умолчаний бот переспрашивал бы счёт на каждой трате."""
+    _apply(monkeypatch, BOT_DEFAULT_ACCOUNTS="")
     with pytest.raises(ValidationError):
         BotSettings()
 
