@@ -6,10 +6,18 @@
 каждом обращении, а вместе с ним и вся экономия.
 """
 
+from pathlib import Path
+
 from anfinances_bot.anfinances.schemas import AccountRead, CategoryRead
 from anfinances_bot.resolve.categories import build_category_paths
 
-__all__ = ["SYSTEM_PROMPT", "build_system_blocks"]
+__all__ = ["SYSTEM_PROMPT", "YNAB_REFERENCE", "build_system_blocks"]
+
+# Справочник по методу. Читается один раз при импорте: файл
+# статический, а перечитывать его на каждой фразе незачем.
+YNAB_REFERENCE = (Path(__file__).parent / "knowledge" / "ynab.md").read_text(
+    encoding="utf-8"
+)
 
 SYSTEM_PROMPT = """\
 Ты — финансовый помощник в личном телеграм-боте. Владелица \
@@ -103,6 +111,13 @@ def build_system_blocks(
 
     return [
         {"type": "text", "text": SYSTEM_PROMPT},
+        {
+            "type": "text",
+            "text": (
+                "Справочник по методу ВНБ — опирайся на него, когда "
+                "советуешь и планируешь:\n\n" + YNAB_REFERENCE
+            ),
+        },
         {
             "type": "text",
             "text": context,

@@ -9,6 +9,8 @@ from pathlib import Path
 from typing import Any
 
 from aiogram import Bot, Dispatcher, F
+from aiogram.client.default import DefaultBotProperties
+from aiogram.enums import ParseMode
 from aiogram.types import CallbackQuery, Message
 from anthropic import AsyncAnthropic
 from openai import AsyncOpenAI
@@ -114,7 +116,12 @@ async def main() -> None:
     deps = Deps(client, runner, profile)
     speech = AsyncOpenAI(api_key=settings.openai_api_key.get_secret_value())
 
-    bot = Bot(token=settings.telegram_bot_token.get_secret_value())
+    # Разметку модели переводим в HTML сами; без parse_mode телеграм
+    # покажет её как есть, звёздочками.
+    bot = Bot(
+        token=settings.telegram_bot_token.get_secret_value(),
+        default=DefaultBotProperties(parse_mode=ParseMode.HTML),
+    )
     dispatcher = Dispatcher()
     allowlist = AllowlistMiddleware(settings.telegram_allowed_user_ids)
     dispatcher.message.middleware(allowlist)

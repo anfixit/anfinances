@@ -1,6 +1,10 @@
 """Сборка системного промпта и точки кэширования."""
 
-from anfinances_bot.agent.prompt import SYSTEM_PROMPT, build_system_blocks
+from anfinances_bot.agent.prompt import (
+    SYSTEM_PROMPT,
+    YNAB_REFERENCE,
+    build_system_blocks,
+)
 from anfinances_bot.anfinances.schemas import AccountRead, CategoryRead
 
 ACCOUNTS = [
@@ -66,6 +70,32 @@ def test_prompt_sends_daily_limit_to_the_tool() -> None:
 def test_prompt_allows_setting_up_the_site() -> None:
     assert "set_budget" in SYSTEM_PROMPT
     assert "не отправляй её на сайт" in SYSTEM_PROMPT.casefold()
+
+
+def test_reference_covers_all_four_rules() -> None:
+    lowered = YNAB_REFERENCE.casefold()
+    for rule in (
+        "найдите применение каждому рублю",
+        "истинные) расходы",
+        "держите удар",
+        "дайте деньгам созреть",
+    ):
+        assert rule in lowered
+
+
+def test_reference_is_in_the_cached_prefix() -> None:
+    """Справочник статичен — он обязан попадать под кэш."""
+    blocks = build_system_blocks(ACCOUNTS, CATEGORIES, "Europe/Moscow")
+    joined = "\n".join(str(b["text"]) for b in blocks)
+    assert "Дайте деньгам созреть" in joined
+    assert blocks[-1]["cache_control"] == {"type": "ephemeral"}
+
+
+def test_reference_maps_rules_onto_tools() -> None:
+    """Метод без привязки к инструментам остаётся теорией."""
+    assert "set_budget" in YNAB_REFERENCE
+    assert "add_recurring" in YNAB_REFERENCE
+    assert "get_money_age" in YNAB_REFERENCE
 
 
 def test_no_timestamp_in_cached_prefix() -> None:

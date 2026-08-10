@@ -19,6 +19,10 @@ from anfinances_bot.proactive import (
     should_hold_meeting,
     should_remind,
 )
+from anfinances_bot.telegram.formatting import (
+    split_message,
+    to_telegram_html,
+)
 
 logger = logging.getLogger("anfinances_bot.proactive")
 
@@ -68,7 +72,8 @@ async def run_proactive_loop(
                     now, settings.bot_budget_meeting_day, last_meeting
                 ):
                     reply = await deps.resolve(MEETING_PROMPT, [])
-                    await bot.send_message(chat_id, reply.text)
+                    for part in split_message(reply.text):
+                        await bot.send_message(chat_id, to_telegram_html(part))
                     last_meeting = now
                 elif should_remind(
                     await _last_transaction_at(deps), last_reminder, now

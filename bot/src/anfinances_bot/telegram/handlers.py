@@ -19,6 +19,10 @@ from anfinances_bot.anfinances.client import (
 )
 from anfinances_bot.anfinances.schemas import AccountRead
 from anfinances_bot.speech import SpeechUnavailableError
+from anfinances_bot.telegram.formatting import (
+    split_message,
+    to_telegram_html,
+)
 from anfinances_bot.telegram.keyboards import (
     account_choice,
     parse_callback,
@@ -94,7 +98,7 @@ async def handle_callback(
 
     if action == "fix":
         session.pending_fix_id = value
-        await callback.message.answer(FIX_PROMPT)
+        await _say(callback.message, FIX_PROMPT)
         return
 
     if action == "del":
@@ -112,8 +116,9 @@ async def handle_callback(
         )
         session.pending_accounts = []
         if chosen is None:
-            await callback.message.answer(
-                "Не помню, о какой операции речь. Повтори, пожалуйста."
+            await _say(
+                callback.message,
+                "Не помню, о какой операции речь. Повтори, пожалуйста.",
             )
             return
         await _run(
@@ -135,11 +140,11 @@ async def handle_user_voice(
         text = await transcriber(message)
     except SpeechUnavailableError:
         logger.warning("Расшифровка не удалась", exc_info=True)
-        await message.answer(SPEECH_DOWN)
+        await _say(message, SPEECH_DOWN)
         return
 
     # Показываем расшифровку: Whisper ошибается, и это надо видеть.
-    await message.answer(f"Услышала: {text}")
+    await _say(message, f"Услышала: {text}")
     message.text = text
     await handle_user_text(message, deps, session)
 
@@ -152,31 +157,48 @@ async def _run(
         reply = await deps.resolve(prompt, session.history)
     except AnfinancesUnavailableError:
         logger.warning("anfinances недоступен", exc_info=True)
-        await message.answer(SITE_DOWN)
+        await _say(message, SITE_DOWN)
         return
     except AgentUnavailableError:
         logger.warning("Модель недоступна", exc_info=True)
-        await message.answer(MODEL_DOWN)
+        await _say(message, MODEL_DOWN)
         return
     except AnfinancesError as exc:
-        await message.answer(f"Не получилось: {exc}")
+        await _say(message, f"Не получилось: {exc}")
         return
 
     session.remember(prompt, reply.text)
 
     if reply.created_transaction_id is not None:
-        await message.answer(
+        await _say(
+            message,
             reply.text,
-            reply_markup=transaction_card(reply.created_transaction_id),
+            transaction_card(reply.created_transaction_id),
         )
         return
 
     if reply.pending_accounts:
         session.pending_accounts = list(reply.pending_accounts)
-        await message.answer(
+        await _say(
+            message,
             reply.text or "С какого счёта?",
-            reply_markup=account_choice(reply.pending_accounts),
+            account_choice(reply.pending_accounts),
         )
         return
 
-    await message.answer(reply.text or "Не поняла, повтори иначе.")
+    await _say(message, reply.text or "Не поняла, повтори иначе.")
+
+
+async def _say(message: Any, text: str, markup: Any = None) -> None:
+    """Отправить ответ модели: разметка в HTML, длинное — по кускам.
+
+    Кнопки вешаются на последний кусок: под серединой ответа они
+    выглядят как обрыв.
+    """
+    parts = split_message(text)
+    for index, part in enumerate(parts):
+        is_last = index == len(parts) - 1
+        await message.answer(
+            to_telegram_html(part),
+            reply_markup=markup if is_last else None,
+        )
