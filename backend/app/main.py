@@ -4,6 +4,8 @@
 Бизнес-логика лежит в app/domains/* и подключается роутерами
 """
 
+import asyncio
+import contextlib
 import logging
 from contextlib import asynccontextmanager
 from typing import Any
@@ -25,6 +27,7 @@ from app.domains.categories.routes import router as categories_router
 from app.domains.config.routes import router as config_router
 from app.domains.credits.routes import router as credits_router
 from app.domains.currencies.routes import router as currencies_router
+from app.domains.currencies.scheduler import refresh_rates_periodically
 from app.domains.export.routes import router as export_router
 from app.domains.import_.routes import router as import_router
 from app.domains.recurring.routes import router as recurring_router
@@ -109,7 +112,40 @@ async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
     except Exception:
         logger.warning("Rates refresh on startup failed", exc_info=True)
 
+    # Обновление на старте оставляет курс дня запуска, а контейнер
+    # живёт неделями — поэтому ещё и по расписанию.
+    rates_task: asyncio.Task[None] | None = None
+    interval = settings.exchange_rate_refresh_interval_hours
+    if interval > 0:
+
+        async def _refresh_rates() -> None:
+            async with sessionmaker() as session:
+                from app.domains.currencies.providers.er_api import (
+                    ErApiRatesProvider,
+                )
+                from app.domains.currencies.repository import (
+                    SqlCurrencyRepository,
+                )
+                from app.domains.currencies.service import CurrencyService
+
+                svc = CurrencyService(
+                    SqlCurrencyRepository(session),
+                    ErApiRatesProvider(settings),
+                )
+                await svc.refresh_rates()
+                await session.commit()
+
+        rates_task = asyncio.create_task(
+            refresh_rates_periodically(_refresh_rates, interval * 3600)
+        )
+        logger.info("Periodic rates refresh every %sh", interval)
+
     yield
+
+    if rates_task is not None:
+        rates_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await rates_task
 
     await engine.dispose()
     logger.info("Database engine disposed")

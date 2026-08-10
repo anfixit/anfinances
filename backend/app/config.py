@@ -103,6 +103,10 @@ class Settings(BaseSettings):
     exchange_rate_api_key: str | None = None
     exchange_rate_timeout_seconds: float = 10.0
 
+    # 0 выключает периодическое обновление; обновление на старте
+    # приложения при этом остаётся.
+    exchange_rate_refresh_interval_hours: int = Field(default=6, ge=0)
+
     @model_validator(mode="after")
     def _enforce_production_safety(self) -> Self:
         """В production громко падаем на небезопасной конфигурации.
