@@ -9,6 +9,7 @@ from datetime import datetime
 from decimal import Decimal
 
 from sqlalchemy import (
+    CheckConstraint,
     DateTime,
     ForeignKey,
     Index,
@@ -48,6 +49,27 @@ class Transaction(UUIDMixin, TimestampMixin, Base):
         Index("ix_transactions_account_id", "account_id"),
         Index("ix_transactions_category_id", "category_id"),
         Index("ix_transactions_transfer_id", "transfer_id"),
+        # Соглашение знаков (Стратегия А) на уровне БД: сервис может
+        # ошибиться, БД — нет. Ноги перевода под знаковые правила не
+        # попадают: там знак задаётся направлением, а не типом.
+        CheckConstraint(
+            "amount <> 0",
+            name="ck_transactions_amount_nonzero",
+        ),
+        # Метки в БД — имена членов перечисления, заглавными.
+        CheckConstraint(
+            "kind NOT IN ('EXPENSE', 'CREDIT_PAYMENT') OR amount < 0",
+            name="ck_transactions_expense_negative",
+        ),
+        CheckConstraint(
+            "kind <> 'INCOME' OR amount > 0",
+            name="ck_transactions_income_positive",
+        ),
+        CheckConstraint(
+            "(amount > 0 AND amount_rub > 0)"
+            " OR (amount < 0 AND amount_rub < 0)",
+            name="ck_transactions_sign_agreement",
+        ),
     )
 
     user_id: Mapped[uuid.UUID] = mapped_column(
