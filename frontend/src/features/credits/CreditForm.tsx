@@ -1,76 +1,79 @@
-import { useState } from "react";
+import { useState } from "react"
 
-import { useAccounts } from "@/features/accounts/hooks";
-import { useCreateCredit, useUpdateCredit } from "@/features/credits/hooks";
-import { creditFormSchema } from "@/features/credits/schemas";
-import type { Credit } from "@/features/credits/types";
-import { useCurrencyOptions } from "@/features/currencies/hooks";
-import { AppError } from "@/lib/api/errors";
+import { useAccounts } from "@/features/accounts/hooks"
+import {
+  useCreateCredit,
+  useUpdateCredit,
+} from "@/features/credits/hooks"
+import { creditFormSchema } from "@/features/credits/schemas"
+import type { Credit } from "@/features/credits/types"
+import { useCurrencyOptions } from "@/features/currencies/hooks"
+import { AppError } from "@/lib/api/errors"
 
 function emptyToNull(value: string): string | null {
-  const trimmed = value.trim();
-  return trimmed === "" ? null : trimmed;
+  const trimmed = value.trim()
+  return trimmed === "" ? null : trimmed
 }
 
 function emptyNumberToNull(value: string): number | null {
-  const trimmed = value.trim();
-  return trimmed === "" ? null : Number(trimmed);
+  const trimmed = value.trim()
+  return trimmed === "" ? null : Number(trimmed)
 }
 
 interface CreditFormProps {
-  credit: Credit | null;
-  onDone: () => void;
+  credit: Credit | null
+  onDone: () => void
 }
 
 export function CreditForm({ credit, onDone }: CreditFormProps) {
-  const accounts = useAccounts();
-  const currencyOptions = useCurrencyOptions();
-  const create = useCreateCredit();
-  const update = useUpdateCredit();
-  const isEdit = credit !== null;
+  const accounts = useAccounts()
+  const currencyOptions = useCurrencyOptions()
+  const create = useCreateCredit()
+  const update = useUpdateCredit()
+  const isEdit = credit !== null
 
-  const [name, setName] = useState(credit?.name ?? "");
-  const [lender, setLender] = useState(credit?.lender ?? "");
-  const [currency, setCurrency] = useState(credit?.currency_code ?? "");
+  const [name, setName] = useState(credit?.name ?? "")
+  const [lender, setLender] = useState(credit?.lender ?? "")
+  const [currency, setCurrency] = useState(credit?.currency_code ?? "")
   const [principalInitial, setPrincipalInitial] = useState(
     credit?.principal_initial ?? "",
-  );
-  const [annualRate, setAnnualRate] = useState(credit?.annual_rate ?? "");
+  )
+  const [annualRate, setAnnualRate] = useState(credit?.annual_rate ?? "")
   const [termMonths, setTermMonths] = useState(
     credit?.term_months === null || credit?.term_months === undefined
       ? ""
       : String(credit.term_months),
-  );
+  )
   const [monthlyPayment, setMonthlyPayment] = useState(
     credit?.monthly_payment ?? "",
-  );
-  const [startDate, setStartDate] = useState(credit?.start_date ?? "");
+  )
+  const [startDate, setStartDate] = useState(credit?.start_date ?? "")
   const [paymentDay, setPaymentDay] = useState(
     credit?.payment_day === null || credit?.payment_day === undefined
       ? ""
       : String(credit.payment_day),
-  );
+  )
   const [linkedAccountId, setLinkedAccountId] = useState(
     credit?.linked_account_id ?? "",
-  );
-  const [comments, setComments] = useState(credit?.comments ?? "");
-  const [formError, setFormError] = useState<string | null>(null);
+  )
+  const [comments, setComments] = useState(credit?.comments ?? "")
+  const [formError, setFormError] = useState<string | null>(null)
 
-  const pending = create.isPending || update.isPending;
+  const pending = create.isPending || update.isPending
   const accountsByCurrency = (accounts.data ?? []).filter(
     (account) => account.currency_code === currency,
-  );
+  )
 
   const onError = (err: unknown) => {
     if (!(err instanceof AppError)) {
-      setFormError("Ошибка сохранения");
-      return;
+      setFormError("Ошибка сохранения")
+      return
     }
-    setFormError(err.details[0]?.message ?? err.message);
-  };
+    setFormError(err.details[0]?.message ?? err.message)
+  }
 
   const submit = () => {
-    setFormError(null);
+    setFormError(null)
 
     const parsed = creditFormSchema.safeParse({
       name,
@@ -84,10 +87,10 @@ export function CreditForm({ credit, onDone }: CreditFormProps) {
       payment_day: paymentDay,
       linked_account_id: emptyToNull(linkedAccountId),
       comments: emptyToNull(comments),
-    });
+    })
     if (!parsed.success) {
-      setFormError(parsed.error.issues[0]?.message ?? "Проверьте поля");
-      return;
+      setFormError(parsed.error.issues[0]?.message ?? "Проверьте поля")
+      return
     }
 
     const payload = {
@@ -101,21 +104,21 @@ export function CreditForm({ credit, onDone }: CreditFormProps) {
       payment_day: emptyNumberToNull(paymentDay),
       linked_account_id: emptyToNull(linkedAccountId),
       comments: emptyToNull(comments),
-    };
+    }
 
     if (isEdit) {
       update.mutate(
         { id: credit.id, input: payload },
         { onSuccess: onDone, onError },
-      );
-      return;
+      )
+      return
     }
 
     create.mutate(
       { ...payload, currency_code: currency },
       { onSuccess: onDone, onError },
-    );
-  };
+    )
+  }
 
   return (
     <div className="form credit-form">
@@ -135,14 +138,14 @@ export function CreditForm({ credit, onDone }: CreditFormProps) {
           value={currency}
           disabled={isEdit}
           onChange={(e) => {
-            setCurrency(e.target.value);
-            setLinkedAccountId("");
+            setCurrency(e.target.value)
+            setLinkedAccountId("")
           }}
         >
           <option value="">— выберите —</option>
-          {currencyOptions.options.map((item) => (
-            <option key={item.code} value={item.code}>
-              {item.label}
+          {currencyOptions.options.map((c) => (
+            <option key={c.code} value={c.code}>
+              {c.label}
             </option>
           ))}
         </select>
@@ -201,8 +204,8 @@ export function CreditForm({ credit, onDone }: CreditFormProps) {
           onChange={(e) => setMonthlyPayment(e.target.value)}
         />
         <small>
-          Обязательный платёж по договору. По нему считается остаток срока:
-          досрочное погашение укорачивает его само.
+          Обязательный платёж по договору. По нему считается остаток
+          срока: досрочное погашение укорачивает его само.
         </small>
       </label>
 
@@ -243,13 +246,18 @@ export function CreditForm({ credit, onDone }: CreditFormProps) {
           ))}
         </select>
         {currency && accountsByCurrency.length === 0 && (
-          <span className="hint">Нет активных счетов в валюте {currency}.</span>
+          <span className="hint">
+            Нет активных счетов в валюте {currency}.
+          </span>
         )}
       </label>
 
       <label className="field">
         <span>Комментарий</span>
-        <input value={comments} onChange={(e) => setComments(e.target.value)} />
+        <input
+          value={comments}
+          onChange={(e) => setComments(e.target.value)}
+        />
       </label>
 
       {formError && <p className="error">{formError}</p>}
@@ -258,5 +266,5 @@ export function CreditForm({ credit, onDone }: CreditFormProps) {
         {pending ? "Сохраняю…" : isEdit ? "Сохранить" : "Создать кредит"}
       </button>
     </div>
-  );
+  )
 }

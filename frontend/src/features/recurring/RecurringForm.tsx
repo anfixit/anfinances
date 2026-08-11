@@ -1,62 +1,62 @@
-import { useState } from "react";
+import { useState } from "react"
 
-import { CategorySelect } from "@/features/categories/CategorySelect";
-import { useCategories } from "@/features/categories/hooks";
-import { useCurrencyOptions } from "@/features/currencies/hooks";
+import { CategorySelect } from "@/features/categories/CategorySelect"
+import { useCategories } from "@/features/categories/hooks"
+import { useCurrencyOptions } from "@/features/currencies/hooks"
 import {
   useCreateRecurring,
   useUpdateRecurring,
-} from "@/features/recurring/hooks";
-import type { Recurring } from "@/features/recurring/types";
-import { AppError } from "@/lib/api/errors";
+} from "@/features/recurring/hooks"
+import type { Recurring } from "@/features/recurring/types"
+import { AppError } from "@/lib/api/errors"
 
 export function RecurringForm({
   item,
   onDone,
 }: {
-  item: Recurring | null;
-  onDone: () => void;
+  item: Recurring | null
+  onDone: () => void
 }) {
-  const categoriesQ = useCategories();
-  const currencyOptions = useCurrencyOptions();
-  const create = useCreateRecurring();
-  const update = useUpdateRecurring();
+  const categoriesQ = useCategories()
+  const currencyOptions = useCurrencyOptions()
+  const create = useCreateRecurring()
+  const update = useUpdateRecurring()
 
-  const isEdit = item !== null;
+  const isEdit = item !== null
 
-  const [name, setName] = useState(item?.name ?? "");
-  const [categoryId, setCategoryId] = useState(item?.category_id ?? "");
-  const [amount, setAmount] = useState(item?.monthly_amount ?? "");
-  const [currency, setCurrency] = useState(item?.currency_code ?? "RUB");
+  const [name, setName] = useState(item?.name ?? "")
+  const [categoryId, setCategoryId] = useState(item?.category_id ?? "")
+  const [amount, setAmount] = useState(item?.monthly_amount ?? "")
+  const [currency, setCurrency] = useState(item?.currency_code ?? "RUB")
   const [required, setRequired] = useState(
     item ? item.required !== "optional" : true,
-  );
-  const [comments, setComments] = useState(item?.comments ?? "");
-  const [formError, setFormError] = useState<string | null>(null);
+  )
+  const [comments, setComments] = useState(item?.comments ?? "")
+  const [formError, setFormError] = useState<string | null>(null)
 
-  const pending = create.isPending || update.isPending;
+  const pending = create.isPending || update.isPending
 
   const onError = (err: unknown) => {
-    setFormError(err instanceof AppError ? err.message : "Ошибка сохранения");
-  };
+    setFormError(err instanceof AppError ? err.message : "Ошибка сохранения")
+  }
 
   const submit = () => {
-    setFormError(null);
+    setFormError(null)
     if (!name.trim()) {
-      setFormError("Укажите название");
-      return;
+      setFormError("Укажите название")
+      return
     }
     if (!categoryId) {
-      setFormError("Выберите категорию");
-      return;
+      setFormError("Выберите категорию")
+      return
     }
-    const value = amount.trim();
+    const value = amount.trim()
     if (Number.isNaN(Number(value)) || Number(value) <= 0) {
-      setFormError("Сумма должна быть больше нуля");
-      return;
+      setFormError("Сумма должна быть больше нуля")
+      return
     }
-    const req = required ? "required" : "optional";
-    const cmt = comments ? comments : null;
+    const req = required ? "required" : "optional"
+    const cmt = comments ? comments : null
 
     if (isEdit) {
       update.mutate(
@@ -72,7 +72,7 @@ export function RecurringForm({
           },
         },
         { onSuccess: onDone, onError },
-      );
+      )
     } else {
       create.mutate(
         {
@@ -84,9 +84,9 @@ export function RecurringForm({
           comments: cmt,
         },
         { onSuccess: onDone, onError },
-      );
+      )
     }
-  };
+  }
 
   return (
     <div className="form">
@@ -117,7 +117,10 @@ export function RecurringForm({
 
       <label className="field">
         <span>Валюта</span>
-        <select value={currency} onChange={(e) => setCurrency(e.target.value)}>
+        <select
+          value={currency}
+          onChange={(e) => setCurrency(e.target.value)}
+        >
           {currencyOptions.options.map((c) => (
             <option key={c.code} value={c.code}>
               {c.label}
@@ -143,7 +146,10 @@ export function RecurringForm({
 
       <label className="field">
         <span>Заметка</span>
-        <input value={comments} onChange={(e) => setComments(e.target.value)} />
+        <input
+          value={comments}
+          onChange={(e) => setComments(e.target.value)}
+        />
       </label>
 
       {formError && <p className="error">{formError}</p>}
@@ -152,5 +158,5 @@ export function RecurringForm({
         {pending ? "Сохраняю…" : isEdit ? "Сохранить" : "Добавить"}
       </button>
     </div>
-  );
+  )
 }

@@ -1,44 +1,47 @@
-import { useState } from "react";
+import { useState } from "react"
 
-import { useCreateAccount, useUpdateAccount } from "@/features/accounts/hooks";
-import { accountFormSchema } from "@/features/accounts/schemas";
-import { TYPE_LABELS } from "@/features/accounts/types";
-import type { Account } from "@/features/accounts/types";
-import { useCurrencyOptions } from "@/features/currencies/hooks";
-import { AppError } from "@/lib/api/errors";
-import type { AccountType } from "@/types/enums";
+import {
+  useCreateAccount,
+  useUpdateAccount,
+} from "@/features/accounts/hooks"
+import { accountFormSchema } from "@/features/accounts/schemas"
+import { TYPE_LABELS } from "@/features/accounts/types"
+import type { Account } from "@/features/accounts/types"
+import { useCurrencyOptions } from "@/features/currencies/hooks"
+import { AppError } from "@/lib/api/errors"
+import type { AccountType } from "@/types/enums"
 
 export function AccountForm({
   account,
   onDone,
 }: {
-  account: Account | null;
-  onDone: () => void;
+  account: Account | null
+  onDone: () => void
 }) {
-  const currencyOptions = useCurrencyOptions();
-  const create = useCreateAccount();
-  const update = useUpdateAccount();
+  const currencyOptions = useCurrencyOptions()
+  const create = useCreateAccount()
+  const update = useUpdateAccount()
 
-  const isEdit = account !== null;
+  const isEdit = account !== null
 
-  const [name, setName] = useState(account?.name ?? "");
-  const [type, setType] = useState<AccountType>(account?.type ?? "card");
-  const [currency, setCurrency] = useState(account?.currency_code ?? "");
-  const [initial, setInitial] = useState(account?.initial_balance ?? "");
-  const [creditLimit, setCreditLimit] = useState(account?.credit_limit ?? "");
-  const [color, setColor] = useState(account?.color ?? "#4b53c9");
-  const [sortOrder, setSortOrder] = useState(String(account?.sort_order ?? 0));
-  const [comments, setComments] = useState(account?.comments ?? "");
-  const [formError, setFormError] = useState<string | null>(null);
+  const [name, setName] = useState(account?.name ?? "")
+  const [type, setType] = useState<AccountType>(account?.type ?? "card")
+  const [currency, setCurrency] = useState(account?.currency_code ?? "")
+  const [initial, setInitial] = useState(account?.initial_balance ?? "")
+  const [creditLimit, setCreditLimit] = useState(account?.credit_limit ?? "")
+  const [color, setColor] = useState(account?.color ?? "#4b53c9")
+  const [sortOrder, setSortOrder] = useState(String(account?.sort_order ?? 0))
+  const [comments, setComments] = useState(account?.comments ?? "")
+  const [formError, setFormError] = useState<string | null>(null)
 
-  const pending = create.isPending || update.isPending;
+  const pending = create.isPending || update.isPending
 
   const onError = (err: unknown) => {
-    setFormError(err instanceof AppError ? err.message : "Ошибка сохранения");
-  };
+    setFormError(err instanceof AppError ? err.message : "Ошибка сохранения")
+  }
 
   const submit = () => {
-    setFormError(null);
+    setFormError(null)
     const parsed = accountFormSchema.safeParse({
       name,
       type,
@@ -48,15 +51,15 @@ export function AccountForm({
       sort_order: sortOrder,
       color,
       comments,
-    });
+    })
     if (!parsed.success) {
-      setFormError(parsed.error.issues[0]?.message ?? "Проверьте поля");
-      return;
+      setFormError(parsed.error.issues[0]?.message ?? "Проверьте поля")
+      return
     }
 
-    const order = sortOrder ? Number(sortOrder) : 0;
-    const limit = creditLimit ? creditLimit : null;
-    const cmt = comments ? comments : null;
+    const order = sortOrder ? Number(sortOrder) : 0
+    const limit = creditLimit ? creditLimit : null
+    const cmt = comments ? comments : null
 
     if (isEdit) {
       update.mutate(
@@ -75,7 +78,7 @@ export function AccountForm({
           },
         },
         { onSuccess: onDone, onError },
-      );
+      )
     } else {
       create.mutate(
         {
@@ -89,9 +92,9 @@ export function AccountForm({
           comments: cmt,
         },
         { onSuccess: onDone, onError },
-      );
+      )
     }
-  };
+  }
 
   return (
     <div className="form">
@@ -113,12 +116,6 @@ export function AccountForm({
           ))}
         </select>
       </label>
-      {currencyOptions.isEmpty && (
-        <p className="field-hint">
-          Набор валют пуст. Отметьте свои на{" "}
-          <a href="/currencies">странице валют</a>.
-        </p>
-      )}
 
       <label className="field">
         <span>Валюта{isEdit ? " (нельзя изменить)" : ""}</span>
@@ -135,6 +132,12 @@ export function AccountForm({
           ))}
         </select>
       </label>
+      {currencyOptions.isEmpty && (
+        <p className="field-hint">
+          Набор валют пуст. Отметьте свои на{" "}
+          <a href="/currencies">странице валют</a>.
+        </p>
+      )}
 
       <label className="field">
         <span>Начальный баланс</span>
@@ -148,8 +151,8 @@ export function AccountForm({
         />
         {account?.has_transactions && (
           <span className="hint">
-            После первой операции начальный баланс нельзя изменить. Измените
-            остаток отдельной операцией дохода или расхода.
+            После первой операции начальный баланс нельзя изменить.
+            Измените остаток отдельной операцией дохода или расхода.
           </span>
         )}
       </label>
@@ -177,7 +180,10 @@ export function AccountForm({
 
       <label className="field">
         <span>Комментарий</span>
-        <input value={comments} onChange={(e) => setComments(e.target.value)} />
+        <input
+          value={comments}
+          onChange={(e) => setComments(e.target.value)}
+        />
       </label>
 
       <details className="advanced">
@@ -202,5 +208,5 @@ export function AccountForm({
         {pending ? "Сохраняю…" : isEdit ? "Сохранить" : "Создать счёт"}
       </button>
     </div>
-  );
+  )
 }
