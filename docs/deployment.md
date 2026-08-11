@@ -149,3 +149,28 @@ echo | openssl s_client -connect anfinances.ru:443 -servername anfinances.ru 2>/
 ```
 
 A `notBefore` older than 90 days means renewal has been failing.
+
+## 9. Backups
+
+A systemd timer runs `scripts/backup.sh` nightly. It dumps the database,
+**restores the dump into a scratch database and compares transaction
+counts against the live one**, encrypts the result with AES-256, and
+sends it to the owner's Telegram chat. A dump that does not restore is
+never sent — instead an alert goes to the same chat.
+
+The passphrase comes from the `BACKUP_PASSPHRASE` secret. Store it in a
+password manager: without it the archives cannot be read, and they are
+the only offsite copy.
+
+Restore:
+
+```bash
+gpg --output anfinances.dump --decrypt anfinances_2026-08-11_0230.dump.gpg
+docker exec -i anfinances-postgres pg_restore -U anfinances -d anfinances --clean --no-owner < anfinances.dump
+```
+
+Run one on demand, or check when the last one ran:
+
+```bash
+sudo systemctl start anfinances-backup.service && systemctl list-timers anfinances-backup.timer
+```

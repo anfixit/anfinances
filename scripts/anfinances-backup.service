@@ -1,0 +1,8 @@
+[Unit]
+Description=Бэкап anfinances в телеграм
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/anfinances/scripts/backup.sh

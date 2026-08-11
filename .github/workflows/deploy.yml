@@ -594,12 +594,13 @@ jobs:
           BOT_DEFAULT_ACCOUNTS: ${{ secrets.BOT_DEFAULT_ACCOUNTS }}
           BOT_QUIET_HOURS: ${{ secrets.BOT_QUIET_HOURS }}
           BOT_BUDGET_MEETING_DAY: ${{ secrets.BOT_BUDGET_MEETING_DAY }}
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
         with:
           host: ${{ secrets.SSH_HOST }}
           username: admin
           key: ${{ secrets.SSH_KEY }}
           port: 2810
-          envs: GHCR_TOKEN,GHCR_USER,OWNER,SECRET_KEY,POSTGRES_PASSWORD,SINGLE_USER_EMAIL,SINGLE_USER_PASSWORD,TELEGRAM_BOT_TOKEN_FINANCE,TELEGRAM_ALLOWED_USER_IDS,ANTHROPIC_API_KEY,OPENAI_API_KEY,BOT_DEFAULT_ACCOUNTS,BOT_QUIET_HOURS,BOT_BUDGET_MEETING_DAY
+          envs: GHCR_TOKEN,GHCR_USER,OWNER,SECRET_KEY,POSTGRES_PASSWORD,SINGLE_USER_EMAIL,SINGLE_USER_PASSWORD,TELEGRAM_BOT_TOKEN_FINANCE,TELEGRAM_ALLOWED_USER_IDS,ANTHROPIC_API_KEY,OPENAI_API_KEY,BOT_DEFAULT_ACCOUNTS,BOT_QUIET_HOURS,BOT_BUDGET_MEETING_DAY,BACKUP_PASSPHRASE
           script: |
             set -euo pipefail
 
@@ -636,6 +637,23 @@ jobs:
             BOT_QUIET_HOURS=${BOT_QUIET_HOURS:-23-9}
             BOT_BUDGET_MEETING_DAY=${BOT_BUDGET_MEETING_DAY:-15}
             EOF
+
+            # Бэкап живёт на хосте, а не в контейнере: ему нужен
+            # docker, чтобы снять дамп из postgres.
+            cat > backup.env <<EOF
+            BACKUP_PASSPHRASE=$BACKUP_PASSPHRASE
+            TELEGRAM_BOT_TOKEN=$TELEGRAM_BOT_TOKEN_FINANCE
+            TELEGRAM_CHAT_ID=$TELEGRAM_ALLOWED_USER_IDS
+            POSTGRES_USER=anfinances
+            POSTGRES_DB=anfinances
+            EOF
+            chmod 600 backup.env
+
+            sudo cp scripts/anfinances-backup.service \
+                    scripts/anfinances-backup.timer \
+                    /etc/systemd/system/
+            sudo systemctl daemon-reload
+            sudo systemctl enable --now anfinances-backup.timer
 
             echo "$GHCR_TOKEN" |
               docker login ghcr.io \

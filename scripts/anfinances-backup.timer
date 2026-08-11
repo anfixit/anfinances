@@ -1,0 +1,13 @@
+[Unit]
+Description=Ежедневный бэкап anfinances
+
+[Timer]
+# Ночью по московскому времени, когда сайтом точно не пользуются.
+OnCalendar=*-*-* 02:30:00
+# Сервер мог быть выключен в назначенный час — догоняем при старте.
+Persistent=true
+# Разброс, чтобы дамп не совпадал с другими ночными задачами.
+RandomizedDelaySec=15m
+
+[Install]
+WantedBy=timers.target
