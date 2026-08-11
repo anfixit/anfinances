@@ -215,14 +215,25 @@ class SummaryService:
         # транспорт — это и есть дневные траты, а не резерв. Копилка
         # (rollover) — наоборот: второе правило ВНБ в том и состоит,
         # что отложенное на страховку сегодня уже не твоё.
+        # Конверт родителя вбирает подкатегории: аренда может быть
+        # записана в план-минимум как «Дом → Аренда», а конверт
+        # заведён на «Дом». Это те же деньги, и резерв по ним один.
+        parents = await self._repo.category_parents(user_id)
         planned_left = Decimal(0)
         for budget in await self._repo.budgets_for_month(user_id, month_start):
+            scope = _scope_of(budget.category_id, parents)
             # По одной категории могут стоять и план, и план-минимум.
             # Резервируем большее из двух, а не сумму.
-            already = committed.get(budget.category_id, Decimal(0))
+            already = sum(
+                (committed.get(cat, Decimal(0)) for cat in scope),
+                Decimal(0),
+            )
             left = (
                 budget.planned
-                - spent.get(budget.category_id, Decimal(0))
+                - sum(
+                    (spent.get(cat, Decimal(0)) for cat in scope),
+                    Decimal(0),
+                )
                 - already
             )
             if left <= 0:
@@ -390,3 +401,20 @@ def _savings_name(budget: object) -> str:
     """
     notes = getattr(budget, "notes", None)
     return str(notes) if notes else "Копилка"
+
+
+def _scope_of(
+    category_id: uuid.UUID, parents: dict[uuid.UUID, uuid.UUID]
+) -> set[uuid.UUID]:
+    """Категория вместе со своими подкатегориями.
+
+    Бюджет родителя покрывает траты и обязательства его детей — так
+    же, как это уже считает домен budgets. Дети берутся обратным
+    проходом по картe «ребёнок → родитель»: дерево здесь мелкое,
+    два уровня.
+    """
+    scope = {category_id}
+    scope.update(
+        child for child, parent in parents.items() if parent == category_id
+    )
+    return scope

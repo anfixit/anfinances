@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.enums import TransactionKind
 from app.domains.accounts.models import Account
 from app.domains.budgets.models import Budget
+from app.domains.categories.models import Category
 from app.domains.credits.expense_projection import (
     credit_expense_total_rub,
     credit_expenses_by_category_rub,
@@ -38,6 +39,10 @@ class SummaryRepository(Protocol):
     async def budgets_for_month(
         self, user_id: uuid.UUID, month: date
     ) -> list[Budget]: ...
+
+    async def category_parents(
+        self, user_id: uuid.UUID
+    ) -> dict[uuid.UUID, uuid.UUID]: ...
 
     async def cashflow(
         self,
@@ -118,6 +123,18 @@ class SqlSummaryRepository:
             )
         )
         return list(result.scalars().all())
+
+    async def category_parents(
+        self, user_id: uuid.UUID
+    ) -> dict[uuid.UUID, uuid.UUID]:
+        """Карта «подкатегория → родитель» для схлопывания резервов."""
+        result = await self._session.execute(
+            select(Category.id, Category.parent_id).where(
+                Category.user_id == user_id,
+                Category.parent_id.is_not(None),
+            )
+        )
+        return {row[0]: row[1] for row in result.all()}
 
     async def cashflow(
         self,

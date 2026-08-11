@@ -64,12 +64,19 @@ class _Repo:
         recurring: list[_Recurring],
         spent: dict[uuid.UUID, Decimal] | None = None,
         budgets: list[_Budget] | None = None,
+        parents: dict[uuid.UUID, uuid.UUID] | None = None,
     ) -> None:
         self._accounts = accounts
         self._credits = credits
         self._recurring = recurring
         self._spent = spent or {}
         self._budgets = budgets or []
+        self._parents = parents or {}
+
+    async def category_parents(
+        self, user_id: uuid.UUID
+    ) -> dict[uuid.UUID, uuid.UUID]:
+        return dict(self._parents)
 
     async def budgets_for_month(
         self, user_id: uuid.UUID, month: date
@@ -113,11 +120,19 @@ def _service(
     recurring: list[_Recurring] | None = None,
     spent: dict[uuid.UUID, Decimal] | None = None,
     budgets: list[_Budget] | None = None,
+    parents: dict[uuid.UUID, uuid.UUID] | None = None,
 ) -> SummaryService:
     return SummaryService(
         cast(
             Any,
-            _Repo(accounts, credits or [], recurring or [], spent, budgets),
+            _Repo(
+                accounts,
+                credits or [],
+                recurring or [],
+                spent,
+                budgets,
+                parents,
+            ),
         ),
         cast(Any, _Currencies()),
     )
@@ -426,3 +441,45 @@ async def test_savings_do_not_double_count_with_plan_minimum() -> None:
         uuid.uuid4(), "Europe/Moscow", now=_NOW
     )
     assert result.obligations_rub == Decimal("8000")
+
+
+async def test_parent_budget_absorbs_child_obligation() -> None:
+    """План-минимум на подкатегории и бюджет на родителе — один резерв.
+
+    Аренда записана в план-минимум как «Дом → Аренда», а конверт
+    заведён на «Дом». Это те же деньги: без схлопывания по дереву
+    дневной лимит зарезервировал бы их дважды.
+    """
+    parent = uuid.uuid4()
+    child = uuid.uuid4()
+    rent = _Recurring("Аренда", Decimal("19500"))
+    rent.category_id = child
+
+    service = _service(
+        [_Account("Альфа", "RUB", Decimal("60000"))],
+        recurring=[rent],
+        budgets=[_Budget(parent, Decimal("20000"), rollover=True)],
+        parents={child: parent},
+    )
+    result = await service.daily_allowance(
+        uuid.uuid4(), "Europe/Moscow", now=_NOW
+    )
+    # 19 500 обязательства + 500 сверх конверта, а не 39 500.
+    assert result.obligations_rub == Decimal("20000")
+    assert result.safe_to_spend_rub == Decimal("40000")
+
+
+async def test_unrelated_categories_are_not_collapsed() -> None:
+    """Схлопывать можно только родителя с его же детьми."""
+    other = uuid.uuid4()
+    item = _Recurring("Интернет", Decimal("650"))
+    service = _service(
+        [_Account("Альфа", "RUB", Decimal("60000"))],
+        recurring=[item],
+        budgets=[_Budget(other, Decimal("5000"), rollover=True)],
+        parents={},
+    )
+    result = await service.daily_allowance(
+        uuid.uuid4(), "Europe/Moscow", now=_NOW
+    )
+    assert result.obligations_rub == Decimal("5650")
