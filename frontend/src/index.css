@@ -882,3 +882,52 @@ select:focus {
     white-space: nowrap;
   }
 }
+
+/* Страница входа — единственный экран, который видно без сессии.
+   Форма, прижатая к углу пустого листа, выглядит недоделанной. */
+.login-page {
+  display: flex;
+  min-height: 100dvh;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.login-card {
+  width: 100%;
+  max-width: 400px;
+  padding: 32px;
+  border-radius: var(--shape-l);
+  background: var(--surface-container-lowest);
+  box-shadow: var(--elevation-2, 0 8px 24px rgba(0, 0, 0, 0.08));
+}
+
+.login-card h1 {
+  margin: 4px 0 8px;
+}
+
+.login-brand {
+  margin: 0;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: lowercase;
+  color: var(--primary);
+}
+
+.login-lead {
+  margin: 0 0 24px;
+  font-size: 0.9rem;
+  opacity: 0.75;
+}
+
+.login-card .form {
+  max-width: none;
+}
+
+@media (max-width: 640px) {
+  .login-card {
+    padding: 24px 20px;
+    box-shadow: none;
+    background: transparent;
+  }
+}
