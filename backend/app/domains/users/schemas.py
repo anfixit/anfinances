@@ -28,7 +28,6 @@ class UserUpdate(BaseModel):
 
 class UserCurrencyItem(BaseModel):
     currency_code: str = Field(min_length=3, max_length=3)
-    is_default: bool = False
     sort_order: int = 0
 
 
@@ -41,5 +40,4 @@ class UserCurrencyRead(BaseModel):
 
     id: uuid.UUID
     currency_code: str
-    is_default: bool
     sort_order: int

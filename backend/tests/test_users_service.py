@@ -122,33 +122,18 @@ async def test_set_currencies_replaces() -> None:
     svc, repo = _service()
     data = UserCurrenciesUpdate(
         items=[
-            UserCurrencyItem(
-                currency_code="rub", is_default=True, sort_order=0
-            ),
+            UserCurrencyItem(currency_code="rub", sort_order=0),
             UserCurrencyItem(currency_code="USD", sort_order=1),
         ]
     )
     rows = await svc.set_currencies(USER, data)
     assert [r.currency_code for r in rows] == ["RUB", "USD"]
-    assert rows[0].is_default is True
     assert len(repo.user_currencies) == 2
 
 
 async def test_set_currencies_unknown_rejected() -> None:
     svc, _ = _service()
     data = UserCurrenciesUpdate(items=[UserCurrencyItem(currency_code="GBP")])
-    with pytest.raises(ValidationFailedError):
-        await svc.set_currencies(USER, data)
-
-
-async def test_set_currencies_two_defaults_rejected() -> None:
-    svc, _ = _service()
-    data = UserCurrenciesUpdate(
-        items=[
-            UserCurrencyItem(currency_code="RUB", is_default=True),
-            UserCurrencyItem(currency_code="USD", is_default=True),
-        ]
-    )
     with pytest.raises(ValidationFailedError):
         await svc.set_currencies(USER, data)
 
@@ -164,9 +149,7 @@ async def test_set_currencies_empty_clears() -> None:
 
 async def test_list_currencies() -> None:
     svc, repo = _service()
-    uc = UserCurrency(
-        user_id=USER, currency_code="RUB", is_default=True, sort_order=0
-    )
+    uc = UserCurrency(user_id=USER, currency_code="RUB", sort_order=0)
     uc.id = uuid.uuid4()
     repo.user_currencies.append(uc)
     items = await svc.list_currencies(USER)

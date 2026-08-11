@@ -1,9 +1,9 @@
 """Полная проверка набора валют пользователя (AF-017).
 
-Набор задаётся целиком, одним запросом. Раньше проверялось только
-«не больше одного умолчания», и в базу проходили наборы без
-умолчания вовсе, с повторяющимися кодами и с одинаковым порядком
-сортировки — то есть с неопределённым порядком вывода.
+Набор задаётся целиком, одним запросом. Раньше в базу проходили
+наборы с повторяющимися кодами и с одинаковым порядком сортировки —
+то есть с неопределённым порядком вывода. Основная валюта здесь не
+проверяется: она живёт в профиле, а не в этом наборе.
 """
 
 import uuid
@@ -40,62 +40,37 @@ def _service(known: set[str] | None = None) -> UserService:
     return UserService(cast(Any, _Repo(known or {"RUB", "USD", "UZS"})))
 
 
-def _items(*rows: tuple[str, bool, int]) -> UserCurrenciesUpdate:
+def _items(*rows: tuple[str, int]) -> UserCurrenciesUpdate:
     return UserCurrenciesUpdate(
         items=[
-            UserCurrencyItem(
-                currency_code=code, is_default=default, sort_order=order
-            )
-            for code, default, order in rows
+            UserCurrencyItem(currency_code=code, sort_order=order)
+            for code, order in rows
         ]
     )
 
 
 async def test_valid_set_passes() -> None:
     service = _service()
-    await service.set_currencies(
-        USER, _items(("RUB", True, 0), ("USD", False, 1))
-    )
-
-
-async def test_two_defaults_rejected() -> None:
-    service = _service()
-    with pytest.raises(ValidationFailedError):
-        await service.set_currencies(
-            USER, _items(("RUB", True, 0), ("USD", True, 1))
-        )
-
-
-async def test_no_default_rejected() -> None:
-    """Без основной валюты не в чем показывать итоги."""
-    service = _service()
-    with pytest.raises(ValidationFailedError):
-        await service.set_currencies(
-            USER, _items(("RUB", False, 0), ("USD", False, 1))
-        )
+    await service.set_currencies(USER, _items(("RUB", 0), ("USD", 1)))
 
 
 async def test_duplicate_codes_rejected() -> None:
     service = _service()
     with pytest.raises(ValidationFailedError):
-        await service.set_currencies(
-            USER, _items(("RUB", True, 0), ("RUB", False, 1))
-        )
+        await service.set_currencies(USER, _items(("RUB", 0), ("RUB", 1)))
 
 
 async def test_duplicate_sort_order_rejected() -> None:
     """Одинаковый порядок — это неопределённый порядок вывода."""
     service = _service()
     with pytest.raises(ValidationFailedError):
-        await service.set_currencies(
-            USER, _items(("RUB", True, 0), ("USD", False, 0))
-        )
+        await service.set_currencies(USER, _items(("RUB", 0), ("USD", 0)))
 
 
 async def test_unknown_currency_rejected() -> None:
     service = _service()
     with pytest.raises(ValidationFailedError):
-        await service.set_currencies(USER, _items(("XXX", True, 0)))
+        await service.set_currencies(USER, _items(("XXX", 0)))
 
 
 async def test_empty_set_is_allowed() -> None:

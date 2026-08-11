@@ -45,9 +45,6 @@ class UserCurrency(UUIDMixin, Base):
     currency_code: Mapped[str] = mapped_column(
         String(3), ForeignKey("currencies.code"), nullable=False
     )
-    is_default: Mapped[bool] = mapped_column(
-        default=False, server_default="false", nullable=False
-    )
     sort_order: Mapped[int] = mapped_column(
         Integer, default=0, server_default="0", nullable=False
     )

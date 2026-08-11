@@ -44,7 +44,6 @@ class ExportUserCurrency(BaseModel):
 
     id: uuid.UUID
     currency_code: str
-    is_default: bool
     sort_order: int
 
 

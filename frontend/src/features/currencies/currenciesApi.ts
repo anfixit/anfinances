@@ -9,7 +9,6 @@ import type { ApiResponse } from "@/types/api"
 
 export interface UserCurrencyItem {
   currency_code: string
-  is_default: boolean
   sort_order: number
 }
 

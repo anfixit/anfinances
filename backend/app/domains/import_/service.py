@@ -159,7 +159,6 @@ class ImportService:
                     id=uuid.uuid4(),
                     user_id=user_id,
                     currency_code=currency.currency_code,
-                    is_default=currency.is_default,
                     sort_order=currency.sort_order,
                 )
             )

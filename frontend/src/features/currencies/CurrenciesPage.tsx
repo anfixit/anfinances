@@ -1,5 +1,7 @@
 import { useState } from "react"
 
+import { useAuth } from "@/auth/useAuth"
+
 import type { Currency, UserCurrency } from "@/features/currencies/types"
 import {
   useCurrencies,
@@ -8,12 +10,12 @@ import {
   useRefreshRates,
   useSetMyCurrencies,
 } from "@/features/currencies/hooks"
+import { useUpdateProfile } from "@/features/users/hooks"
 import { AppError } from "@/lib/api/errors"
 import { formatDate } from "@/lib/datetime"
 
 interface Row {
   currency_code: string
-  is_default: boolean
 }
 
 export function CurrenciesPage() {
@@ -78,15 +80,15 @@ function CurrencySetEditor({
   registry: Currency[]
 }) {
   const save = useSetMyCurrencies()
+  const updateProfile = useUpdateProfile()
+  const { user } = useAuth()
+  const defaultCurrency = user?.default_currency ?? "RUB"
   // Инициализируем рабочий набор из пропа один раз (компонент
   // монтируется уже с загруженными данными — без эффекта).
   const [rows, setRows] = useState<Row[]>(() =>
     [...initial]
       .sort((a, b) => a.sort_order - b.sort_order)
-      .map((c) => ({
-        currency_code: c.currency_code,
-        is_default: c.is_default,
-      })),
+      .map((c) => ({ currency_code: c.currency_code })),
   )
 
   const used = new Set(rows.map((r) => r.currency_code))
@@ -95,13 +97,14 @@ function CurrencySetEditor({
     registry.find((c) => c.code === code)?.name ?? code
 
   const add = (code: string) =>
-    setRows((rs) => [...rs, { currency_code: code, is_default: false }])
+    setRows((rs) => [...rs, { currency_code: code }])
   const remove = (code: string) =>
     setRows((rs) => rs.filter((r) => r.currency_code !== code))
-  const setDefault = (code: string) =>
-    setRows((rs) =>
-      rs.map((r) => ({ ...r, is_default: r.currency_code === code })),
-    )
+  // Основная валюта — поле профиля, а не свойство набора: два
+  // источника одного факта расходятся молча.
+  const setDefault = (code: string) => {
+    updateProfile.mutate({ default_currency: code })
+  }
   const move = (index: number, dir: -1 | 1) =>
     setRows((rs) => {
       const j = index + dir
@@ -120,7 +123,6 @@ function CurrencySetEditor({
     save.mutate(
       rows.map((r, i) => ({
         currency_code: r.currency_code,
-        is_default: r.is_default,
         sort_order: i,
       })),
     )
@@ -138,7 +140,7 @@ function CurrencySetEditor({
               <input
                 type="radio"
                 name="default-currency"
-                checked={r.is_default}
+                checked={r.currency_code === defaultCurrency}
                 onChange={() => setDefault(r.currency_code)}
               />
               основная

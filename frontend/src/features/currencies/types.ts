@@ -18,7 +18,6 @@ export interface ExchangeRate {
 export interface UserCurrency {
   id: string
   currency_code: string
-  is_default: boolean
   sort_order: number
 }
 
