@@ -90,6 +90,12 @@
   gap: 12px;
 }
 
+/* display в правиле выше перебивает hidden из стилей браузера, и
+   свёрнутая панель оставалась на экране. */
+.filters-row[hidden] {
+  display: none;
+}
+
 .filters-row .field {
   flex: 1 1 140px;
 }
