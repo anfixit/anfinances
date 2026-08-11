@@ -90,8 +90,13 @@ export function BudgetForm({
           checked={rollover}
           onChange={(e) => setRollover(e.target.checked)}
         />
-        <span>Переносить остаток на следующий месяц</span>
+        <span>Копить: неистраченное переходит на следующий месяц</span>
       </label>
+      <p className="field-hint">
+        Для трат, которые прилетают раз в год: страховка, шины, отпуск,
+        подарки. Откладывайте месячную долю — и счёт за год не станет
+        неожиданностью, которая ломает бюджет.
+      </p>
 
       <label className="field">
         <span>Заметка</span>

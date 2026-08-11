@@ -45,9 +45,15 @@ class _Recurring:
 
 
 class _Budget:
-    def __init__(self, category_id: uuid.UUID, planned: Decimal) -> None:
+    def __init__(
+        self,
+        category_id: uuid.UUID,
+        planned: Decimal,
+        rollover: bool = False,
+    ) -> None:
         self.category_id = category_id
         self.planned = planned
+        self.rollover = rollover
 
 
 class _Repo:
@@ -362,3 +368,61 @@ async def test_overplanned_month_shows_negative_unallocated() -> None:
     )
     assert result.unallocated_rub == Decimal("-20000")
     assert result.is_overplanned is True
+
+
+async def test_savings_envelope_is_reserved_from_daily_limit() -> None:
+    """Второе правило: отложенное на страховку сегодня не тратится."""
+    tyres = uuid.uuid4()
+    service = _service(
+        [_Account("Альфа", "RUB", Decimal("60000"))],
+        budgets=[_Budget(tyres, Decimal("8000"), rollover=True)],
+    )
+    result = await service.daily_allowance(
+        uuid.uuid4(), "Europe/Moscow", now=_NOW
+    )
+    assert result.obligations_rub == Decimal("8000")
+    assert result.safe_to_spend_rub == Decimal("52000")
+    assert [o.kind for o in result.obligations] == ["savings"]
+
+
+async def test_ordinary_plan_still_does_not_touch_daily_limit() -> None:
+    """Обычный лимит на еду — это и есть дневные траты, не резерв."""
+    food = uuid.uuid4()
+    service = _service(
+        [_Account("Альфа", "RUB", Decimal("60000"))],
+        budgets=[_Budget(food, Decimal("20000"))],
+    )
+    result = await service.daily_allowance(
+        uuid.uuid4(), "Europe/Moscow", now=_NOW
+    )
+    assert result.obligations_rub == Decimal("0")
+    assert result.safe_to_spend_rub == Decimal("60000")
+
+
+async def test_spent_savings_are_not_reserved_again() -> None:
+    tyres = uuid.uuid4()
+    service = _service(
+        [_Account("Альфа", "RUB", Decimal("60000"))],
+        budgets=[_Budget(tyres, Decimal("8000"), rollover=True)],
+        spent={tyres: Decimal("-8000")},
+    )
+    result = await service.daily_allowance(
+        uuid.uuid4(), "Europe/Moscow", now=_NOW
+    )
+    assert result.obligations_rub == Decimal("0")
+
+
+async def test_savings_do_not_double_count_with_plan_minimum() -> None:
+    """Категория и в плане-минимуме, и с копилкой — резерв один."""
+    category = uuid.uuid4()
+    item = _Recurring("Страховка", Decimal("8000"))
+    item.category_id = category
+    service = _service(
+        [_Account("Альфа", "RUB", Decimal("60000"))],
+        recurring=[item],
+        budgets=[_Budget(category, Decimal("8000"), rollover=True)],
+    )
+    result = await service.daily_allowance(
+        uuid.uuid4(), "Europe/Moscow", now=_NOW
+    )
+    assert result.obligations_rub == Decimal("8000")

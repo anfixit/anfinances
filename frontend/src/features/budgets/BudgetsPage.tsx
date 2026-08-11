@@ -97,6 +97,12 @@ export function BudgetsPage() {
     .filter((d) => d !== null)
     .filter((d) => d.category.id !== moving?.categoryId)
 
+  const savings = budgets.filter((b) => b.rollover)
+  const savedTotal = savings.reduce(
+    (total, b) => total + Number(b.remaining),
+    0,
+  )
+
   const toggle = (id: string) => {
     setOpen((o) => ({ ...o, [id]: !o[id] }))
   }
@@ -185,7 +191,9 @@ export function BudgetsPage() {
             {rub(Number(b.remaining))}
           </span>
           {b.rollover && (
-            <span className="chip-static">перенос {rub(Number(b.rollover_amount))}</span>
+            <span className="chip-static" title="Копилка: накоплено с прошлых месяцев">
+              копилка {rub(Number(b.rollover_amount))}
+            </span>
           )}
           {over && (
             <button
@@ -266,6 +274,17 @@ export function BudgetsPage() {
             {allowance.data.is_overplanned
               ? "Урежьте лимиты или снимите часть планов."
               : "У каждого рубля должна быть работа — раздайте остаток по категориям."}
+          </span>
+        </div>
+      )}
+
+      {savings.length > 0 && (
+        <div className="card unallocated">
+          <span>В копилках:</span>
+          <span className="num">{rub(savedTotal)}</span>
+          <span className="unallocated-hint">
+            Отложено на редкие траты — страховку, шины, отпуск. Эти деньги
+            вычтены из дневного лимита: они уже заняты.
           </span>
         </div>
       )}

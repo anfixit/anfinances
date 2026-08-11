@@ -211,8 +211,10 @@ class SummaryService:
         )
         reserved = sum((o.amount_rub for o in obligations), Decimal(0))
 
-        # Планы по категориям сверх обязательств. Дневной лимит их не
-        # трогает: план — это намерение, а не счёт к оплате.
+        # Обычный лимит по категории дневной лимит не трогает: еда и
+        # транспорт — это и есть дневные траты, а не резерв. Копилка
+        # (rollover) — наоборот: второе правило ВНБ в том и состоит,
+        # что отложенное на страховку сегодня уже не твоё.
         planned_left = Decimal(0)
         for budget in await self._repo.budgets_for_month(user_id, month_start):
             # По одной категории могут стоять и план, и план-минимум.
@@ -223,7 +225,18 @@ class SummaryService:
                 - spent.get(budget.category_id, Decimal(0))
                 - already
             )
-            if left > 0:
+            if left <= 0:
+                continue
+            if budget.rollover:
+                obligations.append(
+                    Obligation(
+                        name=_savings_name(budget),
+                        amount_rub=left,
+                        kind="savings",
+                    )
+                )
+                reserved += left
+            else:
                 planned_left += left
 
         safe = liquid - reserved
@@ -367,3 +380,13 @@ def _month_to_date(month: str) -> date:
         return date(int(year_s), int(month_s), 1)
     except ValueError as exc:
         raise ValueError("Месяц должен быть в формате YYYY-MM.") from exc
+
+
+def _savings_name(budget: object) -> str:
+    """Подпись копилки в списке обязательств.
+
+    Имя категории сюда не дотянуть без лишнего запроса, а заметка к
+    лимиту у копилок обычно и есть её название («на зимнюю резину»).
+    """
+    notes = getattr(budget, "notes", None)
+    return str(notes) if notes else "Копилка"
