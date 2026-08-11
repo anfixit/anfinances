@@ -3,17 +3,17 @@
 # Проксирует ВЕСЬ трафик в frontend-контейнер, чей внутренний nginx уже
 # отдаёт SPA, проксирует /api/* в backend и держит rate-limit на /auth/*.
 #
-# Перед первым запуском подставь свой домен и email (2 правки):
-#   sed -i 's/anfinances.example.com/anfinances.ru/g' caddy/Caddyfile \
-#       docker-compose.deploy.yml
-#   sed -i 's/you@example.com/anfisa.kovganyuk@gmail.com/g' caddy/Caddyfile
+# Порт 443 занимал VPN, поэтому сайт временно жил на 8443 и брал
+# сертификат только HTTP-челленджем. VPN ушёл, 443 свободен: Caddy
+# вернулся на него и снова умеет TLS-ALPN, так что продление больше
+# не зависит от системного nginx на 80.
 #
-# Email нужен Let's Encrypt только для уведомлений об истечении.
+# Адрес для уведомлений Let's Encrypt задаётся переменной ACME_EMAIL
+# (GitHub Secret). Без неё Caddy работает так же, просто не пришлёт
+# письмо, если продление вдруг сломается.
 
 {
-	email anfisa.kovganyuk@gmail.com
 	http_port 80
-	https_port 8443
 }
 
 anfinances.ru {
@@ -23,12 +23,15 @@ anfinances.ru {
 	header Strict-Transport-Security "max-age=31536000; includeSubDomains"
 
 	reverse_proxy frontend:80
+}
 
-	# 443 занят VPN → TLS-ALPN недоступен; сертификат берём только
-	# через HTTP-челлендж на порту 80.
-	tls {
-		issuer acme {
-			disable_tlsalpn_challenge
-		}
-	}
+www.anfinances.ru {
+	redir https://anfinances.ru{uri} permanent
+}
+
+# Старый адрес сайта. Оставлен, чтобы уже открытые вкладки и
+# закладки не упёрлись в пустоту; уберётся вместе с публикацией
+# порта 8443 в compose.
+anfinances.ru:8443 {
+	redir https://anfinances.ru{uri} permanent
 }

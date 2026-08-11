@@ -709,7 +709,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          url="https://anfinances.ru:8443/api/v1/health/ready"
+          url="https://anfinances.ru/api/v1/health/ready"
 
           for attempt in $(seq 1 10); do
             echo "Health-check attempt ${attempt}/10"
@@ -747,10 +747,10 @@ jobs:
           duration: ${{ steps.duration.outputs.value }}
           details: |
             Проверен endpoint:
-            <a href="https://anfinances.ru:8443/api/v1/health/ready">health/ready</a>
+            <a href="https://anfinances.ru/api/v1/health/ready">health/ready</a>
 
             Production:
-            <a href="https://anfinances.ru:8443">anfinances.ru</a>
+            <a href="https://anfinances.ru">anfinances.ru</a>
 
   summary:
     needs:
@@ -848,7 +848,7 @@ jobs:
           $(icon "$RESULT_SMOKE") Production smoke: <code>${RESULT_SMOKE}</code>
 
           <b>Production:</b>
-          <a href=\"https://anfinances.ru:8443\">https://anfinances.ru:8443</a>
+          <a href=\"https://anfinances.ru\">https://anfinances.ru</a>
 
           <b>Логи:</b>
           <a href=\"${run_url}\">открыть GitHub Actions</a>"
