@@ -43,8 +43,11 @@ export async function updateAccount(
   )
 }
 
-export async function archiveAccount(id: string): Promise<void> {
-  await api.delete(`/accounts/${id}`)
+export async function archiveAccount(
+  id: string,
+  force = false,
+): Promise<void> {
+  await api.delete(`/accounts/${id}`, { params: force ? { force: true } : {} })
 }
 
 export async function restoreAccount(id: string): Promise<Account> {

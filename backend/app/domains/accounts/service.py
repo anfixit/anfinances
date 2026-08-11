@@ -146,9 +146,33 @@ class AccountService:
         return account
 
     async def archive_account(
-        self, account_id: uuid.UUID, user_id: uuid.UUID
+        self,
+        account_id: uuid.UUID,
+        user_id: uuid.UUID,
+        force: bool = False,
     ) -> None:
+        """Убрать счёт из активных.
+
+        Архивный счёт не участвует в капитале. Если на нём остались
+        деньги или долг, итог молча изменится ровно на эту сумму, а
+        заметно станет через неделю — когда уже не вспомнить, что
+        именно архивировали. Поэтому ненулевой остаток требует явного
+        подтверждения.
+        """
         account = await self.get_account(account_id, user_id)
+
+        if not force:
+            moved = await self._repo.transaction_total(account_id, user_id)
+            balance = account.initial_balance + moved
+            if balance != 0:
+                raise ValidationFailedError(
+                    f"На счёте «{account.name}» остаток {balance} "
+                    f"{account.currency_code}. Архивный счёт не входит "
+                    "в капитал, поэтому итог изменится на эту сумму. "
+                    "Переведите остаток или подтвердите архивацию.",
+                    details=[{"field": "balance", "message": str(balance)}],
+                )
+
         account.is_archived = True
 
     async def restore_account(

@@ -125,7 +125,7 @@ async def test_archive_then_reuse_name(
     service: AccountService,
 ) -> None:
     a = await service.create_account(USER, _create(name="A"))
-    await service.archive_account(a.id, USER)
+    await service.archive_account(a.id, USER, force=True)
     # имя освободилось — можно создать заново
     b = await service.create_account(USER, _create(name="A"))
     assert b.id != a.id
@@ -133,7 +133,7 @@ async def test_archive_then_reuse_name(
 
 async def test_restore_conflict(service: AccountService) -> None:
     a = await service.create_account(USER, _create(name="A"))
-    await service.archive_account(a.id, USER)
+    await service.archive_account(a.id, USER, force=True)
     await service.create_account(USER, _create(name="A"))
     with pytest.raises(AlreadyExistsError):
         await service.restore_account(a.id, USER)

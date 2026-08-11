@@ -118,8 +118,14 @@ async def delete_account(
     user: CurrentUser,
     service: ServiceDep,
     db: DbSession,
+    force: bool = False,
 ) -> ApiResponse[dict[str, str]]:
-    await service.archive_account(account_id, user.id)
+    """Архивировать счёт.
+
+    ``force=true`` — подтверждение архивации счёта с ненулевым
+    остатком: без него такой счёт молча исчез бы из капитала.
+    """
+    await service.archive_account(account_id, user.id, force=force)
     await db.commit()
     return ApiResponse(data={"status": "archived"})
 

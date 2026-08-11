@@ -30,9 +30,26 @@ export function AccountsPage() {
     setSheetOpen(false)
   }
 
+  // Архивный счёт выпадает из капитала. Пустой уходит молча, а с
+  // остатком — только после того, как показали, на сколько изменится
+  // итог: тихая правка капитала обнаруживается через неделю.
   const remove = (account: Account) => {
-    if (window.confirm(`Архивировать счёт «${account.name}»?`)) {
-      archive.mutate(account.id)
+    const balance = Number(account.current_balance)
+    if (balance === 0) {
+      if (window.confirm(`Архивировать счёт «${account.name}»?`)) {
+        archive.mutate({ id: account.id })
+      }
+      return
+    }
+    const shown = formatMoney(account.current_balance, account.currency_code)
+    const confirmed = window.confirm(
+      `На счёте «${account.name}» остаток ${shown}.\n\n` +
+        "Архивный счёт не входит в капитал — итог изменится на эту " +
+        "сумму. Обычно остаток сначала переводят на другой счёт.\n\n" +
+        "Всё равно архивировать?",
+    )
+    if (confirmed) {
+      archive.mutate({ id: account.id, force: true })
     }
   }
 

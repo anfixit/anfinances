@@ -37,7 +37,8 @@ export function useUpdateAccount() {
 export function useArchiveAccount() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (id: string) => archiveAccount(id),
+    mutationFn: (vars: { id: string; force?: boolean }) =>
+      archiveAccount(vars.id, vars.force ?? false),
     onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.accounts }),
   })
 }
