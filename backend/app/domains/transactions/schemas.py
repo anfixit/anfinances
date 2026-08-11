@@ -42,6 +42,10 @@ class TransactionCreate(BaseModel):
 
 
 class TransactionUpdate(BaseModel):
+    # Смена счёта разрешена: «записала не на тот счёт» — обычная
+    # ошибка, и удалять операцию ради неё незачем. Тип операции
+    # менять по-прежнему нельзя: это другая операция, а не правка.
+    account_id: uuid.UUID | None = None
     amount: Decimal | None = Field(default=None, gt=0)
     date: datetime | None = None
     category_id: uuid.UUID | None = None

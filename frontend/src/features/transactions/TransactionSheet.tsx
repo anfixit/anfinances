@@ -178,6 +178,7 @@ export function TransactionSheet({
         {
           id: transaction.id,
           input: {
+            account_id: accountId,
             amount: amount.trim(),
             date: new Date(date).toISOString(),
             category_id: categoryId || null,
@@ -298,7 +299,6 @@ export function TransactionSheet({
             <select
               value={accountId}
               onChange={(e) => setAccountId(e.target.value)}
-              disabled={editing}
             >
               <option value="">— выберите —</option>
               {accounts.map((a) => (

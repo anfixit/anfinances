@@ -19,6 +19,7 @@ export interface TransactionCreateInput {
 }
 
 export interface TransactionUpdateInput {
+  account_id?: string
   amount?: string
   date?: string
   category_id?: string | null

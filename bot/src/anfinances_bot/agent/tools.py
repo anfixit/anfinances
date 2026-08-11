@@ -285,17 +285,27 @@ class ToolBox:
         transaction_id: str,
         amount: str | None = None,
         category_path: str | None = None,
+        account_name: str | None = None,
         kind: str = "expense",
         when: str | None = None,
         comment: str | None = None,
     ) -> str:
         """Поправить уже записанную операцию.
 
-        Меняются только переданные поля. Счёт и тип операции сменить
-        нельзя: если ошибка в них, удали операцию и запиши заново.
+        Меняются только переданные поля. Счёт сменить можно — если
+        валюта нового счёта другая, рублёвая оценка пересчитается
+        сама. Тип операции сменить нельзя: расход вместо дохода —
+        это другая операция, её надо удалить и записать заново.
         kind нужен, чтобы искать категорию в нужном дереве.
         """
         body: dict[str, Any] = {}
+        if account_name:
+            accounts = await self._client.accounts()
+            account = _find_account(accounts, account_name)
+            if account is None:
+                names = ", ".join(a.name for a in accounts)
+                return f"Счёт не найден. Доступные: {names}"
+            body["account_id"] = account.id
         if amount:
             body["amount"] = str(amount)
         if when:

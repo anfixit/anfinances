@@ -592,3 +592,20 @@ async def test_move_budget_rejects_unknown_category() -> None:
     )
     assert "не найдена" in result.casefold()
     assert client.calls == []
+
+
+async def test_update_can_move_operation_to_another_account() -> None:
+    box, client = _toolbox()
+    await box.update_transaction(transaction_id="tx-1", account_name="Сбер")
+    method, path, kwargs = client.calls[-1]
+    assert (method, path) == ("PATCH", "/transactions/tx-1")
+    assert kwargs["json"] == {"account_id": "a-2"}
+
+
+async def test_update_rejects_unknown_account() -> None:
+    box, client = _toolbox()
+    result = await box.update_transaction(
+        transaction_id="tx-1", account_name="Нету такого"
+    )
+    assert "счёт не найден" in result.casefold()
+    assert not [c for c in client.calls if c[0] == "PATCH"]

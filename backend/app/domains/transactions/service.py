@@ -173,6 +173,25 @@ class TransactionService:
 
         fields = data.model_dump(exclude_unset=True)
 
+        # Счёт меняем первым: от него зависят валюта и курс, а
+        # значит и рублёвая оценка суммы ниже.
+        new_account_id = fields.pop("account_id", None)
+        if new_account_id is not None and new_account_id != tx.account_id:
+            account = await self._accounts.get(new_account_id, user_id)
+            if account is None:
+                raise NotFoundError("Счёт не найден.")
+            tx.account_id = account.id
+            tx.account_name_snapshot = account.name
+            if account.currency_code != tx.currency_code:
+                # Валюта сменилась — прежний курс к ней отношения
+                # не имеет, иначе сумовая трата весила бы как
+                # рублёвая.
+                tx.currency_code = account.currency_code
+                tx.exchange_rate = await self._currencies.rate_to_rub(
+                    account.currency_code
+                )
+                tx.amount_rub = tx.amount * tx.exchange_rate
+
         if "category_id" in fields:
             (
                 category_name_snapshot,
