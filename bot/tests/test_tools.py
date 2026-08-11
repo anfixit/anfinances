@@ -47,6 +47,7 @@ class _FakeClient:
                 id="c-5", name="Проценты", kind="expense", parent_id="c-4"
             ),
             CategoryRead(id="c-6", name="Софт", kind="expense"),
+            CategoryRead(id="c-7", name="Развлечения", kind="expense"),
         ]
 
     async def accounts(self) -> list[AccountRead]:
@@ -435,6 +436,7 @@ async def test_toolbox_exposes_all_tools() -> None:
         "update_transaction",
         "delete_transaction",
         "set_budget",
+        "move_budget",
         "create_category",
         "create_account",
         "create_credit",
@@ -562,3 +564,31 @@ async def test_statement_import_pages_through_existing_rows() -> None:
     result = await box.import_statement(account_name="Альфа", rows=[_row()])
     assert not [c for c in client.calls if c[0] == "POST"]
     assert "уже были записаны" in result.casefold()
+
+
+async def test_move_budget_sends_both_categories() -> None:
+    box, client = _toolbox()
+    result = await box.move_budget(
+        month="2026-08",
+        from_category_path="Развлечения",
+        to_category_path="Еда → Кофейни",
+        amount="1500",
+    )
+    method, path, kwargs = client.calls[0]
+    assert (method, path) == ("POST", "/budgets/move")
+    assert kwargs["json"]["from_category_id"] == "c-7"
+    assert kwargs["json"]["to_category_id"] == "c-2"
+    assert kwargs["json"]["amount"] == "1500"
+    assert "1500" in result
+
+
+async def test_move_budget_rejects_unknown_category() -> None:
+    box, client = _toolbox()
+    result = await box.move_budget(
+        month="2026-08",
+        from_category_path="Ерунда",
+        to_category_path="Еда → Кофейни",
+        amount="100",
+    )
+    assert "не найдена" in result.casefold()
+    assert client.calls == []

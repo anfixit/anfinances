@@ -83,6 +83,7 @@ class ToolBox:
                 self.update_transaction,
                 self.delete_transaction,
                 self.set_budget,
+                self.move_budget,
                 self.create_category,
                 self.create_account,
                 self.create_credit,
@@ -491,6 +492,44 @@ class ToolBox:
         body |= {"month": month, "category_id": category.id}
         await self._client.request("POST", "/budgets", json=body)
         return f"План задан: {category.path} — {planned} за {month}."
+
+    async def move_budget(
+        self,
+        month: str,
+        from_category_path: str,
+        to_category_path: str,
+        amount: str,
+    ) -> str:
+        """Перенести часть плана из одной категории в другую.
+
+        Третье правило ВНБ: перерасход закрывается не виной, а
+        пересборкой плана. Сумма планов не меняется — деньги меняют
+        назначение, операции и остатки счетов при этом не трогаются.
+        Брать стоит из категории, где план ещё не исчерпан.
+        """
+        categories = await self._client.categories()
+        paths = build_category_paths(categories, kind="expense")
+        source = find_category_by_path(paths, from_category_path)
+        if source is None:
+            return _unknown_category(from_category_path, paths)
+        target = find_category_by_path(paths, to_category_path)
+        if target is None:
+            return _unknown_category(to_category_path, paths)
+
+        await self._client.request(
+            "POST",
+            "/budgets/move",
+            json={
+                "month": month,
+                "from_category_id": source.id,
+                "to_category_id": target.id,
+                "amount": str(amount),
+            },
+        )
+        return (
+            f"Перенесла {amount}: {source.path} → {target.path}, "
+            f"месяц {month}."
+        )
 
     async def create_category(
         self,
