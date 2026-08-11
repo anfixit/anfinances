@@ -5,12 +5,14 @@ import {
   createBudget,
   deleteBudget,
   importBudgets,
+  moveBudget,
   listBudgets,
   updateBudget,
 } from "@/features/budgets/budgetsApi"
 import type {
   BudgetCreateInput,
   BudgetImportItem,
+  BudgetMoveInput,
   BudgetUpdateInput,
 } from "@/features/budgets/budgetsApi"
 import { queryKeys } from "@/lib/query/keys"
@@ -57,6 +59,14 @@ export function useImportBudgets() {
   return useMutation({
     mutationFn: (vars: { month: string; items: BudgetImportItem[] }) =>
       importBudgets(vars.month, vars.items),
+    onSuccess: () => invalidate(qc),
+  })
+}
+
+export function useMoveBudget() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (input: BudgetMoveInput) => moveBudget(input),
     onSuccess: () => invalidate(qc),
   })
 }

@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 
 __all__ = [
     "BudgetCreate",
+    "BudgetMove",
     "BudgetImport",
     "BudgetImportItem",
     "BudgetRead",
@@ -46,6 +47,15 @@ class BudgetImportItem(BaseModel):
 class BudgetImport(BaseModel):
     month: str = Field(pattern=_MONTH_PATTERN)
     items: list[BudgetImportItem]
+
+
+class BudgetMove(BaseModel):
+    """Перенос части плана между категориями внутри месяца."""
+
+    month: str = Field(pattern=_MONTH_PATTERN)
+    from_category_id: uuid.UUID
+    to_category_id: uuid.UUID
+    amount: Decimal = Field(gt=0)
 
 
 class BudgetRead(BaseModel):

@@ -54,3 +54,14 @@ export async function importBudgets(
     await api.post<ApiResponse<Budget[]>>("/budgets/import", { month, items }),
   )
 }
+
+export interface BudgetMoveInput {
+  month: string
+  from_category_id: string
+  to_category_id: string
+  amount: string
+}
+
+export async function moveBudget(input: BudgetMoveInput): Promise<void> {
+  await api.post<ApiResponse<{ status: string }>>("/budgets/move", input)
+}

@@ -138,3 +138,27 @@
   gap: 8px;
   margin-top: 12px;
 }
+
+/* Сколько ещё не распределено — главное число первого правила.
+   Стоит над списком, чтобы раздавать деньги, не уходя со страницы. */
+.unallocated {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px 12px;
+}
+
+.unallocated .num {
+  font-size: 1.4rem;
+  font-weight: 600;
+}
+
+.unallocated.over .num {
+  color: var(--expense);
+}
+
+.unallocated-hint {
+  flex-basis: 100%;
+  font-size: 0.85rem;
+  opacity: 0.75;
+}

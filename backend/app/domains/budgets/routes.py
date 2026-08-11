@@ -19,6 +19,7 @@ from app.domains.budgets.repository import (
 from app.domains.budgets.schemas import (
     BudgetCreate,
     BudgetImport,
+    BudgetMove,
     BudgetRead,
     BudgetUpdate,
 )
@@ -81,6 +82,25 @@ async def create_budget(
     )
     await db.commit()
     return ApiResponse(data=budget)
+
+
+@router.post("/move", response_model=ApiResponse[dict[str, str]])
+async def move_planned(
+    data: BudgetMove,
+    user: CurrentUser,
+    service: ServiceDep,
+    db: DbSession,
+) -> ApiResponse[dict[str, str]]:
+    """Третье правило ВНБ: закрыть перерасход из другой категории."""
+    await service.move_planned(
+        user.id,
+        month=data.month,
+        from_category_id=data.from_category_id,
+        to_category_id=data.to_category_id,
+        amount=data.amount,
+    )
+    await db.commit()
+    return ApiResponse(data={"status": "moved"})
 
 
 @router.post("/import", response_model=ApiResponse[list[BudgetRead]])

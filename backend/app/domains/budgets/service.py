@@ -60,6 +60,63 @@ class BudgetService:
             timezone_name,
         )
 
+    async def move_planned(
+        self,
+        user_id: uuid.UUID,
+        *,
+        month: str,
+        from_category_id: uuid.UUID,
+        to_category_id: uuid.UUID,
+        amount: Decimal,
+    ) -> None:
+        """Перенести часть плана из одной категории в другую.
+
+        Третье правило ВНБ: перерасход закрывается не виной, а
+        пересборкой плана. Сумма планов при этом не меняется — деньги
+        не появляются, а меняют назначение, поэтому перенос и не
+        трогает ни операции, ни остатки счетов.
+        """
+        if amount <= 0:
+            raise ValidationFailedError(
+                "Сумма переноса должна быть больше нуля."
+            )
+        if from_category_id == to_category_id:
+            raise ValidationFailedError(
+                "Категория-источник и получатель должны различаться."
+            )
+
+        month_date = _month_to_date(month)
+        await self._validate_category(user_id, from_category_id)
+        await self._validate_category(user_id, to_category_id)
+
+        source = await self._repo.get_by_month_category(
+            user_id, month_date, from_category_id
+        )
+        if source is None:
+            raise ValidationFailedError(
+                "У категории-источника нет плана на этот месяц."
+            )
+        if source.planned < amount:
+            raise ValidationFailedError(
+                f"В плане категории-источника только {source.planned}."
+            )
+
+        target = await self._repo.get_by_month_category(
+            user_id, month_date, to_category_id
+        )
+        source.planned -= amount
+        if target is None:
+            await self._repo.add(
+                Budget(
+                    user_id=user_id,
+                    month=month_date,
+                    category_id=to_category_id,
+                    planned=amount,
+                )
+            )
+        else:
+            target.planned += amount
+
     async def create_budget(
         self,
         user_id: uuid.UUID,

@@ -6,13 +6,14 @@ import type { Category } from "@/features/categories/types"
 import { useCategories } from "@/features/categories/hooks"
 import { listBudgets } from "@/features/budgets/budgetsApi"
 import { BudgetForm } from "@/features/budgets/BudgetForm"
+import { MoveSheet } from "@/features/budgets/MoveSheet"
 import {
   useBudgets,
   useDeleteBudget,
   useImportBudgets,
 } from "@/features/budgets/hooks"
 import type { Budget } from "@/features/budgets/types"
-import { useByCategory } from "@/features/summary/hooks"
+import { useByCategory, useDailyAllowance } from "@/features/summary/hooks"
 import { Sheet } from "@/components/Sheet"
 import { queryKeys } from "@/lib/query/keys"
 import { formatMoney, sumMoney } from "@/lib/money"
@@ -51,12 +52,18 @@ export function BudgetsPage() {
   const [month, setMonth] = useState<string>(() => currentMonth())
   const [sheet, setSheet] = useState<SheetState | null>(null)
   const [open, setOpen] = useState<Record<string, boolean>>({})
+  const [moving, setMoving] = useState<{
+    categoryId: string
+    name: string
+    shortfall: number
+  } | null>(null)
 
   const categoriesQ = useCategories()
   const budgetsQ = useBudgets(month)
   const spendingQ = useByCategory(month)
   const del = useDeleteBudget()
   const importMut = useImportBudgets()
+  const allowance = useDailyAllowance()
 
   const budgets = budgetsQ.data ?? []
   const byCat = new Map(budgets.map((b) => [b.category_id, b]))
@@ -77,6 +84,18 @@ export function BudgetsPage() {
     const b = byCat.get(cat.id)
     return b ? Number(b.spent) : (spendMap.get(cat.id) ?? 0)
   }
+
+  const donors = expense
+    .map((category) => {
+      const budget = byCat.get(category.id)
+      if (budget === undefined) {
+        return null
+      }
+      const left = Number(budget.remaining)
+      return left > 0 ? { category, budget, left } : null
+    })
+    .filter((d) => d !== null)
+    .filter((d) => d.category.id !== moving?.categoryId)
 
   const toggle = (id: string) => {
     setOpen((o) => ({ ...o, [id]: !o[id] }))
@@ -168,6 +187,21 @@ export function BudgetsPage() {
           {b.rollover && (
             <span className="chip-static">перенос {rub(Number(b.rollover_amount))}</span>
           )}
+          {over && (
+            <button
+              type="button"
+              className="link"
+              onClick={() =>
+                setMoving({
+                  categoryId: cat.id,
+                  name: cat.name,
+                  shortfall: Math.abs(Number(b.remaining)),
+                })
+              }
+            >
+              Покрыть
+            </button>
+          )}
           <span className="spacer" />
           <button
             type="button"
@@ -212,6 +246,30 @@ export function BudgetsPage() {
         </button>
       </div>
 
+      {month === currentMonth() && allowance.data && (
+        <div
+          className={
+            allowance.data.is_overplanned
+              ? "card unallocated over"
+              : "card unallocated"
+          }
+        >
+          <span>
+            {allowance.data.is_overplanned
+              ? "Распланировано больше, чем есть:"
+              : "Осталось распределить:"}
+          </span>
+          <span className="num">
+            {formatMoney(allowance.data.unallocated_rub, "RUB")}
+          </span>
+          <span className="unallocated-hint">
+            {allowance.data.is_overplanned
+              ? "Урежьте лимиты или снимите часть планов."
+              : "У каждого рубля должна быть работа — раздайте остаток по категориям."}
+          </span>
+        </div>
+      )}
+
       <p>
         <button
           type="button"
@@ -226,6 +284,17 @@ export function BudgetsPage() {
       {(categoriesQ.isPending || budgetsQ.isPending) && <p>Загрузка…</p>}
       {parents.length === 0 && categoriesQ.isSuccess && (
         <p>Нет расходных категорий. Создайте их в разделе «Категории».</p>
+      )}
+
+      {moving && (
+        <MoveSheet
+          month={month}
+          targetName={moving.name}
+          targetCategoryId={moving.categoryId}
+          shortfall={moving.shortfall}
+          donors={donors}
+          onClose={() => setMoving(null)}
+        />
       )}
 
       <ul className="budget-list">
