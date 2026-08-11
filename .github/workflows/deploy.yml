@@ -1,3 +1,8 @@
+# Сторонние actions приколочены к SHA, а не к тегу: тег
+# перемещаемый, и его владелец может подменить код в любой момент —
+# у этих шагов есть доступ к секретам деплоя. Номер версии оставлен
+# комментарием, чтобы было видно, что обновлять.
+
 name: Deploy
 
 on:
@@ -98,9 +103,9 @@ jobs:
         working-directory: backend
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
         with:
           enable-cache: true
 
@@ -159,9 +164,9 @@ jobs:
         working-directory: backend
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
         with:
           enable-cache: true
 
@@ -213,9 +218,9 @@ jobs:
         working-directory: bot
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
         with:
           enable-cache: true
 
@@ -262,6 +267,83 @@ jobs:
             <code>uv run mypy src</code>
             <code>uv run pytest -q</code>
 
+  security:
+    # Не в needs у deploy намеренно: новая CVE в чужой зависимости
+    # не повод останавливать выкладку своего исправления. Красная
+    # job и сообщение в телеграм заметны и так.
+    needs:
+      - notify-start
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
+
+      - name: Record start time
+        id: timer
+        shell: bash
+        run: echo "started=$(date +%s)" >> "$GITHUB_OUTPUT"
+
+      - name: Python-зависимости backend
+        working-directory: backend
+        # --python: pip-audit ставит себе отдельное окружение, и без
+        # явной версии берёт системную, где наши колёса не встают.
+        # --no-deps: список уже полностью зафиксирован uv, разрешать
+        # в нём нечего.
+        run: |
+          uv export --format requirements-txt --no-emit-project > req.txt
+          uvx --python 3.13 pip-audit --no-deps -r req.txt
+
+      - name: Python-зависимости бота
+        working-directory: bot
+        # --python: pip-audit ставит себе отдельное окружение, и без
+        # явной версии берёт системную, где наши колёса не встают.
+        # --no-deps: список уже полностью зафиксирован uv, разрешать
+        # в нём нечего.
+        run: |
+          uv export --format requirements-txt --no-emit-project > req.txt
+          uvx --python 3.13 pip-audit --no-deps -r req.txt
+
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: 11.8.0
+
+      - name: JS-зависимости frontend
+        working-directory: frontend
+        # --prod: проверяем то, что уезжает в браузер. У eslint и
+        # jsdom свои advisories, но они живут только на машине
+        # сборки, и красная job из-за них перестала бы что-то значить.
+        run: pnpm install --frozen-lockfile && pnpm audit --audit-level high --prod
+
+      - name: Calculate duration
+        if: always()
+        id: duration
+        shell: bash
+        run: |
+          ended=$(date +%s)
+          seconds=$((ended - ${{ steps.timer.outputs.started }}))
+          minutes=$((seconds / 60))
+          rest=$((seconds % 60))
+          echo "value=${minutes} мин ${rest} сек" >> "$GITHUB_OUTPUT"
+
+      - name: Notify Telegram
+        if: always()
+        uses: ./.github/actions/tg-notify
+        with:
+          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          chat: ${{ secrets.TELEGRAM_CHAT_ID }}
+          stage: Проверка зависимостей на уязвимости
+          status: ${{ job.status }}
+          duration: ${{ steps.duration.outputs.value }}
+          details: |
+            Проверено:
+            • backend и бот — pip-audit
+            • frontend — pnpm audit, только прод-зависимости
+
+            Красный статус не блокирует деплой.
+
   frontend:
     needs:
       - notify-start
@@ -273,14 +355,14 @@ jobs:
         working-directory: frontend
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
 
       - name: Install pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
         with:
           version: 11.8.0
           run_install: false
@@ -343,7 +425,7 @@ jobs:
       packages: write
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Record start time
         id: timer
@@ -357,16 +439,16 @@ jobs:
           owner="$(echo "${{ github.repository_owner }}" | tr 'A-Z' 'a-z')"
           echo "ref=${REGISTRY}/${owner}/anfinances-backend" >> "$GITHUB_OUTPUT"
 
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
-      - uses: docker/login-action@v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push backend image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: ./backend
           file: ./backend/docker/Dockerfile
@@ -418,7 +500,7 @@ jobs:
       packages: write
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Record start time
         id: timer
@@ -432,16 +514,16 @@ jobs:
           owner="$(echo "${{ github.repository_owner }}" | tr 'A-Z' 'a-z')"
           echo "ref=${REGISTRY}/${owner}/anfinances-frontend" >> "$GITHUB_OUTPUT"
 
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
-      - uses: docker/login-action@v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push frontend image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: ./frontend
           file: ./frontend/Dockerfile
@@ -493,7 +575,7 @@ jobs:
       packages: write
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Record start time
         id: timer
@@ -507,16 +589,16 @@ jobs:
           owner="$(echo "${{ github.repository_owner }}" | tr 'A-Z' 'a-z')"
           echo "ref=${REGISTRY}/${owner}/anfinances-bot" >> "$GITHUB_OUTPUT"
 
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
-      - uses: docker/login-action@v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push bot image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: ./bot
           file: ./bot/Dockerfile
@@ -570,7 +652,7 @@ jobs:
       packages: read
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Record start time
         id: timer
@@ -578,7 +660,7 @@ jobs:
         run: echo "started=$(date +%s)" >> "$GITHUB_OUTPUT"
 
       - name: Deploy over SSH
-        uses: appleboy/ssh-action@v1
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GHCR_USER: ${{ github.actor }}
@@ -715,7 +797,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Record start time
         id: timer
