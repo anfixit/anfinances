@@ -33,6 +33,11 @@ async def credit_expense_total_rub(
                 Decimal(0),
             )
         )
+        # select_from обязателен: в списке выборки одно выражение, и
+        # оно ссылается сразу на обе таблицы. Без явной левой стороны
+        # SQLAlchemy не может решить, от чего делать JOIN, и падает
+        # при выполнении — построение запроса при этом проходит.
+        .select_from(CreditPayment)
         .join(
             Transaction,
             Transaction.id == CreditPayment.transaction_id,
@@ -71,6 +76,7 @@ async def credit_expenses_by_category_rub(
                 "amount_rub"
             ),
         )
+        .select_from(CreditPayment)
         .join(
             Transaction,
             Transaction.id == CreditPayment.transaction_id,
@@ -87,6 +93,7 @@ async def credit_expenses_by_category_rub(
                 "amount_rub"
             ),
         )
+        .select_from(CreditPayment)
         .join(
             Transaction,
             Transaction.id == CreditPayment.transaction_id,

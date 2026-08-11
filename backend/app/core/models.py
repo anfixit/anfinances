@@ -17,7 +17,18 @@ from sqlalchemy.orm import (
 
 
 class Base(DeclarativeBase):
-    """Базовый класс для всех ORM-моделей."""
+    """Базовый класс для всех ORM-моделей.
+
+    ``eager_defaults`` заставляет SQLAlchemy забирать вычисленные
+    базой значения (``server_default``, ``onupdate``) тем же запросом,
+    через RETURNING. Без него после UPDATE атрибут ``updated_at``
+    помечен устаревшим, и первое обращение к нему тянет отдельный
+    SELECT. Обращается к нему pydantic при сборке ответа — синхронно
+    и вне greenlet'а, поэтому вместо ответа приходил
+    ``MissingGreenlet`` и 500, хотя правка уже сохранена.
+    """
+
+    __mapper_args__ = {"eager_defaults": True}
 
 
 class UUIDMixin:
