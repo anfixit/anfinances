@@ -10,6 +10,7 @@
 from decimal import Decimal
 
 from app.core.exceptions import NotFoundError
+from app.core.money import BASE_CURRENCY
 from app.domains.currencies.models import Currency, ExchangeRate
 from app.domains.currencies.providers.er_api import (
     RatesProvider,
@@ -18,8 +19,6 @@ from app.domains.currencies.repository import CurrencyRepository
 from app.domains.currencies.schemas import RefreshResult
 
 __all__ = ["CurrencyService"]
-
-_BASE = "RUB"
 
 
 class CurrencyService:
@@ -45,33 +44,35 @@ class CurrencyService:
             return amount
 
         rub = amount * await self.rate_to_rub(from_code)
-        if to_code == _BASE:
+        if to_code == BASE_CURRENCY:
             return rub
         return rub / await self.rate_to_rub(to_code)
 
     async def rate_to_rub(self, code: str) -> Decimal:
         """Курс «сколько RUB за 1 единицу валюты». Для RUB = 1."""
-        if code == _BASE:
+        if code == BASE_CURRENCY:
             return Decimal(1)
-        rate = await self._repo.get_rate(code, _BASE)
+        rate = await self._repo.get_rate(code, BASE_CURRENCY)
         if rate is None:
             raise NotFoundError(f"Нет курса для валюты {code}.")
         return rate.rate
 
     async def refresh_rates(self) -> RefreshResult:
         """Обновить курсы всех валют справочника относительно RUB."""
-        raw = await self._provider.fetch_rates(_BASE)
+        raw = await self._provider.fetch_rates(BASE_CURRENCY)
         currencies = await self._repo.list_currencies()
 
         updated = 0
         for currency in currencies:
             code = currency.code
-            if code == _BASE:
+            if code == BASE_CURRENCY:
                 continue
             per_rub = raw.get(code)
             if per_rub is None or per_rub == 0:
                 continue
-            await self._repo.upsert_rate(code, _BASE, Decimal(1) / per_rub)
+            await self._repo.upsert_rate(
+                code, BASE_CURRENCY, Decimal(1) / per_rub
+            )
             updated += 1
 
-        return RefreshResult(updated=updated, base=_BASE)
+        return RefreshResult(updated=updated, base=BASE_CURRENCY)

@@ -1,96 +1,94 @@
-import { useMemo, useState } from "react"
+import { useMemo, useState } from "react";
 
-import { Sheet } from "@/components/Sheet"
-import { useAccounts } from "@/features/accounts/hooks"
-import { CreditForm } from "@/features/credits/CreditForm"
-import { CreditPaymentForm } from "@/features/credits/CreditPaymentForm"
+import { Sheet } from "@/components/Sheet";
+import { useAccounts } from "@/features/accounts/hooks";
+import { CreditForm } from "@/features/credits/CreditForm";
+import { CreditPaymentForm } from "@/features/credits/CreditPaymentForm";
 import {
   useArchiveCredit,
   useCreditPayments,
   useCredits,
-} from "@/features/credits/hooks"
-import type { Credit } from "@/features/credits/types"
-import { formatDate } from "@/lib/datetime"
-import { formatMoney } from "@/lib/money"
+} from "@/features/credits/hooks";
+import type { Credit } from "@/features/credits/types";
+import { formatDate } from "@/lib/datetime";
+import { formatMoney } from "@/lib/money";
 
 function percentPaid(credit: Credit): number {
-  const initial = Number(credit.principal_initial)
+  const initial = Number(credit.principal_initial);
   if (initial <= 0) {
-    return 0
+    return 0;
   }
-  const paid = initial - Number(credit.principal_balance)
-  return Math.min(100, Math.max(0, (paid / initial) * 100))
+  const paid = initial - Number(credit.principal_balance);
+  return Math.min(100, Math.max(0, (paid / initial) * 100));
 }
 
 function formatPercent(value: number): string {
   return new Intl.NumberFormat("ru-RU", {
     maximumFractionDigits: 1,
-  }).format(value)
+  }).format(value);
 }
 
 function creditMeta(credit: Credit): string {
-  const parts = [credit.currency_code]
+  const parts = [credit.currency_code];
   if (credit.lender) {
-    parts.push(credit.lender)
+    parts.push(credit.lender);
   }
   if (credit.annual_rate !== null) {
-    parts.push(`${formatPercent(Number(credit.annual_rate))}% годовых`)
+    parts.push(`${formatPercent(Number(credit.annual_rate))}% годовых`);
   }
   if (credit.term_months !== null) {
-    parts.push(`${credit.term_months} мес.`)
+    parts.push(`${credit.term_months} мес.`);
   }
   if (credit.payment_day !== null) {
-    parts.push(`платёж ${credit.payment_day} числа`)
+    parts.push(`платёж ${credit.payment_day} числа`);
   }
-  return parts.join(" · ")
+  return parts.join(" · ");
 }
 
 export function CreditsPage() {
-  const credits = useCredits()
-  const accounts = useAccounts()
-  const archive = useArchiveCredit()
-  const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [creditSheetOpen, setCreditSheetOpen] = useState(false)
-  const [paymentSheetOpen, setPaymentSheetOpen] = useState(false)
-  const [editingCredit, setEditingCredit] = useState<Credit | null>(null)
+  const credits = useCredits();
+  const accounts = useAccounts();
+  const archive = useArchiveCredit();
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [creditSheetOpen, setCreditSheetOpen] = useState(false);
+  const [paymentSheetOpen, setPaymentSheetOpen] = useState(false);
+  const [editingCredit, setEditingCredit] = useState<Credit | null>(null);
 
-  const list = useMemo(() => credits.data ?? [], [credits.data])
-  const firstCredit = list[0] ?? null
+  const list = useMemo(() => credits.data ?? [], [credits.data]);
+  const firstCredit = list[0] ?? null;
   const selectedCredit =
-    list.find((credit) => credit.id === selectedId) ?? firstCredit
-  const payments = useCreditPayments(selectedCredit?.id ?? null)
+    list.find((credit) => credit.id === selectedId) ?? firstCredit;
+  const payments = useCreditPayments(selectedCredit?.id ?? null);
   const accountById = useMemo(
     () =>
-      new Map(
-        (accounts.data ?? []).map((account) => [account.id, account]),
-      ),
+      new Map((accounts.data ?? []).map((account) => [account.id, account])),
     [accounts.data],
-  )
+  );
 
   const openCreate = () => {
-    setEditingCredit(null)
-    setCreditSheetOpen(true)
-  }
+    setEditingCredit(null);
+    setCreditSheetOpen(true);
+  };
 
   const openEdit = (credit: Credit) => {
-    setEditingCredit(credit)
-    setCreditSheetOpen(true)
-  }
+    setEditingCredit(credit);
+    setCreditSheetOpen(true);
+  };
 
   const closeCreditSheet = () => {
-    setCreditSheetOpen(false)
-    setEditingCredit(null)
-  }
+    setCreditSheetOpen(false);
+    setEditingCredit(null);
+  };
 
   const closePaymentSheet = () => {
-    setPaymentSheetOpen(false)
-  }
+    setPaymentSheetOpen(false);
+  };
 
   const remove = (credit: Credit) => {
     if (window.confirm(`Архивировать кредит «${credit.name}»?`)) {
-      archive.mutate(credit.id)
+      archive.mutate(credit.id);
     }
-  }
+  };
 
   return (
     <>
@@ -111,8 +109,8 @@ export function CreditsPage() {
         <div className="credits-layout">
           <ul className="credit-list">
             {list.map((credit) => {
-              const active = selectedCredit?.id === credit.id
-              const paid = percentPaid(credit)
+              const active = selectedCredit?.id === credit.id;
+              const paid = percentPaid(credit);
               return (
                 <li key={credit.id}>
                   <button
@@ -122,9 +120,7 @@ export function CreditsPage() {
                     onClick={() => setSelectedId(credit.id)}
                   >
                     <span className="credit-card__head">
-                      <span className="credit-card__title">
-                        {credit.name}
-                      </span>
+                      <span className="credit-card__title">{credit.name}</span>
                       <span className="credit-card__balance">
                         {formatMoney(
                           credit.principal_balance,
@@ -146,7 +142,7 @@ export function CreditsPage() {
                     </span>
                   </button>
                 </li>
-              )
+              );
             })}
           </ul>
 
@@ -222,7 +218,7 @@ export function CreditsPage() {
 
               <ul className="credit-payments">
                 {(payments.data ?? []).map((payment) => {
-                  const account = accountById.get(payment.payment_account_id)
+                  const account = accountById.get(payment.payment_account_id);
                   return (
                     <li key={payment.id} className="credit-payment-row">
                       <div>
@@ -243,26 +239,29 @@ export function CreditsPage() {
                       </div>
                       <div className="credit-payment-parts">
                         <span>
-                          тело {formatMoney(
+                          тело{" "}
+                          {formatMoney(
                             payment.principal_amount,
                             payment.currency_code,
                           )}
                         </span>
                         <span>
-                          проценты {formatMoney(
+                          проценты{" "}
+                          {formatMoney(
                             payment.interest_amount,
                             payment.currency_code,
                           )}
                         </span>
                         <span>
-                          комиссия {formatMoney(
+                          комиссия{" "}
+                          {formatMoney(
                             payment.fee_amount,
                             payment.currency_code,
                           )}
                         </span>
                       </div>
                     </li>
-                  )
+                  );
                 })}
               </ul>
             </section>
@@ -296,5 +295,5 @@ export function CreditsPage() {
         </Sheet>
       )}
     </>
-  )
+  );
 }

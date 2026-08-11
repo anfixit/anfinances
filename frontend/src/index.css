@@ -931,3 +931,10 @@ select:focus {
     background: transparent;
   }
 }
+
+/* Пояснение под полем формы: почему это поле здесь и что выбрать. */
+.field-hint {
+  margin: -4px 0 12px;
+  font-size: 0.85rem;
+  opacity: 0.75;
+}

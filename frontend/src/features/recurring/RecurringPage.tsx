@@ -1,61 +1,58 @@
-import { useState } from "react"
+import { useState } from "react";
 
-import { useCategories } from "@/features/categories/hooks"
-import { RecurringForm } from "@/features/recurring/RecurringForm"
-import { buildRecurringPlanSummary } from "@/features/recurring/planSummary"
+import { useCategories } from "@/features/categories/hooks";
+import { RecurringForm } from "@/features/recurring/RecurringForm";
+import { buildRecurringPlanSummary } from "@/features/recurring/planSummary";
 import {
   useArchiveRecurring,
   useGenerateFromCategories,
   usePreviewGeneration,
   useRecurring,
-} from "@/features/recurring/hooks"
-import type { Recurring } from "@/features/recurring/types"
-import { Sheet } from "@/components/Sheet"
-import { formatMoney } from "@/lib/money"
+} from "@/features/recurring/hooks";
+import type { Recurring } from "@/features/recurring/types";
+import { Sheet } from "@/components/Sheet";
+import { formatMoney } from "@/lib/money";
 
 export function RecurringPage() {
-  const recurring = useRecurring()
-  const categoriesQ = useCategories()
-  const archive = useArchiveRecurring()
-  const preview = usePreviewGeneration()
-  const generate = useGenerateFromCategories()
-  const [sheetOpen, setSheetOpen] = useState(false)
-  const [editing, setEditing] = useState<Recurring | null>(null)
+  const recurring = useRecurring();
+  const categoriesQ = useCategories();
+  const archive = useArchiveRecurring();
+  const preview = usePreviewGeneration();
+  const generate = useGenerateFromCategories();
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [editing, setEditing] = useState<Recurring | null>(null);
 
-  const catById = new Map((categoriesQ.data ?? []).map((c) => [c.id, c]))
-  const items = recurring.data ?? []
-  const planSummary = buildRecurringPlanSummary(
-    items,
-    categoriesQ.data ?? [],
-  )
+  const catById = new Map((categoriesQ.data ?? []).map((c) => [c.id, c]));
+  const items = recurring.data ?? [];
+  const planSummary = buildRecurringPlanSummary(items, categoriesQ.data ?? []);
   const exceededCategories = planSummary.categories.filter(
     (category) => category.isExceeded,
-  )
+  );
 
   const openCreate = () => {
-    setEditing(null)
-    setSheetOpen(true)
-  }
+    setEditing(null);
+    setSheetOpen(true);
+  };
   const openEdit = (item: Recurring) => {
-    setEditing(item)
-    setSheetOpen(true)
-  }
+    setEditing(item);
+    setSheetOpen(true);
+  };
   const close = () => {
-    setSheetOpen(false)
-  }
+    setSheetOpen(false);
+  };
 
   const remove = (item: Recurring) => {
     if (window.confirm(`Убрать «${item.name}» из плана-минимума?`)) {
-      archive.mutate(item.id)
+      archive.mutate(item.id);
     }
-  }
+  };
 
   const onGenerate = () => {
     preview.mutate(undefined, {
       onSuccess: (proposals) => {
         if (proposals.length === 0) {
-          window.alert("Новых категорий для плана не найдено.")
-          return
+          window.alert("Новых категорий для плана не найдено.");
+          return;
         }
 
         const lines = proposals.map(
@@ -64,29 +61,25 @@ export function RecurringPage() {
               proposal.monthly_amount,
               proposal.currency_code,
             )}`,
-        )
+        );
         const confirmed = window.confirm(
-          [
-            "Будут добавлены записи:",
-            "",
-            ...lines,
-            "",
-            "Продолжить?",
-          ].join("\n"),
-        )
-        if (!confirmed) return
+          ["Будут добавлены записи:", "", ...lines, "", "Продолжить?"].join(
+            "\n",
+          ),
+        );
+        if (!confirmed) return;
 
         generate.mutate(
           proposals.map((proposal) => proposal.category_id),
           {
             onSuccess: (created) => {
-              window.alert(`Добавлено записей: ${String(created.length)}`)
+              window.alert(`Добавлено записей: ${String(created.length)}`);
             },
           },
-        )
+        );
       },
-    })
-  }
+    });
+  };
 
   return (
     <>
@@ -106,10 +99,11 @@ export function RecurringPage() {
 
       {exceededCategories.length > 0 && (
         <div className="rec-warning" role="status">
-          Детализация превышает общий план: {" "}
+          Детализация превышает общий план:{" "}
           {exceededCategories
             .map((category) => category.categoryName)
-            .join(", ")}.
+            .join(", ")}
+          .
         </div>
       )}
 
@@ -129,22 +123,24 @@ export function RecurringPage() {
       {recurring.isPending && <p>Загрузка…</p>}
       {recurring.isError && <p className="error">Не удалось загрузить план</p>}
       {recurring.isSuccess && items.length === 0 && (
-        <p>План пуст. Добавьте обязательные траты или сгенерируйте из истории.</p>
+        <p>
+          План пуст. Добавьте обязательные траты или сгенерируйте из истории.
+        </p>
       )}
 
       <ul className="rec-list">
         {items.map((item) => {
-          const cat = catById.get(item.category_id)
+          const cat = catById.get(item.category_id);
           const parent =
             cat?.parent_id === null || cat?.parent_id === undefined
               ? undefined
-              : catById.get(cat.parent_id)
+              : catById.get(cat.parent_id);
           const categoryPath =
             parent === undefined
               ? (cat?.name ?? "—")
-              : `${parent.name} → ${cat?.name ?? "—"}`
+              : `${parent.name} → ${cat?.name ?? "—"}`;
           const showRub =
-            item.currency_code !== "RUB" && item.amount_rub !== null
+            item.currency_code !== "RUB" && item.amount_rub !== null;
           return (
             <li key={item.id} className="rec-row">
               <div className="rec-info">
@@ -155,7 +151,10 @@ export function RecurringPage() {
                 </span>
               </div>
               <span className="num rec-amount">
-                {formatMoney(item.monthly_amount ?? "0", item.currency_code ?? "RUB")}
+                {formatMoney(
+                  item.monthly_amount ?? "0",
+                  item.currency_code ?? "RUB",
+                )}
                 {showRub && (
                   <span className="rec-rub">
                     {" "}
@@ -178,7 +177,7 @@ export function RecurringPage() {
                 Убрать
               </button>
             </li>
-          )
+          );
         })}
       </ul>
 
@@ -194,5 +193,5 @@ export function RecurringPage() {
         />
       </Sheet>
     </>
-  )
+  );
 }

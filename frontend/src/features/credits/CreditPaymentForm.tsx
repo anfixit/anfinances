@@ -1,70 +1,67 @@
-import { useState } from "react"
+import { useState } from "react";
 
-import { useAccounts } from "@/features/accounts/hooks"
-import { CategorySelect } from "@/features/categories/CategorySelect"
-import { useCategories } from "@/features/categories/hooks"
-import { useCreateCreditPayment } from "@/features/credits/hooks"
-import { creditPaymentFormSchema } from "@/features/credits/schemas"
-import type { Credit } from "@/features/credits/types"
-import { AppError } from "@/lib/api/errors"
+import { useAccounts } from "@/features/accounts/hooks";
+import { CategorySelect } from "@/features/categories/CategorySelect";
+import { useCategories } from "@/features/categories/hooks";
+import { useCreateCreditPayment } from "@/features/credits/hooks";
+import { creditPaymentFormSchema } from "@/features/credits/schemas";
+import type { Credit } from "@/features/credits/types";
+import { AppError } from "@/lib/api/errors";
 
 function toLocalInput(value: string | Date): string {
-  const date = value instanceof Date ? value : new Date(value)
-  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000)
-  return local.toISOString().slice(0, 16)
+  const date = value instanceof Date ? value : new Date(value);
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+  return local.toISOString().slice(0, 16);
 }
 
 function nowLocalInput(): string {
-  return toLocalInput(new Date())
+  return toLocalInput(new Date());
 }
 
 function emptyToNull(value: string): string | null {
-  const trimmed = value.trim()
-  return trimmed === "" ? null : trimmed
+  const trimmed = value.trim();
+  return trimmed === "" ? null : trimmed;
 }
 
 interface CreditPaymentFormProps {
-  credit: Credit
-  onDone: () => void
+  credit: Credit;
+  onDone: () => void;
 }
 
-export function CreditPaymentForm({
-  credit,
-  onDone,
-}: CreditPaymentFormProps) {
-  const accounts = useAccounts()
-  const categories = useCategories()
-  const createPayment = useCreateCreditPayment()
+export function CreditPaymentForm({ credit, onDone }: CreditPaymentFormProps) {
+  const accounts = useAccounts();
+  const categories = useCategories();
+  const createPayment = useCreateCreditPayment();
 
   const [paymentAccountId, setPaymentAccountId] = useState(
     credit.linked_account_id ?? "",
-  )
-  const [date, setDate] = useState(nowLocalInput())
-  const [totalAmount, setTotalAmount] = useState("")
-  const [principalAmount, setPrincipalAmount] = useState("")
-  const [interestAmount, setInterestAmount] = useState("0")
-  const [feeAmount, setFeeAmount] = useState("0")
-  const [interestCategoryId, setInterestCategoryId] = useState("")
-  const [feeCategoryId, setFeeCategoryId] = useState("")
-  const [comment, setComment] = useState("")
-  const [formError, setFormError] = useState<string | null>(null)
+  );
+  const [date, setDate] = useState(nowLocalInput());
+  const [totalAmount, setTotalAmount] = useState("");
+  const [principalAmount, setPrincipalAmount] = useState("");
+  const [interestAmount, setInterestAmount] = useState("0");
+  const [feeAmount, setFeeAmount] = useState("0");
+  const [interestCategoryId, setInterestCategoryId] = useState("");
+  const [feeCategoryId, setFeeCategoryId] = useState("");
+  const [comment, setComment] = useState("");
+  const [formError, setFormError] = useState<string | null>(null);
 
   const accountsByCurrency = (accounts.data ?? []).filter(
     (account) => account.currency_code === credit.currency_code,
-  )
-  const canChooseInterestCategory = Number(interestAmount) > 0
-  const canChooseFeeCategory = Number(feeAmount) > 0
+  );
+  const canChooseInterestCategory = Number(interestAmount) > 0;
+  const canChooseFeeCategory = Number(feeAmount) > 0;
 
   const onError = (err: unknown) => {
     if (!(err instanceof AppError)) {
-      setFormError("Ошибка сохранения")
-      return
+      setFormError("Ошибка сохранения");
+      return;
     }
-    setFormError(err.details[0]?.message ?? err.message)
-  }
+    setFormError(err.details[0]?.message ?? err.message);
+  };
 
   const submit = () => {
-    setFormError(null)
+    setFormError(null);
     const payload = {
       payment_account_id: paymentAccountId,
       date,
@@ -77,11 +74,11 @@ export function CreditPaymentForm({
         : null,
       fee_category_id: canChooseFeeCategory ? emptyToNull(feeCategoryId) : null,
       comment: emptyToNull(comment),
-    }
-    const parsed = creditPaymentFormSchema.safeParse(payload)
+    };
+    const parsed = creditPaymentFormSchema.safeParse(payload);
     if (!parsed.success) {
-      setFormError(parsed.error.issues[0]?.message ?? "Проверьте поля")
-      return
+      setFormError(parsed.error.issues[0]?.message ?? "Проверьте поля");
+      return;
     }
 
     createPayment.mutate(
@@ -93,21 +90,21 @@ export function CreditPaymentForm({
         },
       },
       { onSuccess: onDone, onError },
-    )
-  }
+    );
+  };
 
   if (accounts.isPending || categories.isPending) {
-    return <p>Загрузка…</p>
+    return <p>Загрузка…</p>;
   }
   if (!accounts.data || !categories.data) {
-    return <p className="error">Не удалось загрузить справочники</p>
+    return <p className="error">Не удалось загрузить справочники</p>;
   }
 
   return (
     <div className="form credit-payment-form">
       <p className="form-note">
-        Тело кредита уменьшит долг. Проценты и комиссии останутся
-        расходной частью платежа.
+        Тело кредита уменьшит долг. Проценты и комиссии останутся расходной
+        частью платежа.
       </p>
 
       <label className="field">
@@ -167,9 +164,9 @@ export function CreditPaymentForm({
           step="0.01"
           value={interestAmount}
           onChange={(e) => {
-            setInterestAmount(e.target.value)
+            setInterestAmount(e.target.value);
             if (Number(e.target.value) <= 0) {
-              setInterestCategoryId("")
+              setInterestCategoryId("");
             }
           }}
         />
@@ -194,9 +191,9 @@ export function CreditPaymentForm({
           step="0.01"
           value={feeAmount}
           onChange={(e) => {
-            setFeeAmount(e.target.value)
+            setFeeAmount(e.target.value);
             if (Number(e.target.value) <= 0) {
-              setFeeCategoryId("")
+              setFeeCategoryId("");
             }
           }}
         />
@@ -219,13 +216,9 @@ export function CreditPaymentForm({
 
       {formError && <p className="error">{formError}</p>}
 
-      <button
-        type="button"
-        onClick={submit}
-        disabled={createPayment.isPending}
-      >
+      <button type="button" onClick={submit} disabled={createPayment.isPending}>
         {createPayment.isPending ? "Сохраняю…" : "Сохранить платёж"}
       </button>
     </div>
-  )
+  );
 }

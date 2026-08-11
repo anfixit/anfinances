@@ -22,6 +22,7 @@ from app.core.datetime import (
 )
 from app.core.enums import CategoryKind, RequiredKind
 from app.core.exceptions import NotFoundError, ValidationFailedError
+from app.core.money import BASE_CURRENCY
 from app.domains.categories.models import Category
 from app.domains.categories.repository import CategoryRepository
 from app.domains.currencies.service import CurrencyService
@@ -36,7 +37,7 @@ from app.domains.recurring.schemas import (
 __all__ = ["RecurringService"]
 
 _MONTHS_WINDOW = 3
-_RUB = "RUB"
+
 _CENTS = Decimal("0.01")
 
 
@@ -70,7 +71,9 @@ class RecurringService:
         await self._validate_category(user_id, data.category_id)
         code = data.currency_code.upper()
         amount_rub = (
-            await self._currencies.convert(data.monthly_amount, code, _RUB)
+            await self._currencies.convert(
+                data.monthly_amount, code, BASE_CURRENCY
+            )
             if data.monthly_amount is not None
             else None
         )
@@ -106,7 +109,9 @@ class RecurringService:
         if "monthly_amount" in fields or "currency_code" in fields:
             item.amount_rub = (
                 await self._currencies.convert(
-                    item.monthly_amount, item.currency_code or _RUB, _RUB
+                    item.monthly_amount,
+                    item.currency_code or BASE_CURRENCY,
+                    BASE_CURRENCY,
                 )
                 if item.monthly_amount is not None
                 else None
@@ -177,7 +182,7 @@ class RecurringService:
                         category_id=proposal.category_id,
                         name=proposal.category_name,
                         monthly_amount=proposal.monthly_amount,
-                        currency_code=_RUB,
+                        currency_code=BASE_CURRENCY,
                         amount_rub=proposal.monthly_amount,
                         comments=None,
                     )

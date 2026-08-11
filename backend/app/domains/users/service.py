@@ -64,10 +64,31 @@ class UserService:
     async def set_currencies(
         self, user_id: uuid.UUID, data: UserCurrenciesUpdate
     ) -> list[UserCurrency]:
+        # Пустой набор допустим: это способ очистить список.
+        # Остальные правила имеют смысл только для непустого.
         defaults = sum(1 for item in data.items if item.is_default)
         if defaults > 1:
             raise ValidationFailedError(
                 "Валютой по умолчанию можно отметить только одну."
+            )
+        if data.items and defaults == 0:
+            raise ValidationFailedError(
+                "Отметьте валюту по умолчанию — в ней подставляются "
+                "суммы в формах."
+            )
+
+        codes = [item.currency_code.upper() for item in data.items]
+        if len(set(codes)) != len(codes):
+            raise ValidationFailedError(
+                "Валюта не может встречаться в наборе дважды."
+            )
+
+        orders = [item.sort_order for item in data.items]
+        if len(set(orders)) != len(orders):
+            # Одинаковый порядок — это отсутствие порядка: списки
+            # в формах будут перетасовываться от запроса к запросу.
+            raise ValidationFailedError(
+                "Порядок сортировки должен быть разным у всех валют."
             )
 
         rows: list[UserCurrency] = []
