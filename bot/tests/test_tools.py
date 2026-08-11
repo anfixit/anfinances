@@ -60,7 +60,14 @@ class _FakeClient:
         if method == "GET" and path == "/budgets":
             return list(self.budgets)
         if method == "GET" and path == "/transactions":
-            return list(self.transactions)
+            # Как настоящий API: отдаём страницами по limit.
+            limit = int(kwargs.get("params", {}).get("limit", 20))
+            cursor = kwargs.get("params", {}).get("cursor_id")
+            start = 0
+            if cursor is not None:
+                ids = [row["id"] for row in self.transactions]
+                start = ids.index(cursor) + 1
+            return self.transactions[start : start + limit]
         if method == "POST" and path == "/categories":
             return {"id": "c-new", "name": "Новая", "kind": "expense"}
         if method == "POST" and path == "/transactions":
@@ -529,3 +536,29 @@ async def test_statement_import_duplicate_inside_one_file_is_kept() -> None:
     post = next(c for c in client.calls if c[0] == "POST")
     items = post[2]["json"]["items"]
     assert len(items) == 2
+
+
+async def test_statement_import_pages_through_existing_rows() -> None:
+    """Сверка обязана дочитать все страницы, а не первую сотню."""
+    box, client = _toolbox()
+    # Ровно страница «чужих» операций, а следом та, что уже записана.
+    client.transactions = [
+        {
+            "id": f"old-{i}",
+            "account_id": "a-1",
+            "amount": f"{i + 1}.0000",
+            "date": "2026-08-01T09:00:00+00:00",
+        }
+        for i in range(100)
+    ] + [
+        {
+            "id": "old-dup",
+            "account_id": "a-1",
+            "amount": "300.0000",
+            "date": "2026-08-01T09:00:00+00:00",
+        }
+    ]
+
+    result = await box.import_statement(account_name="Альфа", rows=[_row()])
+    assert not [c for c in client.calls if c[0] == "POST"]
+    assert "уже были записаны" in result.casefold()

@@ -30,6 +30,12 @@ __all__ = ["StatementRow", "ToolBox"]
 # Сколько путей категорий показывать модели в тексте ошибки.
 _MAX_HINTS = 40
 
+# Размер страницы /transactions — потолок, заданный самим API.
+_PAGE = 100
+# Предохранитель от бесконечного листания, если API поведёт себя
+# не так, как ожидается: 10 000 операций по счёту за период хватит.
+_MAX_PAGES = 100
+
 _ACCOUNT_TYPES = frozenset(
     {"card", "cash", "card_credit", "savings", "investment"}
 )
@@ -403,24 +409,41 @@ class ToolBox:
     async def _existing_keys(
         self, account_id: str, items: list[dict[str, Any]]
     ) -> set[tuple[str, Decimal]]:
-        """Что по этому счёту уже записано в диапазоне выписки."""
+        """Что по этому счёту уже записано в диапазоне выписки.
+
+        Страницу API отдаёт не больше чем по сотне, поэтому читаем до
+        конца: за месяц операций легко больше, а недочитанный хвост
+        означал бы тихо задвоенные строки.
+        """
         if not items:
             return set()
         dates = sorted(item["date"][:10] for item in items)
-        rows = await self._client.request(
-            "GET",
-            "/transactions",
-            params={
-                "account_id": account_id,
-                "date_from": dates[0],
-                "date_to": dates[-1],
-                "limit": 100,
-            },
-        )
-        return {
-            (str(row["date"])[:10], _norm_amount(str(row["amount"])))
-            for row in rows or []
+        params: dict[str, Any] = {
+            "account_id": account_id,
+            "date_from": dates[0],
+            "date_to": dates[-1],
+            "limit": _PAGE,
         }
+
+        seen: set[tuple[str, Decimal]] = set()
+        for _ in range(_MAX_PAGES):
+            rows = await self._client.request(
+                "GET", "/transactions", params=params
+            )
+            rows = rows or []
+            seen.update(
+                (str(row["date"])[:10], _norm_amount(str(row["amount"])))
+                for row in rows
+            )
+            if len(rows) < _PAGE:
+                break
+            last = rows[-1]
+            params = {
+                **params,
+                "cursor_date": last["date"],
+                "cursor_id": last["id"],
+            }
+        return seen
 
     # --- настройка ------------------------------------------------
 
