@@ -289,6 +289,7 @@ a {
 }
 
 .nav a {
+  white-space: nowrap;
   color: color-mix(in srgb, var(--on-app-bar) 80%, transparent);
   text-decoration: none;
   padding: 8px 16px;
@@ -314,8 +315,18 @@ a {
 }
 
 .user {
+  max-width: 20ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: color-mix(in srgb, var(--on-app-bar) 75%, transparent);
   font-size: 0.9rem;
+}
+
+@media (max-width: 1400px) {
+  .header .user {
+    display: none;
+  }
 }
 
 .header .link {
@@ -684,7 +695,7 @@ select:focus {
   display: none;
 }
 
-@media (max-width: 960px) {
+@media (max-width: 1180px) {
   .header {
     min-height: 64px;
     padding: 10px 16px;

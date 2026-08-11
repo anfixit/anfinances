@@ -1,3 +1,4 @@
+import { Moon, Sun } from "lucide-react"
 import { useState } from "react"
 
 import { applyTheme, getStoredTheme, systemTheme } from "@/lib/theme"
@@ -17,11 +18,16 @@ export function ThemeToggle() {
   return (
     <button
       type="button"
-      className="link"
+      className="icon-button"
       onClick={toggle}
+      title={mode === "dark" ? "Светлая тема" : "Тёмная тема"}
       aria-label="Переключить тему"
     >
-      {mode === "dark" ? "Светлая" : "Тёмная"}
+      {mode === "dark" ? (
+        <Sun aria-hidden="true" />
+      ) : (
+        <Moon aria-hidden="true" />
+      )}
     </button>
   )
 }
