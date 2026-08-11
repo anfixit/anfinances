@@ -123,3 +123,29 @@ docker compose -f docker-compose.deploy.yml exec -T postgres \
 
 Just push to `main` — CI rebuilds, redeploys, and migrates. No manual
 steps on the server. Certificates renew automatically (Caddy).
+
+## 8. TLS certificates
+
+Caddy obtains and renews certificates from Let's Encrypt automatically.
+Two conditions must hold, and both fail silently — the site keeps
+serving until the certificate expires months later.
+
+**The domain must point straight at the server.** With a proxy in
+front (Cloudflare's orange cloud, for instance), Let's Encrypt reaches
+the proxy instead of the origin and the TLS-ALPN challenge never
+arrives.
+
+**Port 80 must be open and forwarded to Caddy.** If a system nginx
+owns port 80, it has to hand `/.well-known/acme-challenge/` to Caddy
+rather than serve it from a certbot webroot. See
+[nginx-acme.conf](nginx-acme.conf) for the block this deployment uses;
+copy it to `/etc/nginx/sites-available/` and symlink it into
+`sites-enabled/`.
+
+Check both at once by looking at when the certificate was issued:
+
+```bash
+echo | openssl s_client -connect anfinances.ru:443 -servername anfinances.ru 2>/dev/null | openssl x509 -noout -dates
+```
+
+A `notBefore` older than 90 days means renewal has been failing.
