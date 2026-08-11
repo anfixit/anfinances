@@ -7,11 +7,6 @@ import { useCurrencies } from "@/features/currencies/hooks"
 import { useUpdateProfile } from "@/features/users/hooks"
 import { AppError } from "@/lib/api/errors"
 
-const LOCALES = [
-  { value: "ru", label: "Русский" },
-  { value: "en", label: "English" },
-]
-
 export function SettingsPage() {
   const { user } = useAuth()
   const currencies = useCurrencies()
@@ -20,8 +15,14 @@ export function SettingsPage() {
   const [name, setName] = useState(user?.name ?? "")
   const [timezone, setTimezone] = useState(user?.timezone ?? "")
   const [currency, setCurrency] = useState(user?.default_currency ?? "RUB")
-  const [locale, setLocale] = useState(user?.locale ?? "ru")
   const [saved, setSaved] = useState(false)
+
+  // «Сохранено» под изменённым полем — ложь: показывает успех
+  // прошлого сохранения рядом с несохранённым значением.
+  const edit = <T,>(setter: (value: T) => void) => (value: T) => {
+    setSaved(false)
+    setter(value)
+  }
   const [formError, setFormError] = useState<string | null>(null)
 
   if (!user) {
@@ -36,7 +37,6 @@ export function SettingsPage() {
         name,
         timezone: timezone || "UTC",
         default_currency: currency,
-        locale,
       },
       {
         onSuccess: () => {
@@ -60,21 +60,21 @@ export function SettingsPage() {
         <div className="form">
           <label className="field">
             <span>Имя</span>
-            <input value={name} onChange={(e) => setName(e.target.value)} />
+            <input value={name} onChange={(e) => edit(setName)(e.target.value)} />
           </label>
           <label className="field">
             <span>Часовой пояс</span>
             <input
               value={timezone}
               placeholder="Europe/Moscow"
-              onChange={(e) => setTimezone(e.target.value)}
+              onChange={(e) => edit(setTimezone)(e.target.value)}
             />
           </label>
           <label className="field">
             <span>Валюта по умолчанию</span>
             <select
               value={currency}
-              onChange={(e) => setCurrency(e.target.value)}
+              onChange={(e) => edit(setCurrency)(e.target.value)}
             >
               {(currencies.data ?? []).map((c) => (
                 <option key={c.code} value={c.code}>
@@ -83,20 +83,6 @@ export function SettingsPage() {
               ))}
             </select>
           </label>
-          <label className="field">
-            <span>Язык</span>
-            <select
-              value={locale}
-              onChange={(e) => setLocale(e.target.value)}
-            >
-              {LOCALES.map((l) => (
-                <option key={l.value} value={l.value}>
-                  {l.label}
-                </option>
-              ))}
-            </select>
-          </label>
-
           {formError && <p className="error">{formError}</p>}
           {saved && <p className="ok">Сохранено</p>}
 
