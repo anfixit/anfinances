@@ -14,6 +14,7 @@ import {
 } from "@/features/budgets/hooks"
 import type { Budget } from "@/features/budgets/types"
 import { useByCategory, useDailyAllowance } from "@/features/summary/hooks"
+import { useRecurring } from "@/features/recurring/hooks"
 import { Sheet } from "@/components/Sheet"
 import { queryKeys } from "@/lib/query/keys"
 import { formatMoney, sumMoney } from "@/lib/money"
@@ -64,6 +65,7 @@ export function BudgetsPage() {
   const del = useDeleteBudget()
   const importMut = useImportBudgets()
   const allowance = useDailyAllowance()
+  const recurringQ = useRecurring()
 
   const budgets = budgetsQ.data ?? []
   const byCat = new Map(budgets.map((b) => [b.category_id, b]))
@@ -96,6 +98,16 @@ export function BudgetsPage() {
     })
     .filter((d) => d !== null)
     .filter((d) => d.category.id !== moving?.categoryId)
+
+  // План-минимум по категориям: обязательное, что уже обещано.
+  const minimums = new Map<string, number>()
+  for (const item of recurringQ.data ?? []) {
+    if (item.is_archived) {
+      continue
+    }
+    const value = Number(item.amount_rub ?? item.monthly_amount ?? 0)
+    minimums.set(item.category_id, (minimums.get(item.category_id) ?? 0) + value)
+  }
 
   const savings = budgets.filter((b) => b.rollover)
   const savedTotal = savings.reduce(
@@ -134,6 +146,30 @@ export function BudgetsPage() {
     })
   }
 
+  // Обязательные траты уже перечислены в плане-минимуме. Заставлять
+  // перепечатывать их в бюджет — верный способ развести два списка.
+  const fillFromMinimum = () => {
+    const items = [...minimums.entries()]
+      .filter(([, amount]) => amount > 0)
+      .map(([categoryId, amount]) => {
+        const existing = byCat.get(categoryId)
+        return {
+          category_id: categoryId,
+          // Уже стоящий больший план не режем: возможно, там запас.
+          planned: String(
+            Math.max(amount, Number(existing?.planned ?? 0)),
+          ),
+          notes: existing?.notes ?? null,
+          rollover: existing?.rollover ?? false,
+        }
+      })
+    if (items.length === 0) {
+      window.alert("План-минимум пуст — заполнять нечем.")
+      return
+    }
+    importMut.mutate({ month, items })
+  }
+
   const removeBudget = (b: Budget, name: string) => {
     if (window.confirm(`Удалить лимит по категории «${name}»?`)) {
       del.mutate(b.id)
@@ -142,6 +178,8 @@ export function BudgetsPage() {
 
   const renderRow = (cat: Category, label: string, indent: boolean) => {
     const b = byCat.get(cat.id)
+    const minimum = minimums.get(cat.id) ?? 0
+    const belowMinimum = minimum > 0 && Number(b?.planned ?? 0) < minimum
     const cls = `budget-row${indent ? " indent" : ""}`
     if (!b) {
       const spent = spendMap.get(cat.id) ?? 0
@@ -193,6 +231,16 @@ export function BudgetsPage() {
           {b.rollover && (
             <span className="chip-static" title="Копилка: накоплено с прошлых месяцев">
               копилка {rub(Number(b.rollover_amount))}
+            </span>
+          )}
+          {minimum > 0 && (
+            <span
+              className={belowMinimum ? "chip-static warn" : "chip-static"}
+              title="Обязательная сумма из плана-минимума"
+            >
+              {belowMinimum
+                ? `меньше минимума ${rub(minimum)}`
+                : `минимум ${rub(minimum)}`}
             </span>
           )}
           {over && (
@@ -289,7 +337,7 @@ export function BudgetsPage() {
         </div>
       )}
 
-      <p>
+      <p className="budget-actions">
         <button
           type="button"
           className="btn-outline"
@@ -298,6 +346,16 @@ export function BudgetsPage() {
         >
           {importMut.isPending ? "Копирую…" : "Скопировать из прошлого месяца"}
         </button>
+        {minimums.size > 0 && (
+          <button
+            type="button"
+            className="btn-outline"
+            onClick={fillFromMinimum}
+            disabled={importMut.isPending}
+          >
+            Заполнить из плана-минимума
+          </button>
+        )}
       </p>
 
       {(categoriesQ.isPending || budgetsQ.isPending) && <p>Загрузка…</p>}

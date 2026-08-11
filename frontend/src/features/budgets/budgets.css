@@ -170,3 +170,17 @@
   font-size: 0.85rem;
   opacity: 0.75;
 }
+
+/* Две кнопки над списком не должны слипаться на узком экране. */
+.budget-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* План ниже обязательного минимума — это не оттенок, а расхождение
+   с тем, что уже обещано: аренду заплатить придётся в любом случае. */
+.chip-static.warn {
+  background: color-mix(in srgb, var(--expense) 16%, transparent);
+  color: var(--expense);
+}
