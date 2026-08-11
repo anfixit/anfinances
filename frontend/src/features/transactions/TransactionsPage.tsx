@@ -115,6 +115,7 @@ function accountLine(
 
 export function TransactionsPage() {
   const [filters, setFilters] = useState<TransactionFilters>({})
+  const [filtersOpen, setFiltersOpen] = useState(false)
   const [kindTab, setKindTab] = useState<TransactionKind | "all">("all")
   const [sheetOpen, setSheetOpen] = useState(false)
   const [editingTx, setEditingTx] = useState<Transaction | null>(null)
@@ -124,6 +125,13 @@ export function TransactionsPage() {
 
   const accountsQ = useAccounts()
   const categoriesQ = useCategories()
+  const activeFilters = [
+    filters.date_from,
+    filters.date_to,
+    filters.account_id,
+    filters.category_id,
+  ].filter((v) => v !== undefined && v !== "").length
+
   const list = useTransactions(filters)
   const delTx = useDeleteTransaction()
   const delTransfer = useDeleteTransfer()
@@ -222,7 +230,19 @@ export function TransactionsPage() {
             </button>
           ))}
         </div>
-        <div className="filters-row">
+        <button
+          type="button"
+          className="link filters-toggle"
+          aria-expanded={filtersOpen}
+          onClick={() => setFiltersOpen((v) => !v)}
+        >
+          {filtersOpen ? "Скрыть фильтры" : "Фильтры"}
+          {activeFilters > 0 && (
+            <span className="filters-count">{activeFilters}</span>
+          )}
+        </button>
+
+        <div className="filters-row" hidden={!filtersOpen}>
           <label className="field">
             <span>С даты</span>
             <input

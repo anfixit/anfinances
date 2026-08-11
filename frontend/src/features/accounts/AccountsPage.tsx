@@ -10,6 +10,7 @@ import { TYPE_LABELS } from "@/features/accounts/types"
 import type { Account } from "@/features/accounts/types"
 import { Sheet } from "@/components/Sheet"
 import { formatMoney } from "@/lib/money"
+import { useDashboard } from "@/features/summary/hooks"
 
 export function AccountsPage() {
   const accounts = useAccounts()
@@ -75,6 +76,19 @@ export function AccountsPage() {
 
   const list = accounts.data ?? []
 
+  // Рублёвую оценку валютных счетов считает сервер — здесь только
+  // складываем. Курса может не быть, и тогда честнее сказать, что
+  // итог неполный, чем молча его занизить.
+  const dash = useDashboard()
+  const rubById = new Map(
+    (dash.data?.accounts ?? []).map((a) => [a.account_id, a.balance_rub]),
+  )
+  const withoutRate = list.filter((a) => rubById.get(a.id) == null)
+  const totalRub = list.reduce(
+    (sum, a) => sum + Number(rubById.get(a.id) ?? 0),
+    0,
+  )
+
   return (
     <>
       <div className="page-head">
@@ -83,6 +97,19 @@ export function AccountsPage() {
           + Добавить счёт
         </button>
       </div>
+
+      {list.length > 0 && dash.data && (
+        <div className="card acc-total">
+          <span>Всего на счетах:</span>
+          <span className="num">{formatMoney(String(totalRub), "RUB")}</span>
+          {withoutRate.length > 0 && (
+            <span className="acc-total-note">
+              Без учёта {withoutRate.map((a) => a.name).join(", ")} — нет
+              курса валюты.
+            </span>
+          )}
+        </div>
+      )}
 
       {accounts.isPending && <p>Загрузка…</p>}
       {accounts.isError && <p className="error">Не удалось загрузить счета</p>}

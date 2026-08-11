@@ -264,3 +264,27 @@
     padding: 6px 8px;
   }
 }
+
+/* Фильтры свёрнуты по умолчанию: развёрнутые они занимали весь
+   первый экран, и до самих операций приходилось прокручивать. */
+.filters-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+/* Свёрнутая панель не должна скрывать, что список уже отфильтрован. */
+.filters-count {
+  display: inline-flex;
+  min-width: 20px;
+  height: 20px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 6px;
+  border-radius: var(--shape-full);
+  background: var(--primary);
+  color: var(--on-primary, #fff);
+  font-size: 0.75rem;
+  font-weight: 600;
+}

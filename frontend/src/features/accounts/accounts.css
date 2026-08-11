@@ -123,3 +123,23 @@
     order: 3;
   }
 }
+
+/* Итог по счетам: тринадцать строк без суммы заставляли считать
+   в уме или уходить на главную. */
+.acc-total {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px 12px;
+}
+
+.acc-total .num {
+  font-size: 1.4rem;
+  font-weight: 600;
+}
+
+.acc-total-note {
+  flex-basis: 100%;
+  font-size: 0.85rem;
+  opacity: 0.75;
+}
