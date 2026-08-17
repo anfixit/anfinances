@@ -15,6 +15,7 @@ from anfinances_bot.telegram.handlers import (
     Session,
     handle_callback,
     handle_user_document,
+    handle_user_photo,
     handle_user_text,
     handle_user_voice,
 )
@@ -49,10 +50,15 @@ class _Deps:
     def __init__(self, reply: Any) -> None:
         self._reply = reply
         self.seen: list[tuple[str, list[dict[str, Any]]]] = []
+        self.images: list[tuple[str, str]] | None = None
 
     async def resolve(
-        self, text: str, history: list[dict[str, Any]]
+        self,
+        text: str,
+        history: list[dict[str, Any]],
+        images: list[tuple[str, str]] | None = None,
     ) -> AgentReply:
+        self.images = images
         self.seen.append((text, list(history)))
         if isinstance(self._reply, Exception):
             raise self._reply
@@ -292,3 +298,47 @@ async def test_voice_does_not_mutate_the_message() -> None:
     text, _ = deps.seen[0]
     assert "кофе 300 с альфы" in text
     assert message.sent[-1].markup is not None
+
+
+@dataclass
+class _PhotoMessage(_Message):
+    caption: str | None = None
+
+
+async def test_screenshot_reaches_the_agent_as_an_image() -> None:
+    message = _PhotoMessage("", caption="чек из пятёрочки")
+    deps = _Deps(AgentReply(text="Записала", created_transaction_id="tx-1"))
+
+    async def _reader(_: Any) -> list[tuple[str, str]]:
+        return [("image/jpeg", "БАЗА64")]
+
+    await handle_user_photo(message, deps, Session(), _reader)
+
+    assert deps.images == [("image/jpeg", "БАЗА64")]
+    text, _ = deps.seen[0]
+    assert "скриншот" in text.casefold()
+    assert "чек из пятёрочки" in text
+
+
+async def test_unreadable_screenshot_is_reported() -> None:
+    message = _PhotoMessage("")
+
+    async def _failing(_: Any) -> list[tuple[str, str]]:
+        raise DocumentUnreadableError("Картинка больше 5 МБ.")
+
+    await handle_user_photo(
+        message, _Deps(AgentReply(text="")), Session(), _failing
+    )
+    assert "5 МБ" in message.sent[0].text
+
+
+async def test_screenshot_body_does_not_stay_in_history() -> None:
+    """Base64 картинки в истории уезжал бы в модель каждый раз."""
+    session = Session()
+    deps = _Deps(AgentReply(text="Записала"))
+
+    async def _reader(_: Any) -> list[tuple[str, str]]:
+        return [("image/png", "X" * 5000)]
+
+    await handle_user_photo(_PhotoMessage(""), deps, session, _reader)
+    assert len(session.history[0]["content"]) < 100

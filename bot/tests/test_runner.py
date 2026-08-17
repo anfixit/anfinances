@@ -77,6 +77,15 @@ def _pair(
     return AgentRunner(_FakeAnthropic(messages), box), messages, box
 
 
+def _text_of(message: dict[str, Any]) -> str:
+    """Собрать текст из блоков сообщения."""
+    return "\n".join(
+        block["text"]
+        for block in message["content"]
+        if block.get("type") == "text"
+    )
+
+
 async def test_uses_opus_with_adaptive_thinking() -> None:
     runner, messages, _ = _pair()
     await runner.run("кофе 300", [], [], "Europe/Moscow")
@@ -111,7 +120,7 @@ async def test_current_moment_goes_into_message_not_prefix() -> None:
     runner, messages, _ = _pair()
     await runner.run("вчера кофе 300", [], [], "Asia/Tashkent")
 
-    content = messages.kwargs["messages"][-1]["content"]
+    content = _text_of(messages.kwargs["messages"][-1])
     assert "вчера кофе 300" in content
     assert "Сейчас" in content
     # Дата меняется каждый день — в кэшируемом префиксе ей не место.
@@ -129,7 +138,7 @@ async def test_history_is_passed_before_the_new_message() -> None:
 
     sent = messages.kwargs["messages"]
     assert sent[:2] == history
-    assert "а на сбере" in sent[-1]["content"]
+    assert "а на сбере" in _text_of(sent[-1])
 
 
 async def test_stale_created_id_does_not_leak_into_next_reply() -> None:
@@ -138,3 +147,26 @@ async def test_stale_created_id_does_not_leak_into_next_reply() -> None:
     box.last_created_id = "tx-старый"
     reply = await runner.run("сколько я потратила", [], [], "Europe/Moscow")
     assert reply.created_transaction_id is None
+
+
+async def test_image_goes_before_the_question() -> None:
+    """Модель читает картинку в контексте вопроса, а не после него."""
+    runner, messages, _ = _pair()
+    await runner.run(
+        "разнеси этот чек",
+        [],
+        [],
+        "Europe/Moscow",
+        images=[("image/jpeg", "УУУ")],
+    )
+    blocks = messages.kwargs["messages"][-1]["content"]
+    assert blocks[0]["type"] == "image"
+    assert blocks[0]["source"]["media_type"] == "image/jpeg"
+    assert blocks[-1]["type"] == "text"
+
+
+async def test_no_images_means_no_image_blocks() -> None:
+    runner, messages, _ = _pair()
+    await runner.run("кофе 300", [], [], "Europe/Moscow")
+    blocks = messages.kwargs["messages"][-1]["content"]
+    assert all(b["type"] == "text" for b in blocks)

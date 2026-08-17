@@ -22,6 +22,7 @@ from anfinances_bot.anfinances.schemas import UserProfile
 from anfinances_bot.config import get_bot_settings
 from anfinances_bot.documents import (
     DocumentUnreadableError,
+    read_image,
     read_statement,
 )
 from anfinances_bot.proactive_loop import run_proactive_loop
@@ -31,6 +32,7 @@ from anfinances_bot.telegram.handlers import (
     Session,
     handle_callback,
     handle_user_document,
+    handle_user_photo,
     handle_user_text,
     handle_user_voice,
 )
@@ -56,7 +58,10 @@ class Deps:
         self._profile = profile
 
     async def resolve(
-        self, text: str, history: list[dict[str, Any]]
+        self,
+        text: str,
+        history: list[dict[str, Any]],
+        images: list[tuple[str, str]] | None = None,
     ) -> AgentReply:
         # Счета и категории тянем каждый раз: она их правит на сайте,
         # а устаревший список тихо испортил бы разнесение операций.
@@ -68,6 +73,7 @@ class Deps:
             categories,
             self._profile.timezone,
             history=history,
+            images=images,
         )
 
 
@@ -163,11 +169,35 @@ async def main() -> None:
 
     @dispatcher.message(F.document)
     async def _on_document(message: Message) -> None:
-        await handle_user_document(
-            message,
-            deps,
-            _session(message.chat.id),
-            _download_and_read,
+        # Скриншот часто присылают файлом, а не фото — тогда это
+        # картинка, а не выписка, и читать её надо глазами модели.
+        document = message.document
+        mime = (document.mime_type or "") if document else ""
+        session = _session(message.chat.id)
+        if mime.startswith("image/"):
+            await handle_user_photo(message, deps, session, _download_images)
+            return
+        await handle_user_document(message, deps, session, _download_and_read)
+
+    async def _download_images(
+        message: Message,
+    ) -> list[tuple[str, str]]:
+        """Скачать скриншот и подготовить его для модели."""
+        # Телеграм отдаёт фото в нескольких размерах; последний —
+        # самый крупный, на нём читаются суммы мелким шрифтом.
+        source = message.photo[-1] if message.photo else message.document
+        if source is None:
+            raise DocumentUnreadableError("В сообщении нет картинки.")
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "shot"
+            await bot.download(source, destination=path)
+            name = message.document.file_name if message.document else ""
+            return [read_image(path, name or "screenshot.jpg")]
+
+    @dispatcher.message(F.photo)
+    async def _on_photo(message: Message) -> None:
+        await handle_user_photo(
+            message, deps, _session(message.chat.id), _download_images
         )
 
     @dispatcher.message(F.voice)

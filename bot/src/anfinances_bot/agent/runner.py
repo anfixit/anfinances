@@ -64,7 +64,14 @@ class AgentRunner:
         timezone_name: str,
         history: list[dict[str, Any]] | None = None,
         now: datetime | None = None,
+        images: list[tuple[str, str]] | None = None,
     ) -> AgentReply:
+        """Прогнать фразу через агента.
+
+        ``images`` — пары «media_type, base64». Скриншот чека или
+        выписки читает сама модель: разбирать картинку кодом здесь
+        нечем, а разложить её по колонкам она умеет.
+        """
         # Отметки прошлого запуска обнуляем: иначе карточка операции
         # прилипнет к ответу, который ничего не записывал.
         self._toolbox.last_created_id = None
@@ -72,12 +79,24 @@ class AgentRunner:
 
         system = build_system_blocks(accounts, categories, timezone_name)
         messages: list[dict[str, Any]] = list(history or [])
-        messages.append(
+        content: list[dict[str, Any]] = [
             {
-                "role": "user",
-                "content": f"{_now_line(timezone_name, now)}\n\n{text}",
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": media_type,
+                    "data": data,
+                },
+            }
+            for media_type, data in images or []
+        ]
+        content.append(
+            {
+                "type": "text",
+                "text": f"{_now_line(timezone_name, now)}\n\n{text}",
             }
         )
+        messages.append({"role": "user", "content": content})
 
         try:
             runner = self._anthropic.beta.messages.tool_runner(

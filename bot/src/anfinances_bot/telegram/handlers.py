@@ -36,6 +36,7 @@ __all__ = [
     "Session",
     "handle_callback",
     "handle_user_document",
+    "handle_user_photo",
     "handle_user_text",
     "handle_user_voice",
 ]
@@ -72,7 +73,10 @@ class Session:
 
 class _Deps(Protocol):
     async def resolve(
-        self, text: str, history: list[dict[str, Any]]
+        self,
+        text: str,
+        history: list[dict[str, Any]],
+        images: list[tuple[str, str]] | None = None,
     ) -> AgentReply: ...
 
 
@@ -186,12 +190,43 @@ async def handle_user_document(
     )
 
 
+async def handle_user_photo(
+    message: Any, deps: _Deps, session: Session, reader: Any
+) -> None:
+    """Принять скриншот чека или выписки и отдать его агенту."""
+    try:
+        images = await reader(message)
+    except DocumentUnreadableError as exc:
+        logger.warning("Картинка не прочитана", exc_info=True)
+        await _say(message, f"{DOC_UNREADABLE} {exc}")
+        return
+
+    caption = (message.caption or "").strip()
+    await _run(
+        message,
+        deps,
+        session,
+        (
+            "Это скриншот: чек, выписка или экран банка. Прочитай "
+            "суммы, даты и назначение платежа, отдели расходы от "
+            "доходов и занеси. Несколько операций заноси разом через "
+            "import_statement, одну — обычным инструментом. Если "
+            "непонятно, по какому счёту, — спроси. Чего не видно на "
+            "картинке, не выдумывай."
+            + (f"\n\nПодпись к скриншоту: {caption}" if caption else "")
+        ),
+        remember_as=f"[прислала скриншот{': ' + caption if caption else ''}]",
+        images=images,
+    )
+
+
 async def _run(
     message: Any,
     deps: _Deps,
     session: Session,
     prompt: str,
     remember_as: str | None = None,
+    images: list[tuple[str, str]] | None = None,
 ) -> None:
     """Прогнать фразу через агента и ответить нужным способом.
 
@@ -200,7 +235,7 @@ async def _run(
     следующем сообщении.
     """
     try:
-        reply = await deps.resolve(prompt, session.history)
+        reply = await deps.resolve(prompt, session.history, images)
     except AnfinancesUnavailableError:
         logger.warning("anfinances недоступен", exc_info=True)
         await _say(message, SITE_DOWN)
