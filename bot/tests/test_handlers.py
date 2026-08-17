@@ -261,3 +261,34 @@ async def test_statement_body_does_not_stay_in_history() -> None:
 
     assert len(session.history[0]["content"]) < 200
     assert "vypiska.csv" in session.history[0]["content"]
+
+
+@dataclass(frozen=True)
+class _FrozenMessage:
+    """Как Message в aiogram: присвоить полю нельзя.
+
+    Прежний код после расшифровки писал `message.text = text`, и на
+    настоящем сообщении это падало ValidationError уже после ответа
+    «Услышала» — голос распознавался, а трата не записывалась.
+    """
+
+    text: str
+    sent: list[_Sent] = field(default_factory=list)
+
+    async def answer(self, text: str, reply_markup: Any = None) -> None:
+        self.sent.append(_Sent(text, reply_markup))
+
+
+async def test_voice_does_not_mutate_the_message() -> None:
+    message = _FrozenMessage("")
+    deps = _Deps(AgentReply(text="Записала", created_transaction_id="tx-1"))
+
+    async def _ok(_: Any) -> str:
+        return "кофе 300 с альфы"
+
+    await handle_user_voice(message, deps, Session(), _ok)
+
+    # Расшифровка обязана дойти до агента, а не осесть в ответе.
+    text, _ = deps.seen[0]
+    assert "кофе 300 с альфы" in text
+    assert message.sent[-1].markup is not None

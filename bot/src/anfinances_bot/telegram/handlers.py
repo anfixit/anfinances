@@ -77,9 +77,16 @@ class _Deps(Protocol):
 
 
 async def handle_user_text(
-    message: Any, deps: _Deps, session: Session
+    message: Any, deps: _Deps, session: Session, text: str | None = None
 ) -> None:
-    prompt = message.text
+    """Обработать фразу пользователя.
+
+    ``text`` передаётся, когда фраза пришла не текстом — например,
+    расшифровкой голосового. Присваивать её ``message.text`` нельзя:
+    в aiogram сообщение неизменяемое, и попытка падает уже после
+    ответа пользователю.
+    """
+    prompt = message.text if text is None else text
     if session.pending_fix_id is not None:
         prompt = f"Исправь операцию с id {session.pending_fix_id}: {prompt}"
         session.pending_fix_id = None
@@ -148,8 +155,7 @@ async def handle_user_voice(
 
     # Показываем расшифровку: Whisper ошибается, и это надо видеть.
     await _say(message, f"Услышала: {text}")
-    message.text = text
-    await handle_user_text(message, deps, session)
+    await handle_user_text(message, deps, session, text=text)
 
 
 async def handle_user_document(
