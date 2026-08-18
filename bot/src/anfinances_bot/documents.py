@@ -9,6 +9,7 @@ import base64
 import csv
 import io
 import logging
+from dataclasses import dataclass
 from pathlib import Path
 
 logger = logging.getLogger("anfinances_bot.documents")
@@ -16,8 +17,12 @@ logger = logging.getLogger("anfinances_bot.documents")
 __all__ = [
     "MAX_CHARS",
     "MAX_IMAGE_BYTES",
+    "MAX_PDF_BYTES",
+    "Attachment",
     "DocumentUnreadableError",
     "read_image",
+    "read_pdf",
+    "read_spreadsheet",
     "read_statement",
 ]
 
@@ -137,3 +142,88 @@ def _media_type(raw: bytes, filename: str) -> str | None:
     if raw[:4] == b"RIFF" and raw[8:12] == b"WEBP":
         return "image/webp"
     return IMAGE_TYPES.get(Path(filename).suffix.lower())
+
+
+MAX_PDF_BYTES = 30 * 1024 * 1024
+
+
+def read_pdf(path: Path) -> str:
+    """PDF в base64 — модель читает его сама.
+
+    Вытаскивать текст из PDF кодом здесь плохая идея: банковские
+    выписки свёрстаны таблицами, и извлечённый текст теряет
+    привязку числа к строке. Модель видит страницу целиком.
+    """
+    raw = path.read_bytes()
+    if not raw.startswith(b"%PDF"):
+        raise DocumentUnreadableError("Файл повреждён: это не PDF.")
+    if len(raw) > MAX_PDF_BYTES:
+        raise DocumentUnreadableError(
+            "PDF больше 30 МБ. Раздели выписку по месяцам."
+        )
+    return base64.b64encode(raw).decode("ascii")
+
+
+def read_spreadsheet(path: Path) -> str:
+    """XLSX в текст: строки таблицы через точку с запятой.
+
+    Модель разберёт колонки сама, как и в CSV, — ей нужен только
+    порядок значений в строке.
+    """
+    from openpyxl import load_workbook
+
+    try:
+        book = load_workbook(path, read_only=True, data_only=True)
+    except Exception as exc:
+        raise DocumentUnreadableError(
+            "Не удалось открыть таблицу. Выгрузи из банка CSV."
+        ) from exc
+
+    lines: list[str] = []
+    total = 0
+    try:
+        for sheet in book.worksheets:
+            if len(book.worksheets) > 1:
+                lines.append(f"# лист: {sheet.title}")
+            for row in sheet.iter_rows(values_only=True):
+                if all(cell is None or cell == "" for cell in row):
+                    continue
+                line = ";".join(
+                    "" if cell is None else str(cell) for cell in row
+                )
+                total += len(line) + 1
+                if total > MAX_CHARS:
+                    lines.append(
+                        "\n[Таблица обрезана: слишком длинная. Занеси "
+                        "показанное и попроси остаток отдельно.]"
+                    )
+                    return "\n".join(lines)
+                lines.append(line)
+    finally:
+        book.close()
+
+    if not lines:
+        raise DocumentUnreadableError("В таблице нет строк.")
+    return "\n".join(lines)
+
+
+@dataclass(frozen=True)
+class Attachment:
+    """Прочитанное вложение в виде, пригодном для модели.
+
+    Ровно одно из полей заполнено: картинка парой «тип, base64»,
+    PDF — base64 страниц, таблица или CSV — текстом.
+    """
+
+    name: str
+    image: tuple[str, str] | None = None
+    pdf: str | None = None
+    text: str | None = None
+
+    @property
+    def kind(self) -> str:
+        if self.image is not None:
+            return "скриншот"
+        if self.pdf is not None:
+            return "PDF"
+        return "таблица"

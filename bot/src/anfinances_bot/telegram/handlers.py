@@ -35,8 +35,7 @@ logger = logging.getLogger("anfinances_bot.handlers")
 __all__ = [
     "Session",
     "handle_callback",
-    "handle_user_document",
-    "handle_user_photo",
+    "handle_user_attachments",
     "handle_user_text",
     "handle_user_voice",
 ]
@@ -77,6 +76,7 @@ class _Deps(Protocol):
         text: str,
         history: list[dict[str, Any]],
         images: list[tuple[str, str]] | None = None,
+        pdfs: list[str] | None = None,
     ) -> AgentReply: ...
 
 
@@ -162,62 +162,56 @@ async def handle_user_voice(
     await handle_user_text(message, deps, session, text=text)
 
 
-async def handle_user_document(
+async def handle_user_attachments(
     message: Any, deps: _Deps, session: Session, reader: Any
 ) -> None:
-    """Принять файл выписки и отдать его содержимое агенту."""
+    """Принять вложения — файлы и скриншоты — и отдать их агенту.
+
+    Альбом приходит одной пачкой: модель должна видеть выписки рядом,
+    чтобы свести их между собой, а не разбирать по одной.
+    """
     try:
-        name, text = await reader(message)
+        items = await reader(message)
     except DocumentUnreadableError as exc:
-        logger.warning("Файл не прочитан", exc_info=True)
+        logger.warning("Вложение не прочитано", exc_info=True)
         await _say(message, f"{DOC_UNREADABLE} {exc}")
         return
 
-    await _say(message, f"Читаю {name}…")
+    if not items:
+        await _say(message, f"{DOC_UNREADABLE} Не нашла в сообщении файлов.")
+        return
+
+    names = ", ".join(f"{a.name} ({a.kind})" for a in items)
+    await _say(message, f"Читаю: {names}…")
+
+    caption = " ".join(
+        part
+        for part in ((message.caption or "").strip(), _texts_of(items))
+        if part
+    )
     await _run(
         message,
         deps,
         session,
         (
-            f"Это банковская выписка из файла {name}. Разбери её: "
-            "определи, где дата, сумма и назначение платежа, отдели "
-            "расходы от доходов, подбери категории из существующего "
-            "дерева и занеси всё разом через import_statement. "
-            "Если непонятно, по какому счёту выписка, — спроси.\n\n"
-            f"{text}"
+            "Это выписки, чеки или платёжные документы. Разбери всё, "
+            "что видишь: даты, суммы, назначение платежа. Отдели "
+            "расходы от доходов по знаку суммы, подбери категории из "
+            "существующего дерева и заноси через import_statement, "
+            "по одному вызову на счёт. Дубли с уже записанным "
+            "пропустятся сами. Чего в документах не видно — не "
+            "выдумывай, лучше переспроси.\n\n"
+            f"Файлы: {names}." + (f"\n\n{caption}" if caption else "")
         ),
-        remember_as=f"[прислала банковскую выписку {name}]",
+        remember_as=f"[прислала документы: {names}]",
+        images=[a.image for a in items if a.image is not None],
+        pdfs=[a.pdf for a in items if a.pdf is not None],
     )
 
 
-async def handle_user_photo(
-    message: Any, deps: _Deps, session: Session, reader: Any
-) -> None:
-    """Принять скриншот чека или выписки и отдать его агенту."""
-    try:
-        images = await reader(message)
-    except DocumentUnreadableError as exc:
-        logger.warning("Картинка не прочитана", exc_info=True)
-        await _say(message, f"{DOC_UNREADABLE} {exc}")
-        return
-
-    caption = (message.caption or "").strip()
-    await _run(
-        message,
-        deps,
-        session,
-        (
-            "Это скриншот: чек, выписка или экран банка. Прочитай "
-            "суммы, даты и назначение платежа, отдели расходы от "
-            "доходов и занеси. Несколько операций заноси разом через "
-            "import_statement, одну — обычным инструментом. Если "
-            "непонятно, по какому счёту, — спроси. Чего не видно на "
-            "картинке, не выдумывай."
-            + (f"\n\nПодпись к скриншоту: {caption}" if caption else "")
-        ),
-        remember_as=f"[прислала скриншот{': ' + caption if caption else ''}]",
-        images=images,
-    )
+def _texts_of(items: list[Any]) -> str:
+    """Текстовые вложения — прямо в запрос, они уже читаемы."""
+    return "\n\n".join(f"=== {a.name} ===\n{a.text}" for a in items if a.text)
 
 
 async def _run(
@@ -227,6 +221,7 @@ async def _run(
     prompt: str,
     remember_as: str | None = None,
     images: list[tuple[str, str]] | None = None,
+    pdfs: list[str] | None = None,
 ) -> None:
     """Прогнать фразу через агента и ответить нужным способом.
 
@@ -235,7 +230,7 @@ async def _run(
     следующем сообщении.
     """
     try:
-        reply = await deps.resolve(prompt, session.history, images)
+        reply = await deps.resolve(prompt, session.history, images, pdfs)
     except AnfinancesUnavailableError:
         logger.warning("anfinances недоступен", exc_info=True)
         await _say(message, SITE_DOWN)

@@ -9,13 +9,12 @@ from anfinances_bot.anfinances.client import (
     AnfinancesUnavailableError,
 )
 from anfinances_bot.anfinances.schemas import AccountRead
-from anfinances_bot.documents import DocumentUnreadableError
+from anfinances_bot.documents import Attachment, DocumentUnreadableError
 from anfinances_bot.speech import SpeechUnavailableError
 from anfinances_bot.telegram.handlers import (
     Session,
     handle_callback,
-    handle_user_document,
-    handle_user_photo,
+    handle_user_attachments,
     handle_user_text,
     handle_user_voice,
 )
@@ -51,14 +50,17 @@ class _Deps:
         self._reply = reply
         self.seen: list[tuple[str, list[dict[str, Any]]]] = []
         self.images: list[tuple[str, str]] | None = None
+        self.pdfs: list[str] | None = None
 
     async def resolve(
         self,
         text: str,
         history: list[dict[str, Any]],
         images: list[tuple[str, str]] | None = None,
+        pdfs: list[str] | None = None,
     ) -> AgentReply:
         self.images = images
+        self.pdfs = pdfs
         self.seen.append((text, list(history)))
         if isinstance(self._reply, Exception):
             raise self._reply
@@ -227,48 +229,6 @@ async def test_voice_success_goes_through_text_path() -> None:
     assert message.sent[1].markup is not None
 
 
-async def test_document_text_reaches_the_agent() -> None:
-    message = _Message("")
-    deps = _Deps(AgentReply(text="Занесено операций: 2."))
-
-    async def _reader(_: Any) -> tuple[str, str]:
-        return "vypiska.csv", "дата;сумма\n01.08.2026;-300"
-
-    await handle_user_document(message, deps, Session(), _reader)
-
-    text, _ = deps.seen[0]
-    assert "vypiska.csv" in text
-    assert "01.08.2026;-300" in text
-    assert "выписк" in text.casefold()
-
-
-async def test_unreadable_document_is_reported() -> None:
-    message = _Message("")
-
-    async def _failing(_: Any) -> tuple[str, str]:
-        raise DocumentUnreadableError("это не текст")
-
-    await handle_user_document(
-        message, _Deps(AgentReply(text="")), Session(), _failing
-    )
-    assert "не смогла прочитать" in message.sent[0].text.casefold()
-    assert not message.sent[0].markup
-
-
-async def test_statement_body_does_not_stay_in_history() -> None:
-    """Выписка в истории уезжала бы в модель на каждом сообщении."""
-    session = Session()
-    deps = _Deps(AgentReply(text="Занесено операций: 2."))
-
-    async def _reader(_: Any) -> tuple[str, str]:
-        return "vypiska.csv", "строка;" * 5000
-
-    await handle_user_document(_Message(""), deps, session, _reader)
-
-    assert len(session.history[0]["content"]) < 200
-    assert "vypiska.csv" in session.history[0]["content"]
-
-
 @dataclass(frozen=True)
 class _FrozenMessage:
     """Как Message в aiogram: присвоить полю нельзя.
@@ -305,40 +265,86 @@ class _PhotoMessage(_Message):
     caption: str | None = None
 
 
-async def test_screenshot_reaches_the_agent_as_an_image() -> None:
-    message = _PhotoMessage("", caption="чек из пятёрочки")
-    deps = _Deps(AgentReply(text="Записала", created_transaction_id="tx-1"))
+async def test_csv_text_reaches_the_agent() -> None:
+    message = _PhotoMessage("", caption="выписка за август")
+    deps = _Deps(AgentReply(text="Занесено операций: 2."))
 
-    async def _reader(_: Any) -> list[tuple[str, str]]:
-        return [("image/jpeg", "БАЗА64")]
+    async def _reader(_: Any) -> list[Attachment]:
+        return [Attachment(name="vypiska.csv", text="дата;сумма\n01.08;-300")]
 
-    await handle_user_photo(message, deps, Session(), _reader)
+    await handle_user_attachments(message, deps, Session(), _reader)
 
-    assert deps.images == [("image/jpeg", "БАЗА64")]
     text, _ = deps.seen[0]
-    assert "скриншот" in text.casefold()
-    assert "чек из пятёрочки" in text
+    assert "vypiska.csv" in text
+    assert "01.08;-300" in text
+    assert "выписка за август" in text
 
 
-async def test_unreadable_screenshot_is_reported() -> None:
+async def test_pdf_and_image_go_as_blocks_not_text() -> None:
+    """PDF и скриншот читает модель — в текст их не разворачиваем."""
+    message = _PhotoMessage("")
+    deps = _Deps(AgentReply(text="Занесено"))
+
+    async def _reader(_: Any) -> list[Attachment]:
+        return [
+            Attachment(name="statement.pdf", pdf="ПДФ64"),
+            Attachment(name="shot.jpg", image=("image/jpeg", "КАРТ64")),
+        ]
+
+    await handle_user_attachments(message, deps, Session(), _reader)
+
+    assert deps.pdfs == ["ПДФ64"]
+    assert deps.images == [("image/jpeg", "КАРТ64")]
+
+
+async def test_whole_album_goes_in_one_call() -> None:
+    """Четыре файла — один запрос, иначе их не свести между собой."""
+    message = _PhotoMessage("")
+    deps = _Deps(AgentReply(text="Занесено"))
+
+    async def _reader(_: Any) -> list[Attachment]:
+        return [Attachment(name=f"file{i}.pdf", pdf=f"П{i}") for i in range(4)]
+
+    await handle_user_attachments(message, deps, Session(), _reader)
+
+    assert len(deps.seen) == 1
+    assert deps.pdfs == ["П0", "П1", "П2", "П3"]
+
+
+async def test_empty_batch_is_reported() -> None:
     message = _PhotoMessage("")
 
-    async def _failing(_: Any) -> list[tuple[str, str]]:
-        raise DocumentUnreadableError("Картинка больше 5 МБ.")
+    async def _reader(_: Any) -> list[Attachment]:
+        return []
 
-    await handle_user_photo(
+    await handle_user_attachments(
+        message, _Deps(AgentReply(text="")), Session(), _reader
+    )
+    assert "не нашла" in message.sent[-1].text.casefold()
+
+
+async def test_attachment_bodies_do_not_stay_in_history() -> None:
+    """Base64 и тело выписки уезжали бы в модель на каждом сообщении."""
+    session = Session()
+    deps = _Deps(AgentReply(text="Занесено"))
+
+    async def _reader(_: Any) -> list[Attachment]:
+        return [
+            Attachment(name="big.csv", text="строка;" * 5000),
+            Attachment(name="shot.png", image=("image/png", "X" * 5000)),
+        ]
+
+    await handle_user_attachments(_PhotoMessage(""), deps, session, _reader)
+    assert len(session.history[0]["content"]) < 150
+
+
+async def test_unreadable_batch_is_reported() -> None:
+    message = _PhotoMessage("")
+
+    async def _failing(_: Any) -> list[Attachment]:
+        raise DocumentUnreadableError("PDF больше 30 МБ.")
+
+    await handle_user_attachments(
         message, _Deps(AgentReply(text="")), Session(), _failing
     )
-    assert "5 МБ" in message.sent[0].text
-
-
-async def test_screenshot_body_does_not_stay_in_history() -> None:
-    """Base64 картинки в истории уезжал бы в модель каждый раз."""
-    session = Session()
-    deps = _Deps(AgentReply(text="Записала"))
-
-    async def _reader(_: Any) -> list[tuple[str, str]]:
-        return [("image/png", "X" * 5000)]
-
-    await handle_user_photo(_PhotoMessage(""), deps, session, _reader)
-    assert len(session.history[0]["content"]) < 100
+    assert "30 МБ" in message.sent[0].text

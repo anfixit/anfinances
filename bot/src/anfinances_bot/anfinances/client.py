@@ -37,7 +37,10 @@ class AnfinancesClient:
         self._token: str | None = None
         self._http = httpx.AsyncClient(
             base_url=settings.anfinances_base_url,
-            timeout=httpx.Timeout(15.0),
+            # Сервер слабый, и справочники отвечают за секунду с
+            # лишним. Пятнадцати секунд не хватало, когда
+            # приходило несколько файлов сразу.
+            timeout=httpx.Timeout(60.0),
         )
 
     async def aclose(self) -> None:

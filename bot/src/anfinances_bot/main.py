@@ -21,18 +21,21 @@ from anfinances_bot.anfinances.client import AnfinancesClient
 from anfinances_bot.anfinances.schemas import UserProfile
 from anfinances_bot.config import get_bot_settings
 from anfinances_bot.documents import (
+    Attachment,
     DocumentUnreadableError,
     read_image,
+    read_pdf,
+    read_spreadsheet,
     read_statement,
 )
 from anfinances_bot.proactive_loop import run_proactive_loop
 from anfinances_bot.speech import SpeechUnavailableError, transcribe
 from anfinances_bot.telegram.access import AllowlistMiddleware
+from anfinances_bot.telegram.albums import AlbumBuffer
 from anfinances_bot.telegram.handlers import (
     Session,
     handle_callback,
-    handle_user_document,
-    handle_user_photo,
+    handle_user_attachments,
     handle_user_text,
     handle_user_voice,
 )
@@ -62,6 +65,7 @@ class Deps:
         text: str,
         history: list[dict[str, Any]],
         images: list[tuple[str, str]] | None = None,
+        pdfs: list[str] | None = None,
     ) -> AgentReply:
         # Счета и категории тянем каждый раз: она их правит на сайте,
         # а устаревший список тихо испортил бы разнесение операций.
@@ -74,6 +78,7 @@ class Deps:
             self._profile.timezone,
             history=history,
             images=images,
+            pdfs=pdfs,
         )
 
 
@@ -138,6 +143,8 @@ async def main() -> None:
     dispatcher.message.middleware(allowlist)
     dispatcher.callback_query.middleware(allowlist)
 
+    albums = AlbumBuffer()
+
     # Один чат — одна сессия. Бот личный, чатов больше одного не будет.
     sessions: dict[int, Session] = {}
 
@@ -157,47 +164,58 @@ async def main() -> None:
     async def _on_text(message: Message) -> None:
         await handle_user_text(message, deps, _session(message.chat.id))
 
-    async def _download_and_read(message: Message) -> tuple[str, str]:
-        """Скачать присланный файл и прочитать его как текст."""
+    async def _read_one(message: Message) -> Attachment:
+        """Прочитать одно вложение по его настоящему содержимому."""
+        photo = message.photo[-1] if message.photo else None
         document = message.document
-        if document is None:
-            raise DocumentUnreadableError("В сообщении нет файла.")
-        with tempfile.TemporaryDirectory() as folder:
-            path = Path(folder) / "statement"
-            await bot.download(document, destination=path)
-            return document.file_name or "выписка", read_statement(path)
-
-    @dispatcher.message(F.document)
-    async def _on_document(message: Message) -> None:
-        # Скриншот часто присылают файлом, а не фото — тогда это
-        # картинка, а не выписка, и читать её надо глазами модели.
-        document = message.document
-        mime = (document.mime_type or "") if document else ""
-        session = _session(message.chat.id)
-        if mime.startswith("image/"):
-            await handle_user_photo(message, deps, session, _download_images)
-            return
-        await handle_user_document(message, deps, session, _download_and_read)
-
-    async def _download_images(
-        message: Message,
-    ) -> list[tuple[str, str]]:
-        """Скачать скриншот и подготовить его для модели."""
-        # Телеграм отдаёт фото в нескольких размерах; последний —
-        # самый крупный, на нём читаются суммы мелким шрифтом.
-        source = message.photo[-1] if message.photo else message.document
+        source = photo or document
         if source is None:
-            raise DocumentUnreadableError("В сообщении нет картинки.")
-        with tempfile.TemporaryDirectory() as folder:
-            path = Path(folder) / "shot"
-            await bot.download(source, destination=path)
-            name = message.document.file_name if message.document else ""
-            return [read_image(path, name or "screenshot.jpg")]
+            raise DocumentUnreadableError("В сообщении нет вложения.")
 
-    @dispatcher.message(F.photo)
-    async def _on_photo(message: Message) -> None:
-        await handle_user_photo(
-            message, deps, _session(message.chat.id), _download_images
+        name = (document.file_name if document else None) or "скриншот.jpg"
+        mime = (document.mime_type if document else None) or "image/jpeg"
+        suffix = Path(name).suffix.lower()
+
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "attachment"
+            await bot.download(source, destination=path)
+
+            if photo is not None or mime.startswith("image/"):
+                return Attachment(name=name, image=read_image(path, name))
+            if mime == "application/pdf" or suffix == ".pdf":
+                return Attachment(name=name, pdf=read_pdf(path))
+            if suffix in {".xlsx", ".xlsm", ".xltx"}:
+                return Attachment(name=name, text=read_spreadsheet(path))
+            return Attachment(name=name, text=read_statement(path))
+
+    async def _read_all(batch: list[Message]) -> list[Attachment]:
+        """Прочитать пачку, пропуская нечитаемое.
+
+        Один непонятный файл не должен обнулять остальные: о нём
+        говорим отдельно, а разбор продолжаем.
+        """
+        items: list[Attachment] = []
+        for item in batch:
+            try:
+                items.append(await _read_one(item))
+            except DocumentUnreadableError as exc:
+                name = item.document.file_name if item.document else "файл"
+                logger.warning("Пропускаю %s: %s", name, exc)
+                await item.answer(f"{name}: {exc}")
+        return items
+
+    @dispatcher.message(F.photo | F.document)
+    async def _on_attachment(message: Message) -> None:
+        collected = await albums.collect(message.media_group_id, message)
+        if collected is None:
+            # Пачку заберёт первое сообщение альбома.
+            return
+
+        async def _reader(_: Message) -> list[Attachment]:
+            return await _read_all(collected)
+
+        await handle_user_attachments(
+            message, deps, _session(message.chat.id), _reader
         )
 
     @dispatcher.message(F.voice)
