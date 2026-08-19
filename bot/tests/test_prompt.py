@@ -111,3 +111,10 @@ def test_category_order_is_stable() -> None:
     assert build_system_blocks(
         ACCOUNTS, CATEGORIES, "Europe/Moscow"
     ) == build_system_blocks(ACCOUNTS, shuffled, "Europe/Moscow")
+
+
+def test_prompt_forbids_deleting_on_its_own() -> None:
+    """Разрушительное действие — только после её слова."""
+    lowered = SYSTEM_PROMPT.casefold()
+    assert "только после её слова" in lowered
+    assert "force=true" in lowered

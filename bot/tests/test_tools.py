@@ -435,6 +435,8 @@ async def test_toolbox_exposes_all_tools() -> None:
         "import_statement",
         "update_transaction",
         "delete_transaction",
+        "delete_credit_payment",
+        "archive_account",
         "set_budget",
         "move_budget",
         "create_category",
@@ -452,6 +454,7 @@ async def test_toolbox_exposes_all_tools() -> None:
         "get_credits",
         "get_credit_projection",
         "get_money_age",
+        "list_credit_payments",
     }
 
 
@@ -609,3 +612,32 @@ async def test_update_rejects_unknown_account() -> None:
     )
     assert "счёт не найден" in result.casefold()
     assert not [c for c in client.calls if c[0] == "PATCH"]
+
+
+async def test_credit_payment_can_be_deleted() -> None:
+    box, client = _toolbox()
+    result = await box.delete_credit_payment(
+        credit_id="cr-1", payment_id="pay-9"
+    )
+    assert client.calls[0][:2] == (
+        "DELETE",
+        "/credits/cr-1/payments/pay-9",
+    )
+    assert "долг" in result.casefold()
+
+
+async def test_account_with_balance_needs_force() -> None:
+    """Без подтверждения бэкенд откажет — и это правильно."""
+    box, client = _toolbox()
+    await box.archive_account(account_name="Сбер")
+    assert client.calls[-1][2]["params"] == {}
+
+    await box.archive_account(account_name="Сбер", force=True)
+    assert client.calls[-1][2]["params"] == {"force": "true"}
+
+
+async def test_archiving_unknown_account_is_reported() -> None:
+    box, client = _toolbox()
+    result = await box.archive_account(account_name="Нету")
+    assert "не найден" in result.casefold()
+    assert client.calls == []

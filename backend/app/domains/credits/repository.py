@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domains.credits.models import Credit, CreditPayment
 from app.domains.currencies.models import Currency
+from app.domains.transactions.models import Transaction
 
 __all__ = ["CreditRepository", "SqlCreditRepository"]
 
@@ -36,6 +37,14 @@ class CreditRepository(Protocol):
     async def add(self, credit: Credit) -> Credit: ...
 
     async def add_payment(self, payment: CreditPayment) -> CreditPayment: ...
+
+    async def get_payment(
+        self, payment_id: uuid.UUID, user_id: uuid.UUID
+    ) -> CreditPayment | None: ...
+
+    async def delete_payment(self, payment: CreditPayment) -> None: ...
+
+    async def delete_transaction(self, tx_id: uuid.UUID) -> None: ...
 
 
 class SqlCreditRepository:
@@ -117,3 +126,26 @@ class SqlCreditRepository:
         self._session.add(payment)
         await self._session.flush()
         return payment
+
+    async def get_payment(
+        self, payment_id: uuid.UUID, user_id: uuid.UUID
+    ) -> CreditPayment | None:
+        result = await self._session.execute(
+            select(CreditPayment).where(
+                CreditPayment.id == payment_id,
+                CreditPayment.user_id == user_id,
+            )
+        )
+        return result.scalar_one_or_none()
+
+    async def delete_payment(self, payment: CreditPayment) -> None:
+        await self._session.delete(payment)
+
+    async def delete_transaction(self, tx_id: uuid.UUID) -> None:
+        """Снести списание, созданное вместе с платежом."""
+        result = await self._session.execute(
+            select(Transaction).where(Transaction.id == tx_id)
+        )
+        tx = result.scalar_one_or_none()
+        if tx is not None:
+            await self._session.delete(tx)

@@ -5,6 +5,7 @@ import {
   archiveCredit,
   createCredit,
   createCreditPayment,
+  deleteCreditPayment,
   listCreditPayments,
   listCredits,
   updateCredit,
@@ -73,5 +74,15 @@ export function useCreateCreditPayment() {
       input: CreditPaymentCreateInput
     }) => createCreditPayment(vars.creditId, vars.input),
     onSuccess: (_data, vars) => invalidateAfterCreditPayment(qc, vars.creditId),
+  })
+}
+
+export function useDeleteCreditPayment() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (vars: { creditId: string; paymentId: string }) =>
+      deleteCreditPayment(vars.creditId, vars.paymentId),
+    onSuccess: (_data, vars) =>
+      invalidateAfterCreditPayment(qc, vars.creditId),
   })
 }

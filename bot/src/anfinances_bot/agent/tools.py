@@ -1,10 +1,12 @@
 """Инструменты агента.
 
 Каждый инструмент — тонкая обёртка над HTTP-вызовом anfinances.
-Инструментов на удаление счетов, категорий и кредитов, на правку
-настроек, валют и начального баланса здесь нет: это осознанная
-граница полномочий бота. Ошибиться в распознанной речи легко, а
-такие действия не откатываются одной кнопкой.
+Удаления здесь есть, но узкие: операция, платёж по кредиту и
+архивация счёта. Категории, кредиты и валюты бот не удаляет, правку
+настроек и начального баланса не делает — ошибиться в распознанной
+речи легко, а такие действия не откатываются одной кнопкой.
+Разрушительное действие бот совершает только после явного согласия
+в переписке; за это отвечает системная инструкция.
 
 Докстроки методов уходят в описание инструментов для модели, а
 сигнатуры — в схему параметров. Это контракт, а не украшение.
@@ -82,6 +84,8 @@ class ToolBox:
                 self.import_statement,
                 self.update_transaction,
                 self.delete_transaction,
+                self.delete_credit_payment,
+                self.archive_account,
                 self.set_budget,
                 self.move_budget,
                 self.create_category,
@@ -99,6 +103,7 @@ class ToolBox:
                 self.get_credits,
                 self.get_credit_projection,
                 self.get_money_age,
+                self.list_credit_payments,
             )
         ]
 
@@ -680,6 +685,51 @@ class ToolBox:
 
         await self._client.request("POST", "/recurring", json=body)
         return f"В план-минимум добавлено: {name} — {monthly_amount}."
+
+    async def delete_credit_payment(
+        self, credit_id: str, payment_id: str
+    ) -> str:
+        """Удалить платёж по кредиту.
+
+        Возвращает погашенное тело обратно в долг — этим платёж и
+        отличается от обычной операции. Нужно, когда платёж задвоился:
+        например, внесён руками и повторно приехал с выпиской.
+
+        Действие необратимо, поэтому спроси подтверждение у неё
+        прежде, чем вызывать, и назови сумму и дату.
+        """
+        await self._client.request(
+            "DELETE", f"/credits/{credit_id}/payments/{payment_id}"
+        )
+        return "Платёж удалён, тело кредита возвращено в долг."
+
+    async def list_credit_payments(self, credit_id: str) -> str:
+        """Платежи по кредиту — чтобы найти нужный перед удалением."""
+        return str(
+            await self._client.request("GET", f"/credits/{credit_id}/payments")
+        )
+
+    async def archive_account(
+        self, account_name: str, force: bool = False
+    ) -> str:
+        """Убрать счёт из активных.
+
+        Архивный счёт не входит в капитал. Со счёта с остатком итог
+        изменится на всю сумму остатка, поэтому такой архивируется
+        только с force=True — и ставить его можно лишь после того,
+        как она подтвердила это в переписке.
+        """
+        accounts = await self._client.accounts()
+        account = _find_account(accounts, account_name)
+        if account is None:
+            names = ", ".join(a.name for a in accounts)
+            return f"Счёт не найден. Доступные: {names}"
+
+        params = {"force": "true"} if force else {}
+        await self._client.request(
+            "DELETE", f"/accounts/{account.id}", params=params
+        )
+        return f"Счёт «{account.name}» убран в архив."
 
     # --- чтение ---------------------------------------------------
 

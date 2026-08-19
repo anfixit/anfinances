@@ -6,10 +6,11 @@ import { CreditForm } from "@/features/credits/CreditForm"
 import { CreditPaymentForm } from "@/features/credits/CreditPaymentForm"
 import {
   useArchiveCredit,
+  useDeleteCreditPayment,
   useCreditPayments,
   useCredits,
 } from "@/features/credits/hooks"
-import type { Credit } from "@/features/credits/types"
+import type { Credit, CreditPayment } from "@/features/credits/types"
 import { formatDate } from "@/lib/datetime"
 import { formatMoney } from "@/lib/money"
 
@@ -49,6 +50,8 @@ export function CreditsPage() {
   const credits = useCredits()
   const accounts = useAccounts()
   const archive = useArchiveCredit()
+  const removePaymentMut = useDeleteCreditPayment()
+
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [creditSheetOpen, setCreditSheetOpen] = useState(false)
   const [paymentSheetOpen, setPaymentSheetOpen] = useState(false)
@@ -59,6 +62,32 @@ export function CreditsPage() {
   const selectedCredit =
     list.find((credit) => credit.id === selectedId) ?? firstCredit
   const payments = useCreditPayments(selectedCredit?.id ?? null)
+
+  // Удаление платежа возвращает погашенное тело кредита, поэтому
+  // цену действия показываем прямо в вопросе. Опираемся на
+  // selectedCredit: пока кредит не выбран руками, показан первый, а
+  // selectedId при этом пуст.
+  const removePayment = (payment: CreditPayment) => {
+    if (!selectedCredit) {
+      return
+    }
+    const shown = formatMoney(payment.total_amount, payment.currency_code)
+    const grows = formatMoney(
+      payment.principal_amount,
+      payment.currency_code,
+    )
+    const confirmed = window.confirm(
+      `Удалить платёж ${shown} от ${formatDate(payment.date)}?\n\n` +
+        `Долг вырастет на ${grows} — на столько было засчитано ` +
+        "погашение.",
+    )
+    if (confirmed) {
+      removePaymentMut.mutate({
+        creditId: selectedCredit.id,
+        paymentId: payment.id,
+      })
+    }
+  }
   const accountById = useMemo(
     () =>
       new Map(
@@ -260,6 +289,13 @@ export function CreditsPage() {
                             payment.currency_code,
                           )}
                         </span>
+                        <button
+                          type="button"
+                          className="link danger"
+                          onClick={() => removePayment(payment)}
+                        >
+                          Удалить
+                        </button>
                       </div>
                     </li>
                   )

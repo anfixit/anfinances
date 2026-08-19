@@ -81,3 +81,10 @@ export async function createCreditPayment(
     ),
   )
 }
+
+export async function deleteCreditPayment(
+  creditId: string,
+  paymentId: string,
+): Promise<void> {
+  await api.delete(`/credits/${creditId}/payments/${paymentId}`)
+}

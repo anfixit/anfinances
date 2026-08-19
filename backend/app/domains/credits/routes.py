@@ -151,6 +151,23 @@ async def list_credit_payments(
     )
 
 
+@router.delete(
+    "/{credit_id}/payments/{payment_id}",
+    response_model=ApiResponse[dict[str, str]],
+)
+async def delete_credit_payment(
+    credit_id: uuid.UUID,
+    payment_id: uuid.UUID,
+    user: CurrentUser,
+    service: ServiceDep,
+    db: DbSession,
+) -> ApiResponse[dict[str, str]]:
+    """Удалить платёж и вернуть погашенное тело кредита."""
+    await service.delete_payment(payment_id, user.id)
+    await db.commit()
+    return ApiResponse(data={"status": "deleted"})
+
+
 @router.post(
     "/{credit_id}/payments",
     status_code=status.HTTP_201_CREATED,

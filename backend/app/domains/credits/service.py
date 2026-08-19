@@ -231,6 +231,28 @@ class CreditService:
         credit.principal_balance -= data.principal_amount
         return payment
 
+    async def delete_payment(
+        self, payment_id: uuid.UUID, user_id: uuid.UUID
+    ) -> None:
+        """Удалить платёж и вернуть погашенное тело кредита.
+
+        Платёж живёт в двух местах: строкой в кредите и списанием по
+        счёту. Снести надо обе, иначе останется операция без платежа
+        или платёж без списания. И обязательно вернуть
+        ``principal_balance``: иначе строка исчезнет, а погашение
+        останется засчитанным, и долг разойдётся с банком.
+        """
+        payment = await self._repo.get_payment(payment_id, user_id)
+        if payment is None:
+            raise NotFoundError("Платёж не найден.")
+
+        credit = await self.get_credit(payment.credit_id, user_id)
+        credit.principal_balance += payment.principal_amount
+
+        if payment.transaction_id is not None:
+            await self._repo.delete_transaction(payment.transaction_id)
+        await self._repo.delete_payment(payment)
+
     async def archive_credit(
         self, credit_id: uuid.UUID, user_id: uuid.UUID
     ) -> None:
