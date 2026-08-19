@@ -112,7 +112,7 @@ async def test_system_blocks_are_passed() -> None:
     runner, messages, _ = _pair()
     await runner.run("кофе 300", [], [], "Asia/Tashkent")
     system = messages.kwargs["system"]
-    assert system[-1]["cache_control"] == {"type": "ephemeral"}
+    assert system[-1]["cache_control"] == {"type": "ephemeral", "ttl": "1h"}
     assert "Asia/Tashkent" in system[-1]["text"]
 
 
@@ -234,3 +234,33 @@ async def test_unknown_failure_keeps_the_general_wording() -> None:
     with pytest.raises(AgentUnavailableError) as caught:
         await runner.run("кофе 300", [], [], "Europe/Moscow")
     assert "модель недоступна" in caught.value.reason.casefold()
+
+
+async def test_prefix_is_cached_for_an_hour() -> None:
+    """Между её сообщениями проходит больше пяти минут."""
+    runner, messages, _ = _pair()
+    await runner.run("кофе 300", [], [], "Europe/Moscow")
+    cache = messages.kwargs["system"][-1]["cache_control"]
+    assert cache == {"type": "ephemeral", "ttl": "1h"}
+
+
+async def test_attachment_message_is_cached() -> None:
+    """Иначе выписка оплачивается заново на каждом шаге агента."""
+    runner, messages, _ = _pair()
+    await runner.run(
+        "разбери",
+        [],
+        [],
+        "Europe/Moscow",
+        pdfs=["ПДФ"],
+    )
+    last = messages.kwargs["messages"][-1]["content"][-1]
+    assert last["cache_control"] == {"type": "ephemeral", "ttl": "5m"}
+
+
+async def test_plain_question_is_not_cached() -> None:
+    """Короткую фразу кэшировать дороже, чем переслать."""
+    runner, messages, _ = _pair()
+    await runner.run("сколько осталось", [], [], "Europe/Moscow")
+    last = messages.kwargs["messages"][-1]["content"][-1]
+    assert "cache_control" not in last

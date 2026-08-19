@@ -144,6 +144,9 @@ def build_system_blocks(
         {
             "type": "text",
             "text": context,
-            "cache_control": {"type": "ephemeral"},
+            # Час, а не пять минут: между её сообщениями обычно
+            # проходит больше, и на пятиминутном кэше этот префикс
+            # переписывался заново почти каждый раз.
+            "cache_control": {"type": "ephemeral", "ttl": "1h"},
         },
     ]

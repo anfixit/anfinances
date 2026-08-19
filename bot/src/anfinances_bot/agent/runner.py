@@ -148,12 +148,18 @@ class AgentRunner:
             }
             for data in pdfs or []
         )
-        content.append(
-            {
-                "type": "text",
-                "text": f"{_now_line(timezone_name, now)}\n\n{text}",
-            }
-        )
+        question: dict[str, Any] = {
+            "type": "text",
+            "text": f"{_now_line(timezone_name, now)}\n\n{text}",
+        }
+        if images or pdfs:
+            # Агент ходит в модель несколько раз на одну фразу, и
+            # каждый раз пересылает всю переписку — вместе с выпиской
+            # на сотню тысяч токенов. С кэшем повторные шаги читают
+            # её вдесятеро дешевле. Пяти минут хватает: шаги идут
+            # секунда за секундой.
+            question["cache_control"] = {"type": "ephemeral", "ttl": "5m"}
+        content.append(question)
         messages.append({"role": "user", "content": content})
 
         try:

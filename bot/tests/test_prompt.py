@@ -20,7 +20,7 @@ CATEGORIES = [
 
 def test_last_block_is_cached() -> None:
     blocks = build_system_blocks(ACCOUNTS, CATEGORIES, "Europe/Moscow")
-    assert blocks[-1]["cache_control"] == {"type": "ephemeral"}
+    assert blocks[-1]["cache_control"] == {"type": "ephemeral", "ttl": "1h"}
     assert all("cache_control" not in b for b in blocks[:-1])
 
 
@@ -88,7 +88,7 @@ def test_reference_is_in_the_cached_prefix() -> None:
     blocks = build_system_blocks(ACCOUNTS, CATEGORIES, "Europe/Moscow")
     joined = "\n".join(str(b["text"]) for b in blocks)
     assert "Дайте деньгам созреть" in joined
-    assert blocks[-1]["cache_control"] == {"type": "ephemeral"}
+    assert blocks[-1]["cache_control"] == {"type": "ephemeral", "ttl": "1h"}
 
 
 def test_reference_maps_rules_onto_tools() -> None:
