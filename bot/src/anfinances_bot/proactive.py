@@ -35,11 +35,23 @@ def should_remind(
     last_transaction_at: datetime | None,
     last_reminder_at: datetime | None,
     now: datetime,
+    last_interaction_at: datetime | None = None,
 ) -> bool:
-    """Напомнить, если операций не было двое суток и мы молчали."""
+    """Напомнить, если операций не было двое суток и мы молчали.
+
+    Разговор с ботом — тоже признак жизни: если она только что
+    присылала выписку или спрашивала про остаток, напоминать «пару
+    дней ничего не записывали» нелепо, даже когда записать ничего
+    не получилось.
+    """
     if (
         last_reminder_at is not None
         and now - last_reminder_at < REMINDER_SILENCE
+    ):
+        return False
+    if (
+        last_interaction_at is not None
+        and now - last_interaction_at < REMINDER_SILENCE
     ):
         return False
     if last_transaction_at is None:

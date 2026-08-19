@@ -16,7 +16,9 @@ ENV PYTHONPATH=/app/src
 
 # Бот работает от непривилегированного пользователя: наружу он не
 # слушает, но и лишних прав ему не нужно.
-RUN useradd --create-home --uid 10001 bot && chown -R bot:bot /app
+RUN useradd --create-home --uid 10001 bot \
+    && mkdir -p /data \
+    && chown -R bot:bot /app /data
 USER bot
 
 CMD ["uv", "run", "--no-dev", "python", "-m", "anfinances_bot.main"]

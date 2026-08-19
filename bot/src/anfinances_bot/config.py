@@ -41,6 +41,9 @@ class BotSettings(BaseSettings):
     # рублёвое умолчание не помогло бы ни сумам, ни долларам.
     bot_default_accounts: Annotated[dict[str, str], NoDecode]
     # NoDecode по той же причине, что и у списка ID выше.
+    # Состояние напоминаний. Лежит на томе, чтобы деплой не
+    # выглядел как новый повод напомнить.
+    bot_state_path: str = "/data/state.json"
     bot_quiet_hours: Annotated[tuple[int, int], NoDecode] = (23, 9)
     # 29–31 есть не в каждом месяце: совещание бы пропускалось.
     bot_budget_meeting_day: int = Field(default=15, ge=1, le=28)

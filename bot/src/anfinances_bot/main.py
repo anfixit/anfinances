@@ -30,6 +30,7 @@ from anfinances_bot.documents import (
 )
 from anfinances_bot.proactive_loop import run_proactive_loop
 from anfinances_bot.speech import SpeechUnavailableError, transcribe
+from anfinances_bot.state import BotState
 from anfinances_bot.telegram.access import AllowlistMiddleware
 from anfinances_bot.telegram.albums import AlbumBuffer
 from anfinances_bot.telegram.handlers import (
@@ -144,11 +145,15 @@ async def main() -> None:
     dispatcher.callback_query.middleware(allowlist)
 
     albums = AlbumBuffer()
+    state = BotState(Path(settings.bot_state_path))
 
     # Один чат — одна сессия. Бот личный, чатов больше одного не будет.
     sessions: dict[int, Session] = {}
 
     def _session(chat_id: int) -> Session:
+        # Разговор с ботом гасит напоминание «пару дней ничего не
+        # записывали»: она здесь, даже если записать не удалось.
+        state.set("last_interaction_at")
         return sessions.setdefault(chat_id, Session())
 
     async def _download_and_transcribe(message: Message) -> str:
@@ -237,7 +242,7 @@ async def main() -> None:
         )
 
     proactive = asyncio.create_task(
-        run_proactive_loop(bot, deps, settings, profile.timezone)
+        run_proactive_loop(bot, deps, settings, profile.timezone, state)
     )
     logger.info("Бот запущен, часовой пояс %s", profile.timezone)
     try:

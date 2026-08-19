@@ -73,8 +73,13 @@ services:
     # с Telegram и моделью он общается сам, исходящими запросами.
     environment:
       ANFINANCES_BASE_URL: http://backend:8000/api/v1
+      BOT_STATE_PATH: /data/state.json
     env_file:
       - ./bot/.env
+    volumes:
+      # Отметки «когда напоминала» переживают перезапуск: иначе
+      # каждый деплой выглядел бы как новый повод напомнить.
+      - bot_state:/data
 
   frontend:
     image: ${IMAGE_FRONTEND}
@@ -111,6 +116,8 @@ services:
       - caddy_config:/config
 
 volumes:
+  bot_state:
+    name: anfinances_bot_state
   postgres_data:
     name: anfinances_postgres_data
   caddy_data:

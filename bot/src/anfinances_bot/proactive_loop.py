@@ -57,29 +57,37 @@ async def run_proactive_loop(
     deps: _Deps,
     settings: BotSettings,
     timezone_name: str,
+    state: Any,
 ) -> None:
-    """Раз в 15 минут проверять, не пора ли написать первым."""
+    """Раз в 15 минут проверять, не пора ли написать первым.
+
+    Отметки берутся из ``state``, а не из памяти цикла: перезапуск
+    бота не должен выглядеть как новый повод напомнить.
+    """
     chat_id = next(iter(settings.telegram_allowed_user_ids))
     zone = ZoneInfo(timezone_name)
-    last_reminder: datetime | None = None
-    last_meeting: datetime | None = None
 
     while True:
         try:
             now = datetime.now(UTC).astimezone(zone)
             if not is_quiet(now, settings.bot_quiet_hours):
                 if should_hold_meeting(
-                    now, settings.bot_budget_meeting_day, last_meeting
+                    now,
+                    settings.bot_budget_meeting_day,
+                    state.get("last_meeting_at"),
                 ):
                     reply = await deps.resolve(MEETING_PROMPT, [])
                     for part in split_message(reply.text):
                         await bot.send_message(chat_id, to_telegram_html(part))
-                    last_meeting = now
+                    state.set("last_meeting_at", now)
                 elif should_remind(
-                    await _last_transaction_at(deps), last_reminder, now
+                    await _last_transaction_at(deps),
+                    state.get("last_reminder_at"),
+                    now,
+                    state.get("last_interaction_at"),
                 ):
                     await bot.send_message(chat_id, REMINDER)
-                    last_reminder = now
+                    state.set("last_reminder_at", now)
         except asyncio.CancelledError:
             raise
         except Exception:

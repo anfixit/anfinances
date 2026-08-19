@@ -108,3 +108,30 @@ def test_overspend_warned_once_per_category_per_month() -> None:
     assert should_warn_overspend("c-1", "2026-08", warned) is False
     assert should_warn_overspend("c-1", "2026-09", warned) is True
     assert should_warn_overspend("c-2", "2026-08", warned) is True
+
+
+def test_recent_conversation_silences_the_reminder() -> None:
+    """Разговор с ботом — тоже признак жизни."""
+    now = _at(12)
+    assert (
+        should_remind(
+            last_transaction_at=now - timedelta(days=5),
+            last_reminder_at=None,
+            now=now,
+            last_interaction_at=now - timedelta(minutes=3),
+        )
+        is False
+    )
+
+
+def test_old_conversation_does_not_silence_it() -> None:
+    now = _at(12)
+    assert (
+        should_remind(
+            last_transaction_at=now - timedelta(days=5),
+            last_reminder_at=None,
+            now=now,
+            last_interaction_at=now - timedelta(days=4),
+        )
+        is True
+    )
