@@ -60,11 +60,37 @@ def test_spreadsheet_rows_become_lines(tmp_path: Path) -> None:
     assert ";;" not in text
 
 
-def test_broken_spreadsheet_asks_for_csv(tmp_path: Path) -> None:
+def test_text_named_xlsx_is_read_as_a_statement(tmp_path: Path) -> None:
+    """Некоторые банки называют .xlsx обычный текст."""
     path = tmp_path / "v.xlsx"
-    path.write_bytes("не таблица".encode())
-    with pytest.raises(DocumentUnreadableError, match="CSV"):
+    path.write_bytes("дата;сумма\n01.08.2026;-300".encode())
+    assert "01.08.2026" in read_spreadsheet(path)
+
+
+def test_old_xls_is_named_explicitly(tmp_path: Path) -> None:
+    path = tmp_path / "v.xlsx"
+    path.write_bytes(b"\xd0\xcf\x11\xe0" + b"0" * 40)
+    with pytest.raises(DocumentUnreadableError, match=r"\.xls"):
         read_spreadsheet(path)
+
+
+def test_broken_zip_reports_the_real_cause(tmp_path: Path) -> None:
+    """«Выгрузи CSV» ничего не объясняет без причины."""
+    path = tmp_path / "v.xlsx"
+    path.write_bytes(b"PK\x03\x04" + b"0" * 40)
+    with pytest.raises(DocumentUnreadableError) as caught:
+        read_spreadsheet(path)
+    assert "Error" in str(caught.value) or "zip" in str(caught.value).lower()
+
+
+def test_password_protected_pdf_is_named(tmp_path: Path) -> None:
+    """Модель получит такой файл, но не увидит в нём ни строчки."""
+    path = tmp_path / "v.pdf"
+    path.write_bytes(
+        b"%PDF-1.4\n" + b"0" * 100 + b"/Encrypt 9 0 R\ntrailer\n%%EOF"
+    )
+    with pytest.raises(DocumentUnreadableError, match="паролем"):
+        read_pdf(path)
 
 
 def test_image_type_comes_from_the_first_bytes(tmp_path: Path) -> None:

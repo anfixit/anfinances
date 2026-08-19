@@ -161,7 +161,21 @@ def read_pdf(path: Path) -> str:
         raise DocumentUnreadableError(
             "PDF больше 30 МБ. Раздели выписку по месяцам."
         )
+    if _is_encrypted(raw):
+        # Банки часто закрывают выписку паролем. Модель получит файл,
+        # но не увидит в нём ни строчки, и по молчанию это не отличить
+        # от пустого документа.
+        raise DocumentUnreadableError(
+            "PDF защищён паролем. Открой его и пересохрани без "
+            "пароля, или пришли выписку в CSV."
+        )
     return base64.b64encode(raw).decode("ascii")
+
+
+def _is_encrypted(raw: bytes) -> bool:
+    """Есть ли в PDF словарь шифрования."""
+    tail = raw[-4096:] if len(raw) > 4096 else raw
+    return b"/Encrypt" in tail or b"/Encrypt" in raw[:4096]
 
 
 def read_spreadsheet(path: Path) -> str:
@@ -172,11 +186,26 @@ def read_spreadsheet(path: Path) -> str:
     """
     from openpyxl import load_workbook
 
+    raw = path.read_bytes()
+    if raw.startswith(b"\xd0\xcf\x11\xe0"):
+        raise DocumentUnreadableError(
+            "Это старый формат .xls. Пересохрани как .xlsx или выгрузи CSV."
+        )
+    if not raw.startswith(b"PK"):
+        # Некоторые банки называют .xlsx обычный текст. Раз это не
+        # zip, таблицей он быть не может — читаем как выписку.
+        logger.info("Файл с расширением таблицы оказался текстом")
+        return read_statement(path)
+
     try:
         book = load_workbook(path, read_only=True, data_only=True)
     except Exception as exc:
+        # Настоящую причину показываем: «выгрузи CSV» ничего не
+        # объясняет, если файл, скажем, защищён паролем.
+        logger.warning("openpyxl не открыл таблицу", exc_info=True)
         raise DocumentUnreadableError(
-            "Не удалось открыть таблицу. Выгрузи из банка CSV."
+            f"Не удалось открыть таблицу ({type(exc).__name__}: {exc}). "
+            "Выгрузи из банка CSV."
         ) from exc
 
     lines: list[str] = []
