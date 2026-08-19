@@ -198,7 +198,11 @@ def read_spreadsheet(path: Path) -> str:
         return read_statement(path)
 
     try:
-        book = load_workbook(path, read_only=True, data_only=True)
+        # Передаём поток, а не путь: openpyxl определяет формат по
+        # расширению файла, а скачанное вложение лежит во временном
+        # файле без него — и он отказывался открывать даже
+        # настоящий xlsx.
+        book = load_workbook(io.BytesIO(raw), read_only=True, data_only=True)
     except Exception as exc:
         # Настоящую причину показываем: «выгрузи CSV» ничего не
         # объясняет, если файл, скажем, защищён паролем.

@@ -92,6 +92,17 @@ class AgentRunner:
             }
             for media_type, data in images or []
         ]
+        content.extend(
+            {
+                "type": "document",
+                "source": {
+                    "type": "base64",
+                    "media_type": "application/pdf",
+                    "data": data,
+                },
+            }
+            for data in pdfs or []
+        )
         content.append(
             {
                 "type": "text",

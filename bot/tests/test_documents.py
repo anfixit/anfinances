@@ -107,3 +107,20 @@ def test_non_image_is_rejected(tmp_path: Path) -> None:
     path.write_bytes("просто байты".encode())
     with pytest.raises(DocumentUnreadableError):
         read_image(path, "shot.bin")
+
+
+def test_spreadsheet_without_extension_is_read(tmp_path: Path) -> None:
+    """Скачанное вложение лежит во временном файле без расширения.
+
+    openpyxl определяет формат по имени файла и отказывался открывать
+    даже настоящий xlsx — отсюда «does not support  file format».
+    """
+    path = tmp_path / "attachment"
+    book = Workbook()
+    sheet = book.active
+    assert sheet is not None
+    sheet.append(["дата", "сумма"])
+    sheet.append(["01.08.2026", -300])
+    book.save(path)
+
+    assert "01.08.2026;-300" in read_spreadsheet(path)

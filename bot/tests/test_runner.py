@@ -170,3 +170,34 @@ async def test_no_images_means_no_image_blocks() -> None:
     await runner.run("кофе 300", [], [], "Europe/Moscow")
     blocks = messages.kwargs["messages"][-1]["content"]
     assert all(b["type"] == "text" for b in blocks)
+
+
+async def test_pdf_goes_as_a_document_block() -> None:
+    """Без блока модель видит только имя файла, а не его содержимое."""
+    runner, messages, _ = _pair()
+    await runner.run(
+        "разбери выписку",
+        [],
+        [],
+        "Europe/Moscow",
+        pdfs=["ПДФ64"],
+    )
+    blocks = messages.kwargs["messages"][-1]["content"]
+    documents = [b for b in blocks if b["type"] == "document"]
+    assert len(documents) == 1
+    assert documents[0]["source"]["media_type"] == "application/pdf"
+    assert documents[0]["source"]["data"] == "ПДФ64"
+
+
+async def test_documents_and_images_go_together() -> None:
+    runner, messages, _ = _pair()
+    await runner.run(
+        "сведи всё",
+        [],
+        [],
+        "Europe/Moscow",
+        images=[("image/png", "КАРТ")],
+        pdfs=["П1", "П2"],
+    )
+    kinds = [b["type"] for b in messages.kwargs["messages"][-1]["content"]]
+    assert kinds == ["image", "document", "document", "text"]
