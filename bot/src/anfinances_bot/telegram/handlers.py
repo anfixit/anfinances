@@ -57,7 +57,10 @@ DOC_UNREADABLE = "Не смогла прочитать файл."
 class Session:
     """Память одного чата: последние ходы и незакрытые уточнения."""
 
-    MAX_HISTORY = 12
+    # Двенадцать записей — это шесть обменов, на живой разговор не
+    # хватало. Дорого стоят документы, а не текст, и тело документа
+    # в историю всё равно не попадает.
+    MAX_HISTORY = 40
 
     history: list[dict[str, Any]] = field(default_factory=list)
     pending_accounts: list[AccountRead] = field(default_factory=list)
@@ -184,11 +187,11 @@ async def handle_user_attachments(
     names = ", ".join(f"{a.name} ({a.kind})" for a in items)
     await _say(message, f"Читаю: {names}…")
 
-    caption = " ".join(
-        part
-        for part in ((message.caption or "").strip(), _texts_of(items))
-        if part
-    )
+    note = (message.caption or "").strip()
+    # Тело документа в историю не кладём — оно уезжало бы в модель на
+    # каждом следующем сообщении. А подпись кладём: в ней она
+    # объясняет, какой счёт какой, и без неё бот через шаг забывает.
+    caption = " ".join(part for part in (note, _texts_of(items)) if part)
     await _run(
         message,
         deps,
@@ -203,7 +206,9 @@ async def handle_user_attachments(
             "выдумывай, лучше переспроси.\n\n"
             f"Файлы: {names}." + (f"\n\n{caption}" if caption else "")
         ),
-        remember_as=f"[прислала документы: {names}]",
+        remember_as=(
+            f"[прислала документы: {names}]" + (f"\n{note}" if note else "")
+        ),
         images=[a.image for a in items if a.image is not None],
         pdfs=[a.pdf for a in items if a.pdf is not None],
     )

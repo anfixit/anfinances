@@ -348,3 +348,33 @@ async def test_unreadable_batch_is_reported() -> None:
         message, _Deps(AgentReply(text="")), Session(), _failing
     )
     assert "30 МБ" in message.sent[0].text
+
+
+async def test_caption_is_remembered_but_body_is_not() -> None:
+    """В подписи она объясняет, какой счёт какой — это терять нельзя."""
+    session = Session()
+    deps = _Deps(AgentReply(text="Занесено"))
+    note = "Альфа — это счёт 6806, сейчас баланс 212,27"
+
+    async def _reader(_: Any) -> list[Attachment]:
+        return [Attachment(name="big.csv", text="строка;" * 5000)]
+
+    await handle_user_attachments(
+        _PhotoMessage("", caption=note), deps, session, _reader
+    )
+
+    remembered = session.history[0]["content"]
+    assert note in remembered
+    assert "строка;строка;" not in remembered
+
+
+async def test_history_keeps_a_real_conversation() -> None:
+    """Шести обменов на живой разговор не хватало."""
+    session = Session()
+    deps = _Deps(AgentReply(text="ок"))
+    for i in range(15):
+        await handle_user_text(_Message(f"сообщение {i}"), deps, session)
+
+    kept = [h["content"] for h in session.history]
+    assert "сообщение 5" in kept
+    assert len(session.history) <= Session.MAX_HISTORY
