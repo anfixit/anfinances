@@ -235,9 +235,9 @@ async def _run(
         logger.warning("anfinances недоступен", exc_info=True)
         await _say(message, SITE_DOWN)
         return
-    except AgentUnavailableError:
+    except AgentUnavailableError as exc:
         logger.warning("Модель недоступна", exc_info=True)
-        await _say(message, MODEL_DOWN)
+        await _say(message, exc.reason)
         return
     except AnfinancesError as exc:
         await _say(message, f"Не получилось: {exc}")

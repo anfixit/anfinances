@@ -16,7 +16,11 @@ from anfinances_bot.anfinances.schemas import AccountRead, CategoryRead
 
 logger = logging.getLogger("anfinances_bot.agent")
 
-__all__ = ["AgentReply", "AgentRunner", "AgentUnavailableError"]
+__all__ = [
+    "AgentReply",
+    "AgentRunner",
+    "AgentUnavailableError",
+]
 
 MODEL = "claude-opus-5"
 MAX_TOKENS = 8000
@@ -35,7 +39,48 @@ _WEEKDAYS = (
 
 
 class AgentUnavailableError(RuntimeError):
-    """Модель недоступна или ответила ошибкой."""
+    """Модель недоступна или ответила ошибкой.
+
+    ``reason`` — короткий текст для пользователя. Без него все
+    отказы выглядели одинаково, и «кончились деньги на API»
+    невозможно было отличить от «сервис перегружен, повтори».
+    """
+
+    def __init__(self, message: str, reason: str | None = None) -> None:
+        super().__init__(message)
+        self.reason = reason or MODEL_DOWN_DEFAULT
+
+
+MODEL_DOWN_DEFAULT = (
+    "Не смогла разобрать фразу: модель недоступна. "
+    "Запиши, пожалуйста, через сайт."
+)
+BILLING = (
+    "На счету Anthropic API кончились деньги — без них я не могу "
+    "ничего разобрать. Пополни баланс в Plans & Billing, и я продолжу."
+)
+RATE_LIMIT = "Слишком много запросов подряд. Подожди минуту и повтори."
+OVERLOADED = (
+    "Модель сейчас перегружена. Повтори через пару минут — "
+    "я ничего не потеряла."
+)
+
+
+def _reason_for(exc: Exception) -> str:
+    """Перевести ошибку API в то, что человеку делать дальше."""
+    text = str(exc).casefold()
+    if "credit balance" in text or "billing" in text:
+        return BILLING
+    if "rate limit" in text or "429" in text:
+        return RATE_LIMIT
+    if "overloaded" in text or "529" in text:
+        return OVERLOADED
+    if "authentication" in text or "401" in text:
+        return (
+            "Ключ Anthropic API не принят. Проверь ANTHROPIC_API_KEY "
+            "в секретах."
+        )
+    return MODEL_DOWN_DEFAULT
 
 
 @dataclass
@@ -125,7 +170,7 @@ class AgentRunner:
             final = await runner.until_done()
         except Exception as exc:
             logger.error("Agent run failed", exc_info=True)
-            raise AgentUnavailableError(str(exc)) from exc
+            raise AgentUnavailableError(str(exc), _reason_for(exc)) from exc
 
         return AgentReply(
             text=_text_of(final),

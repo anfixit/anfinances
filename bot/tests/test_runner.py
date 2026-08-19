@@ -51,11 +51,12 @@ class _FakeMessages:
         self._box = box
         self._created_id = created_id
         self._fail = fail
+        self._error: Exception = RuntimeError("модель недоступна")
 
     def tool_runner(self, **kwargs: Any) -> _FakeToolRunner:
         self.kwargs = kwargs
         if self._fail:
-            raise RuntimeError("модель недоступна")
+            raise self._error
         return _FakeToolRunner(self._box, self._created_id)
 
 
@@ -201,3 +202,35 @@ async def test_documents_and_images_go_together() -> None:
     )
     kinds = [b["type"] for b in messages.kwargs["messages"][-1]["content"]]
     assert kinds == ["image", "document", "document", "text"]
+
+
+async def test_billing_error_says_what_to_do() -> None:
+    """«Модель недоступна» прятало «кончились деньги на счету»."""
+    box = _FakeToolBox()
+    messages = _FakeMessages(box, fail=True)
+    messages._error = Exception(  # type: ignore[attr-defined]
+        "Error code: 400 - Your credit balance is too low"
+    )
+    runner = AgentRunner(_FakeAnthropic(messages), box)
+
+    with pytest.raises(AgentUnavailableError) as caught:
+        await runner.run("кофе 300", [], [], "Europe/Moscow")
+    assert "баланс" in caught.value.reason.casefold()
+
+
+async def test_rate_limit_asks_to_wait() -> None:
+    box = _FakeToolBox()
+    messages = _FakeMessages(box, fail=True)
+    messages._error = Exception("429 rate limit exceeded")  # type: ignore[attr-defined]
+    runner = AgentRunner(_FakeAnthropic(messages), box)
+
+    with pytest.raises(AgentUnavailableError) as caught:
+        await runner.run("кофе 300", [], [], "Europe/Moscow")
+    assert "подожди" in caught.value.reason.casefold()
+
+
+async def test_unknown_failure_keeps_the_general_wording() -> None:
+    runner, _, _ = _pair(fail=True)
+    with pytest.raises(AgentUnavailableError) as caught:
+        await runner.run("кофе 300", [], [], "Europe/Moscow")
+    assert "модель недоступна" in caught.value.reason.casefold()
