@@ -16,6 +16,7 @@ class _FakeClient:
         self.calls: list[tuple[str, str, dict[str, Any]]] = []
         self.budgets: list[dict[str, Any]] = []
         self.transactions: list[dict[str, Any]] = []
+        self.recurring: list[dict[str, Any]] = []
         self._accounts = [
             AccountRead(
                 id="a-1",
@@ -60,6 +61,8 @@ class _FakeClient:
         self.calls.append((method, path, kwargs))
         if method == "GET" and path == "/budgets":
             return list(self.budgets)
+        if method == "GET" and path == "/recurring":
+            return list(self.recurring)
         if method == "GET" and path == "/transactions":
             # Как настоящий API: отдаём страницами по limit.
             limit = int(kwargs.get("params", {}).get("limit", 20))
@@ -443,6 +446,8 @@ async def test_toolbox_exposes_all_tools() -> None:
         "create_account",
         "create_credit",
         "add_recurring",
+        "update_recurring",
+        "delete_recurring",
         "list_accounts",
         "list_categories",
         "list_recurring",
@@ -641,3 +646,58 @@ async def test_archiving_unknown_account_is_reported() -> None:
     result = await box.archive_account(account_name="Нету")
     assert "не найден" in result.casefold()
     assert client.calls == []
+
+
+def _plan(*names: str) -> list[dict[str, Any]]:
+    return [
+        {"id": f"r-{i}", "name": name, "is_archived": False}
+        for i, name in enumerate(names)
+    ]
+
+
+async def test_recurring_row_is_edited_not_duplicated() -> None:
+    """Две строки на одну трату завышают резерв."""
+    box, client = _toolbox()
+    client.recurring = _plan("Стационарный интернет (Тольятти)")
+
+    result = await box.update_recurring(name="Тольятти", monthly_amount="750")
+    method, path, kwargs = client.calls[-1]
+    assert (method, path) == ("PATCH", "/recurring/r-0")
+    assert kwargs["json"] == {"monthly_amount": "750"}
+    assert "обновлена" in result
+
+
+async def test_recurring_row_is_deleted() -> None:
+    box, client = _toolbox()
+    client.recurring = _plan("Интернет", "Мобильная связь")
+
+    result = await box.delete_recurring(name="Мобильная связь")
+    assert client.calls[-1][:2] == ("DELETE", "/recurring/r-1")
+    assert "убрана" in result
+
+
+async def test_ambiguous_name_asks_instead_of_guessing() -> None:
+    """Точного совпадения нет, а частичных два — выбирать нельзя."""
+    box, client = _toolbox()
+    client.recurring = _plan("Йота модем", "Йота телефон")
+
+    result = await box.delete_recurring(name="Йота")
+    assert "несколько строк" in result
+    assert not [c for c in client.calls if c[0] == "DELETE"]
+
+
+async def test_exact_name_wins_over_partial() -> None:
+    """Точное «Интернет» не должно спотыкаться о «Стационарный»."""
+    box, client = _toolbox()
+    client.recurring = _plan("Интернет", "Стационарный интернет")
+
+    await box.delete_recurring(name="Интернет")
+    assert client.calls[-1][:2] == ("DELETE", "/recurring/r-0")
+
+
+async def test_unknown_row_lists_what_exists() -> None:
+    box, client = _toolbox()
+    client.recurring = _plan("Аренда")
+    result = await box.update_recurring(name="Ипотека", monthly_amount="1")
+    assert "не найдена" in result
+    assert "Аренда" in result

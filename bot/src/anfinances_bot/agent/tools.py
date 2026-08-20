@@ -92,6 +92,8 @@ class ToolBox:
                 self.create_account,
                 self.create_credit,
                 self.add_recurring,
+                self.update_recurring,
+                self.delete_recurring,
                 self.list_accounts,
                 self.list_categories,
                 self.list_recurring,
@@ -730,6 +732,90 @@ class ToolBox:
             "DELETE", f"/accounts/{account.id}", params=params
         )
         return f"Счёт «{account.name}» убран в архив."
+
+    async def update_recurring(
+        self,
+        name: str,
+        monthly_amount: str | None = None,
+        category_path: str | None = None,
+        new_name: str | None = None,
+        required: str | None = None,
+    ) -> str:
+        """Поправить строку плана-минимума.
+
+        Ищет строку по названию. Меняются только переданные поля.
+        Именно правка, а не добавление: две строки на одну и ту же
+        трату завышают резерв и занижают дневной лимит.
+        """
+        found, error = await self._find_recurring(name)
+        if found is None:
+            return error
+
+        body: dict[str, Any] = {}
+        if monthly_amount:
+            body["monthly_amount"] = str(monthly_amount)
+        if new_name:
+            body["name"] = new_name
+        if required:
+            body["required"] = required
+        if category_path:
+            categories = await self._client.categories()
+            paths = build_category_paths(categories, kind="expense")
+            category = find_category_by_path(paths, category_path)
+            if category is None:
+                return _unknown_category(category_path, paths)
+            body["category_id"] = category.id
+        if not body:
+            return "Нечего менять: не передано ни одно поле."
+
+        await self._client.request(
+            "PATCH", f"/recurring/{found['id']}", json=body
+        )
+        return f"Строка «{found['name']}» обновлена."
+
+    async def delete_recurring(self, name: str) -> str:
+        """Убрать строку из плана-минимума.
+
+        Нужно, когда трата больше не повторяется или когда общая
+        строка заменена подробными: «Связь» на «МТС» и «Йота».
+        Действие меняет дневной лимит, поэтому спроси согласия
+        прежде, чем вызывать.
+        """
+        found, error = await self._find_recurring(name)
+        if found is None:
+            return error
+        await self._client.request("DELETE", f"/recurring/{found['id']}")
+        return f"Строка «{found['name']}» убрана из плана-минимума."
+
+    async def _find_recurring(
+        self, name: str
+    ) -> tuple[dict[str, Any] | None, str]:
+        """Найти строку плана по названию: точное, затем однозначное.
+
+        Неоднозначное совпадение не разрешаем: у неё есть «Интернет»
+        и «Стационарный интернет», и молча взять первый попавшийся
+        значит поправить не ту строку.
+        """
+        rows = await self._client.request("GET", "/recurring") or []
+        live = [r for r in rows if not r.get("is_archived")]
+        needle = name.casefold().strip()
+
+        exact = [r for r in live if str(r["name"]).casefold() == needle]
+        if len(exact) == 1:
+            return exact[0], ""
+
+        partial = [r for r in live if needle in str(r["name"]).casefold()]
+        if len(partial) == 1:
+            return partial[0], ""
+        if len(partial) > 1:
+            names = ", ".join(f"«{r['name']}»" for r in partial)
+            return None, (
+                f"Под «{name}» подходит несколько строк: {names}. "
+                "Уточни, какую именно."
+            )
+
+        names = ", ".join(f"«{r['name']}»" for r in live) or "список пуст"
+        return None, f"Строка «{name}» не найдена. Есть: {names}"
 
     # --- чтение ---------------------------------------------------
 
