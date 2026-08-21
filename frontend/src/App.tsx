@@ -3,13 +3,16 @@ import { RouterProvider } from "react-router-dom"
 
 import { router } from "@/app/router"
 import { AuthProvider } from "@/auth/AuthProvider"
+import { ConfirmProvider } from "@/components/ConfirmProvider"
 import { queryClient } from "@/lib/query/queryClient"
 
 export function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
-        <RouterProvider router={router} />
+        <ConfirmProvider>
+          <RouterProvider router={router} />
+        </ConfirmProvider>
       </AuthProvider>
     </QueryClientProvider>
   )

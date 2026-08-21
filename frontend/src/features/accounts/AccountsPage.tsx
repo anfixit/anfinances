@@ -9,10 +9,12 @@ import { AccountForm } from "@/features/accounts/AccountForm"
 import { TYPE_LABELS } from "@/features/accounts/types"
 import type { Account } from "@/features/accounts/types"
 import { Sheet } from "@/components/Sheet"
+import { useConfirm } from "@/components/confirm-context"
 import { formatMoney } from "@/lib/money"
 import { useDashboard } from "@/features/summary/hooks"
 
 export function AccountsPage() {
+  const { confirm } = useConfirm()
   const accounts = useAccounts()
   const archive = useArchiveAccount()
   const reorder = useReorderAccounts()
@@ -34,22 +36,36 @@ export function AccountsPage() {
   // Архивный счёт выпадает из капитала. Пустой уходит молча, а с
   // остатком — только после того, как показали, на сколько изменится
   // итог: тихая правка капитала обнаруживается через неделю.
-  const remove = (account: Account) => {
+  const remove = async (account: Account) => {
     const balance = Number(account.current_balance)
     if (balance === 0) {
-      if (window.confirm(`Архивировать счёт «${account.name}»?`)) {
+      const ok = await confirm({
+        title: `Архивировать счёт «${account.name}»?`,
+        body: [
+          "Счёт пропадёт из списков и выбора при вводе операции. " +
+            "Прошлые операции по нему останутся, вернуть счёт можно " +
+            "в любой момент.",
+        ],
+        confirmLabel: "Архивировать",
+      })
+      if (ok) {
         archive.mutate({ id: account.id })
       }
       return
     }
     const shown = formatMoney(account.current_balance, account.currency_code)
-    const confirmed = window.confirm(
-      `На счёте «${account.name}» остаток ${shown}.\n\n` +
-        "Архивный счёт не входит в капитал — итог изменится на эту " +
-        "сумму. Обычно остаток сначала переводят на другой счёт.\n\n" +
-        "Всё равно архивировать?",
-    )
-    if (confirmed) {
+    const ok = await confirm({
+      title: `На счёте «${account.name}» остаток ${shown}`,
+      body: [
+        "Архивный счёт не входит в капитал — итог уменьшится на эту " +
+          "сумму, будто денег не было.",
+        "Обычно остаток сначала переводят на другой счёт, и только " +
+          "пустой счёт убирают.",
+      ],
+      confirmLabel: "Всё равно архивировать",
+      danger: true,
+    })
+    if (ok) {
       archive.mutate({ id: account.id, force: true })
     }
   }
@@ -166,7 +182,9 @@ export function AccountsPage() {
             <button
               type="button"
               className="link danger"
-              onClick={() => remove(a)}
+              onClick={() => {
+                void remove(a)
+              }}
             >
               В архив
             </button>

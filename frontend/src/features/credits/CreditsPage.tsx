@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react"
 
 import { Sheet } from "@/components/Sheet"
+import { useConfirm } from "@/components/confirm-context"
 import { useAccounts } from "@/features/accounts/hooks"
 import { CreditForm } from "@/features/credits/CreditForm"
 import { CreditPaymentForm } from "@/features/credits/CreditPaymentForm"
@@ -47,6 +48,7 @@ function creditMeta(credit: Credit): string {
 }
 
 export function CreditsPage() {
+  const { confirm } = useConfirm()
   const credits = useCredits()
   const accounts = useAccounts()
   const archive = useArchiveCredit()
@@ -67,7 +69,7 @@ export function CreditsPage() {
   // цену действия показываем прямо в вопросе. Опираемся на
   // selectedCredit: пока кредит не выбран руками, показан первый, а
   // selectedId при этом пуст.
-  const removePayment = (payment: CreditPayment) => {
+  const removePayment = async (payment: CreditPayment) => {
     if (!selectedCredit) {
       return
     }
@@ -76,11 +78,16 @@ export function CreditsPage() {
       payment.principal_amount,
       payment.currency_code,
     )
-    const confirmed = window.confirm(
-      `Удалить платёж ${shown} от ${formatDate(payment.date)}?\n\n` +
+    const confirmed = await confirm({
+      title: `Удалить платёж ${shown} от ${formatDate(payment.date)}?`,
+      body: [
         `Долг вырастет на ${grows} — на столько было засчитано ` +
-        "погашение.",
-    )
+          "погашение основного долга.",
+        "Расходная операция этого платежа тоже удалится.",
+      ],
+      confirmLabel: "Удалить платёж",
+      danger: true,
+    })
     if (confirmed) {
       removePaymentMut.mutate({
         creditId: selectedCredit.id,
@@ -115,8 +122,18 @@ export function CreditsPage() {
     setPaymentSheetOpen(false)
   }
 
-  const remove = (credit: Credit) => {
-    if (window.confirm(`Архивировать кредит «${credit.name}»?`)) {
+  const remove = async (credit: Credit) => {
+    const ok = await confirm({
+      title: `Архивировать кредит «${credit.name}»?`,
+      body: [
+        "Кредит уйдёт из списка, а его платёж перестанет " +
+          "резервироваться в дневном лимите — свободных денег в день " +
+          "станет больше.",
+        "Архивируйте только погашенный кредит.",
+      ],
+      confirmLabel: "Архивировать",
+    })
+    if (ok) {
       archive.mutate(credit.id)
     }
   }
@@ -204,7 +221,9 @@ export function CreditsPage() {
                   <button
                     type="button"
                     className="link danger"
-                    onClick={() => remove(selectedCredit)}
+                    onClick={() => {
+                      void remove(selectedCredit)
+                    }}
                   >
                     В архив
                   </button>
@@ -292,7 +311,9 @@ export function CreditsPage() {
                         <button
                           type="button"
                           className="link danger"
-                          onClick={() => removePayment(payment)}
+                          onClick={() => {
+                            void removePayment(payment)
+                          }}
                         >
                           Удалить
                         </button>

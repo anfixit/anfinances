@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client"
 
 import { App } from "@/App"
 import "@/index.css"
+import "@/components/confirm.css"
 import "@/features/transactions/transactions.css"
 import "@/features/summary/summary.css"
 import "@/features/accounts/accounts.css"

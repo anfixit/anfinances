@@ -9,11 +9,14 @@ import {
   usePreviewGeneration,
   useRecurring,
 } from "@/features/recurring/hooks"
+import type { RecurringGenerationProposal } from "@/features/recurring/recurringApi"
 import type { Recurring } from "@/features/recurring/types"
 import { Sheet } from "@/components/Sheet"
+import { useConfirm } from "@/components/confirm-context"
 import { formatMoney } from "@/lib/money"
 
 export function RecurringPage() {
+  const { confirm, notify } = useConfirm()
   const recurring = useRecurring()
   const categoriesQ = useCategories()
   const archive = useArchiveRecurring()
@@ -44,8 +47,17 @@ export function RecurringPage() {
     setSheetOpen(false)
   }
 
-  const remove = (item: Recurring) => {
-    if (window.confirm(`Убрать «${item.name}» из плана-минимума?`)) {
+  const remove = async (item: Recurring) => {
+    const ok = await confirm({
+      title: `Убрать «${item.name}» из плана-минимума?`,
+      body: [
+        "Эта сумма перестанет резервироваться — дневной лимит " +
+          "вырастет, хотя платить всё равно придётся.",
+      ],
+      confirmLabel: "Убрать из плана",
+      danger: true,
+    })
+    if (ok) {
       archive.mutate(item.id)
     }
   }
@@ -53,39 +65,49 @@ export function RecurringPage() {
   const onGenerate = () => {
     preview.mutate(undefined, {
       onSuccess: (proposals) => {
-        if (proposals.length === 0) {
-          window.alert("Новых категорий для плана не найдено.")
-          return
-        }
-
-        const lines = proposals.map(
-          (proposal) =>
-            `${proposal.category_path}: ${formatMoney(
-              proposal.monthly_amount,
-              proposal.currency_code,
-            )}`,
-        )
-        const confirmed = window.confirm(
-          [
-            "Будут добавлены записи:",
-            "",
-            ...lines,
-            "",
-            "Продолжить?",
-          ].join("\n"),
-        )
-        if (!confirmed) return
-
-        generate.mutate(
-          proposals.map((proposal) => proposal.category_id),
-          {
-            onSuccess: (created) => {
-              window.alert(`Добавлено записей: ${String(created.length)}`)
-            },
-          },
-        )
+        void proposeAndGenerate(proposals)
       },
     })
+  }
+
+  const proposeAndGenerate = async (proposals: RecurringGenerationProposal[]) => {
+    if (proposals.length === 0) {
+      await notify({
+        title: "Добавлять нечего",
+        body:
+          "Все категории с регулярными тратами уже есть в " +
+          "плане-минимуме.",
+      })
+      return
+    }
+
+    const lines = proposals.map(
+      (proposal) =>
+        `${proposal.category_path}: ${formatMoney(
+          proposal.monthly_amount,
+          proposal.currency_code,
+        )}`,
+    )
+    const ok = await confirm({
+      title: `Добавить в план-минимум записей: ${String(lines.length)}?`,
+      body: ["Будут добавлены:", ...lines],
+      confirmLabel: "Добавить",
+    })
+    if (!ok) {
+      return
+    }
+
+    generate.mutate(
+      proposals.map((proposal) => proposal.category_id),
+      {
+        onSuccess: (created) => {
+          void notify({
+            title: `Добавлено записей: ${String(created.length)}`,
+            body: "Проверьте суммы — план считается по прошлым тратам.",
+          })
+        },
+      },
+    )
   }
 
   return (
@@ -173,7 +195,9 @@ export function RecurringPage() {
               <button
                 type="button"
                 className="link danger"
-                onClick={() => remove(item)}
+                onClick={() => {
+                  void remove(item)
+                }}
               >
                 Убрать
               </button>

@@ -1,6 +1,7 @@
 import { useState } from "react"
 
 import { Sheet } from "@/components/Sheet"
+import { useConfirm } from "@/components/confirm-context"
 import { useAccounts } from "@/features/accounts/hooks"
 import type { Account } from "@/features/accounts/types"
 import { useCategories } from "@/features/categories/hooks"
@@ -114,6 +115,7 @@ function accountLine(
 }
 
 export function TransactionsPage() {
+  const { confirm } = useConfirm()
   const [filters, setFilters] = useState<TransactionFilters>({})
   const [filtersOpen, setFiltersOpen] = useState(false)
   const [kindTab, setKindTab] = useState<TransactionKind | "all">("all")
@@ -192,14 +194,37 @@ export function TransactionsPage() {
     setEditingTransferId(null)
   }
 
-  const remove = (t: Transaction) => {
+  const remove = async (t: Transaction) => {
+    const shown = formatMoney(t.amount, t.currency_code)
+    const when = formatDate(t.date)
     if (t.transfer_id) {
-      if (window.confirm("Удалить перевод целиком?")) {
+      // У перевода две ноги; удалять их порознь нельзя, иначе деньги
+      // повиснут на одном счёте. Говорим об этом прямо.
+      const ok = await confirm({
+        title: `Удалить перевод ${shown} от ${when}?`,
+        body: [
+          accountLine(t, rows, accById),
+          "Перевод удалится целиком — обе стороны, списание и " +
+            "зачисление. Балансы обоих счетов вернутся как было.",
+        ],
+        confirmLabel: "Удалить перевод",
+        danger: true,
+      })
+      if (ok) {
         delTransfer.mutate(t.transfer_id)
       }
       return
     }
-    if (window.confirm("Удалить операцию?")) {
+    const ok = await confirm({
+      title: `Удалить операцию ${shown} от ${when}?`,
+      body: [
+        transactionCategoryLabel(t, catById),
+        "Баланс счёта изменится на эту сумму.",
+      ],
+      confirmLabel: "Удалить",
+      danger: true,
+    })
+    if (ok) {
       delTx.mutate(t.id)
     }
   }
@@ -343,7 +368,9 @@ export function TransactionsPage() {
                     <button
                       type="button"
                       className="link danger"
-                      onClick={() => remove(t)}
+                      onClick={() => {
+                        void remove(t)
+                      }}
                     >
                       Удалить
                     </button>
@@ -361,7 +388,9 @@ export function TransactionsPage() {
                     <button
                       type="button"
                       className="link danger"
-                      onClick={() => remove(t)}
+                      onClick={() => {
+                        void remove(t)
+                      }}
                     >
                       Удалить
                     </button>

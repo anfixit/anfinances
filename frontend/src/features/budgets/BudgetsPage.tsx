@@ -16,6 +16,7 @@ import type { Budget } from "@/features/budgets/types"
 import { useByCategory, useDailyAllowance } from "@/features/summary/hooks"
 import { useRecurring } from "@/features/recurring/hooks"
 import { Sheet } from "@/components/Sheet"
+import { useConfirm } from "@/components/confirm-context"
 import { queryKeys } from "@/lib/query/keys"
 import { formatMoney, sumMoney } from "@/lib/money"
 
@@ -49,6 +50,7 @@ interface SheetState {
 }
 
 export function BudgetsPage() {
+  const { confirm, notify } = useConfirm()
   const qc = useQueryClient()
   const [month, setMonth] = useState<string>(() => currentMonth())
   const [sheet, setSheet] = useState<SheetState | null>(null)
@@ -126,14 +128,26 @@ export function BudgetsPage() {
       queryFn: () => listBudgets(prev),
     })
     if (prevBudgets.length === 0) {
-      window.alert("В прошлом месяце бюджета нет.")
+      await notify({
+        title: "В прошлом месяце бюджета нет",
+        body: "Копировать нечего — заполните план вручную или из плана-минимума.",
+      })
       return
     }
-    if (
-      budgets.length > 0 &&
-      !window.confirm("Перезаписать текущий бюджет значениями прошлого месяца?")
-    ) {
-      return
+    if (budgets.length > 0) {
+      const ok = await confirm({
+        title: "Перезаписать текущий бюджет?",
+        body: [
+          `Планы этого месяца заменятся значениями за ${prev}. ` +
+            "Уже введённые суммы пропадут.",
+          "Потраченное не тронется — меняются только планы.",
+        ],
+        confirmLabel: "Перезаписать",
+        danger: true,
+      })
+      if (!ok) {
+        return
+      }
     }
     importMut.mutate({
       month,
@@ -164,14 +178,27 @@ export function BudgetsPage() {
         }
       })
     if (items.length === 0) {
-      window.alert("План-минимум пуст — заполнять нечем.")
+      void notify({
+        title: "План-минимум пуст",
+        body: "Заполнять нечем. Заведите обязательные траты на странице «План-минимум».",
+      })
       return
     }
     importMut.mutate({ month, items })
   }
 
-  const removeBudget = (b: Budget, name: string) => {
-    if (window.confirm(`Удалить лимит по категории «${name}»?`)) {
+  const removeBudget = async (b: Budget, name: string) => {
+    const ok = await confirm({
+      title: `Снять план по категории «${name}»?`,
+      body: [
+        "Деньги вернутся в «Не распределено» — их снова надо будет " +
+          "куда-то определить.",
+        "Операции этой категории останутся на месте.",
+      ],
+      confirmLabel: "Снять план",
+      danger: true,
+    })
+    if (ok) {
       del.mutate(b.id)
     }
   }
@@ -271,7 +298,9 @@ export function BudgetsPage() {
           <button
             type="button"
             className="link danger"
-            onClick={() => removeBudget(b, cat.name)}
+            onClick={() => {
+              void removeBudget(b, cat.name)
+            }}
           >
             Удалить
           </button>
