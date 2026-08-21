@@ -1,5 +1,7 @@
+import { ChevronRight } from "lucide-react"
 import { useState } from "react"
 
+import { useConfirm } from "@/components/confirm-context"
 import { CategoryForm } from "@/features/categories/CategoryForm"
 import { compareCategoriesByName } from "@/features/categories/sort"
 import {
@@ -18,6 +20,19 @@ const KIND_LABEL: Record<(typeof KINDS)[number], string> = {
 
 export function CategoriesPage() {
   const { data, isPending, isError } = useCategories()
+  // Свёрнуто по умолчанию: полтора десятка родителей с подкатегориями
+  // не помещались на экран, а нужен обычно один.
+  const [open, setOpen] = useState<ReadonlySet<string>>(new Set())
+
+  const toggle = (id: string) => {
+    setOpen((current) => {
+      const next = new Set(current)
+      if (!next.delete(id)) {
+        next.add(id)
+      }
+      return next
+    })
+  }
 
   if (isPending) {
     return <p>Загрузка…</p>
@@ -42,18 +57,31 @@ export function CategoriesPage() {
         <section key={kind}>
           <h2>{KIND_LABEL[kind]}</h2>
           <ul className="tree">
-            {tops(kind).map((top) => (
-              <li key={top.id}>
-                <CategoryRow category={top} />
-                <ul className="tree sub">
-                  {childrenOf(top.id).map((sub) => (
-                    <li key={sub.id}>
-                      <CategoryRow category={sub} />
-                    </li>
-                  ))}
-                </ul>
-              </li>
-            ))}
+            {tops(kind).map((top) => {
+              const kids = childrenOf(top.id)
+              const expanded = open.has(top.id)
+              return (
+                <li key={top.id}>
+                  <CategoryRow
+                    category={top}
+                    childCount={kids.length}
+                    expanded={expanded}
+                    onToggle={() => {
+                      toggle(top.id)
+                    }}
+                  />
+                  {expanded && kids.length > 0 && (
+                    <ul className="tree sub">
+                      {kids.map((sub) => (
+                        <li key={sub.id}>
+                          <CategoryRow category={sub} />
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </li>
+              )
+            })}
           </ul>
         </section>
       ))}
@@ -63,11 +91,47 @@ export function CategoriesPage() {
   )
 }
 
-function CategoryRow({ category }: { category: Category }) {
+interface CategoryRowProps {
+  category: Category
+  /** Есть только у родителя: сколько внутри подкатегорий. */
+  childCount?: number
+  expanded?: boolean
+  onToggle?: () => void
+}
+
+function CategoryRow({
+  category,
+  childCount,
+  expanded = false,
+  onToggle,
+}: CategoryRowProps) {
   const update = useUpdateCategory()
   const archive = useArchiveCategory()
+  const { confirm } = useConfirm()
   const [editing, setEditing] = useState(false)
   const [name, setName] = useState(category.name)
+
+  const remove = async () => {
+    const ok = await confirm({
+      title: `Удалить категорию «${category.name}»?`,
+      body:
+        childCount !== undefined && childCount > 0
+          ? [
+              `Внутри подкатегорий: ${String(childCount)}.`,
+              "Категория уйдёт в архив: операции по ней останутся, но " +
+                "выбрать её при вводе новой будет нельзя.",
+            ]
+          : [
+              "Категория уйдёт в архив: операции по ней останутся, но " +
+                "выбрать её при вводе новой будет нельзя.",
+            ],
+      confirmLabel: "Удалить",
+      danger: true,
+    })
+    if (ok) {
+      archive.mutate(category.id)
+    }
+  }
 
   if (editing) {
     return (
@@ -96,16 +160,36 @@ function CategoryRow({ category }: { category: Category }) {
     )
   }
 
+  const collapsible = onToggle !== undefined && (childCount ?? 0) > 0
+
   return (
     <span className="row">
-      <span className="row-name">{category.name}</span>
+      {collapsible ? (
+        <button
+          type="button"
+          className="tree-toggle"
+          aria-expanded={expanded}
+          onClick={onToggle}
+        >
+          <ChevronRight
+            className={expanded ? "tree-caret tree-caret--open" : "tree-caret"}
+            aria-hidden="true"
+          />
+          <span className="row-name">{category.name}</span>
+          <span className="tree-count">{childCount}</span>
+        </button>
+      ) : (
+        <span className="row-name row-name--leaf">{category.name}</span>
+      )}
       <button type="button" className="link" onClick={() => setEditing(true)}>
         Переименовать
       </button>
       <button
         type="button"
         className="link danger"
-        onClick={() => archive.mutate(category.id)}
+        onClick={() => {
+          void remove()
+        }}
         disabled={archive.isPending}
       >
         Удалить

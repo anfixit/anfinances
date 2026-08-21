@@ -598,6 +598,26 @@ select:focus {
 
 .tree.sub {
   padding-left: 24px;
+  /* Раскрытие не должно быть скачком: подкатегории выезжают
+     сверху и проявляются. */
+  animation: tree-open 160ms ease-out;
+}
+
+@keyframes tree-open {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tree.sub {
+    animation: none;
+  }
+
+  .tree-caret {
+    transition: none;
+  }
 }
 
 .row {
@@ -618,6 +638,60 @@ select:focus {
 .row-name {
   min-width: 220px;
   font-weight: 500;
+}
+
+/* Родитель в дереве — кнопка на всю ширину имени: попасть в неё
+   легко, а строка при этом выглядит как строка, не как кнопка. */
+.tree-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  color: inherit;
+  font: inherit;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tree-toggle:hover {
+  filter: none;
+  color: var(--primary);
+}
+
+.tree-toggle .row-name {
+  min-width: 0;
+}
+
+.tree-caret {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  color: var(--on-surface-variant);
+  transition: transform var(--spring);
+}
+
+.tree-caret--open {
+  transform: rotate(90deg);
+}
+
+.tree-count {
+  min-width: 1.6rem;
+  padding: 0 6px;
+  border-radius: var(--shape-xs);
+  background: var(--surface-container-high);
+  color: var(--on-surface-variant);
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-align: center;
+}
+
+/* Лист выравниваем по имени родителя, а не по его галочке. */
+.row-name--leaf {
+  padding-left: 24px;
 }
 
 .inline {

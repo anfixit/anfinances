@@ -4,7 +4,6 @@ import {
   BarChart,
   CartesianGrid,
   Cell,
-  Legend,
   Pie,
   PieChart,
   ResponsiveContainer,
@@ -39,6 +38,25 @@ const PIE_COLORS = [
   "#7a5ea8",
   "#3a8f8c",
 ]
+
+// Подсказки графиков показывали голое «16000» — в приложении про
+// деньги число без валюты читается как ошибка.
+function moneyTip(value: unknown): string {
+  return formatMoney(String(value), "RUB")
+}
+
+// Recharts рисует подсказку жёстко белой поверх инлайн-стилей; в
+// тёмной теме она светилась чужим прямоугольником. Перебиваем
+// токенами — переменные в inline style работают.
+const TIP_BOX = {
+  background: "var(--surface-container-low)",
+  border: "1px solid var(--outline-variant)",
+  borderRadius: "var(--shape-s)",
+  boxShadow: "var(--elev-2)",
+  color: "var(--on-surface)",
+  padding: "8px 10px",
+}
+const TIP_TEXT = { color: "var(--on-surface)" }
 
 function currentMonth(): string {
   const d = new Date()
@@ -114,12 +132,30 @@ export function DashboardPage() {
   const rules = buildRules(allowance.data, age.data, budgetsQ.data)
   const overspent = overspentCategories(budgetsQ.data ?? [])
 
-  const pieData = (cats.data?.items ?? [])
+  const catRows = (cats.data?.items ?? [])
     .map((i) => ({
       name: catName(i.category_id),
       value: Number(i.amount_rub),
     }))
     .filter((d) => d.value > 0)
+    .sort((a, b) => b.value - a.value)
+
+  // Два десятка секторов не читаются: половина тоньше линии, а
+  // подписи налезают друг на друга. В круге — крупные, остальное
+  // одним сектором; полный список всё равно ниже, в таблице.
+  const PIE_LIMIT = 8
+  const pieHead = catRows.slice(0, PIE_LIMIT)
+  const pieTail = catRows.slice(PIE_LIMIT)
+  const pieData =
+    pieTail.length > 0
+      ? [
+          ...pieHead,
+          {
+            name: `Прочее (${String(pieTail.length)})`,
+            value: sumMoney(pieTail.map((d) => String(d.value))),
+          },
+        ]
+      : pieHead
 
   const catTotal = sumMoney((cats.data?.items ?? []).map((i) => i.amount_rub))
 
@@ -351,13 +387,17 @@ export function DashboardPage() {
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="name" />
                   <YAxis width={80} />
-                  <Tooltip />
-                  {/* Без въезда: график читают, а не смотрят, как он
-                      появляется — и анимация иногда застревает. */}
+                  <Tooltip
+                    formatter={moneyTip}
+                    contentStyle={TIP_BOX}
+                    itemStyle={TIP_TEXT}
+                    labelStyle={TIP_TEXT}
+                    cursor={{ fill: "var(--surface-container)" }}
+                  />
                   <Bar
                     dataKey="value"
                     radius={[3, 3, 0, 0]}
-                    isAnimationActive={false}
+                    animationDuration={450}
                   >
                     {flowData.map((d) => (
                       <Cell key={d.name} fill={d.color} />
@@ -388,7 +428,7 @@ export function DashboardPage() {
                     innerRadius={70}
                     outerRadius={110}
                     paddingAngle={2}
-                    isAnimationActive={false}
+                    animationDuration={450}
                   >
                     {pieData.map((d, i) => (
                       <Cell
@@ -397,32 +437,52 @@ export function DashboardPage() {
                       />
                     ))}
                   </Pie>
-                  <Tooltip />
-                  <Legend />
+                  <Tooltip
+                    formatter={moneyTip}
+                    contentStyle={TIP_BOX}
+                    itemStyle={TIP_TEXT}
+                    labelStyle={TIP_TEXT}
+                  />
                 </PieChart>
               </ResponsiveContainer>
             </div>
-            {/* Круг показывает пропорции, но не суммы. Рядом таблица:
-                по ней видно, сколько именно и какая это доля. */}
+            {/* Круг показывает пропорции, но не суммы, а легенда на два
+                десятка категорий не помещалась и обрезалась. Цвет
+                переехал сюда, к строке с рублями и долей. */}
             <table className="data-table">
               <tbody>
-                {[...pieData]
-                  .sort((a, b) => b.value - a.value)
-                  .map((d) => (
-                    <tr key={d.name}>
-                      <td>{d.name}</td>
-                      <td className="num">
-                        {formatMoney(String(d.value), "RUB")}
-                      </td>
-                      <td className="num data-share">
-                        {catTotal > 0
-                          ? `${((d.value / catTotal) * 100).toFixed(1)}%`
-                          : "—"}
-                      </td>
-                    </tr>
-                  ))}
+                {catRows.map((d, i) => (
+                  <tr key={d.name}>
+                    <td>
+                      <span
+                        className={
+                          i < PIE_LIMIT ? "swatch" : "swatch swatch--rest"
+                        }
+                        style={{
+                          background:
+                            (i < PIE_LIMIT
+                              ? PIE_COLORS[i % PIE_COLORS.length]
+                              : PIE_COLORS[PIE_LIMIT % PIE_COLORS.length]) ??
+                            "#888888",
+                        }}
+                      />
+                      {d.name}
+                    </td>
+                    <td className="num">
+                      {formatMoney(String(d.value), "RUB")}
+                    </td>
+                    <td className="num data-share">
+                      {catTotal > 0
+                        ? `${((d.value / catTotal) * 100).toFixed(1)}%`
+                        : "—"}
+                    </td>
+                  </tr>
+                ))}
                 <tr className="data-total">
-                  <td>Итого</td>
+                  <td>
+                    <span className="swatch swatch--empty" />
+                    Итого
+                  </td>
                   <td className="num">
                     {formatMoney(String(catTotal), "RUB")}
                   </td>
