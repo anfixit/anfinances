@@ -1,10 +1,16 @@
 """Инструменты агента.
 
 Каждый инструмент — тонкая обёртка над HTTP-вызовом anfinances.
-Удаления здесь есть, но узкие: операция, платёж по кредиту и
-архивация счёта. Категории, кредиты и валюты бот не удаляет, правку
-настроек и начального баланса не делает — ошибиться в распознанной
-речи легко, а такие действия не откатываются одной кнопкой.
+Бот дотягивается до всего, что умеет сайт: заводит, правит, убирает
+в архив и удаляет — операции, переводы, счета, категории, кредиты,
+их платежи, планы и план-минимум.
+
+Двух вещей здесь нет намеренно. Начальный баланс счёта не правится:
+после первой операции он заблокирован и на сайте, а исправлять
+остаток надо операцией, а не переписыванием прошлого. Настройки
+профиля и справочник валют тоже не трогаются — это не ежедневная
+работа, и цена ошибки в распознанной речи выше пользы.
+
 Разрушительное действие бот совершает только после явного согласия
 в переписке; за это отвечает системная инструкция.
 
@@ -84,6 +90,14 @@ class ToolBox:
                 self.import_statement,
                 self.update_transaction,
                 self.delete_transaction,
+                self.delete_transfer,
+                self.update_account,
+                self.restore_account,
+                self.update_category,
+                self.archive_category,
+                self.update_credit,
+                self.archive_credit,
+                self.delete_budget,
                 self.delete_credit_payment,
                 self.archive_account,
                 self.set_budget,
@@ -816,6 +830,203 @@ class ToolBox:
 
         names = ", ".join(f"«{r['name']}»" for r in live) or "список пуст"
         return None, f"Строка «{name}» не найдена. Есть: {names}"
+
+    async def delete_transfer(self, transfer_id: str) -> str:
+        """Удалить перевод между счетами целиком.
+
+        У перевода две ноги — списание и зачисление. Удалять их по
+        отдельности нельзя, иначе деньги повиснут на одном счёте.
+        transfer_id виден в поле transfer_id любой из ног, его даёт
+        list_transactions.
+        """
+        await self._client.request("DELETE", f"/transfers/{transfer_id}")
+        return "Перевод удалён целиком, обе ноги."
+
+    async def update_account(
+        self,
+        name: str,
+        new_name: str | None = None,
+        account_type: str | None = None,
+        color: str | None = None,
+        comments: str | None = None,
+    ) -> str:
+        """Переименовать счёт или сменить его тип и цвет.
+
+        Начальный баланс здесь не меняется: после появления операций
+        он заблокирован, и исправлять остаток нужно операцией, а не
+        правкой прошлого.
+        """
+        accounts = await self._client.accounts()
+        account = _find_account(accounts, name)
+        if account is None:
+            names = ", ".join(a.name for a in accounts)
+            return f"Счёт не найден. Доступные: {names}"
+
+        body: dict[str, Any] = {}
+        if new_name:
+            body["name"] = new_name
+        if account_type:
+            if account_type not in _ACCOUNT_TYPES:
+                return f"Тип счёта должен быть одним из: {_ACCOUNT_TYPES}."
+            body["type"] = account_type
+        if color:
+            body["color"] = color
+        if comments is not None:
+            body["comments"] = comments
+        if not body:
+            return "Нечего менять: не передано ни одно поле."
+
+        await self._client.request(
+            "PATCH", f"/accounts/{account.id}", json=body
+        )
+        return f"Счёт «{account.name}» обновлён."
+
+    async def restore_account(self, name: str) -> str:
+        """Вернуть счёт из архива в активные."""
+        rows = await self._client.request("GET", "/accounts") or []
+        archived = [
+            r
+            for r in rows
+            if r.get("is_archived")
+            and name.casefold() in str(r["name"]).casefold()
+        ]
+        if len(archived) != 1:
+            names = ", ".join(
+                f"«{r['name']}»" for r in rows if r.get("is_archived")
+            )
+            return f"Не нашла один архивный счёт по «{name}». Есть: {names}"
+
+        await self._client.request(
+            "POST", f"/accounts/{archived[0]['id']}/restore"
+        )
+        return f"Счёт «{archived[0]['name']}» возвращён из архива."
+
+    async def update_category(
+        self, path: str, new_name: str, kind: str = "expense"
+    ) -> str:
+        """Переименовать категорию. Путь вида «Еда → Кофейни»."""
+        categories = await self._client.categories()
+        paths = build_category_paths(categories, kind=kind)
+        found = find_category_by_path(paths, path)
+        if found is None:
+            return _unknown_category(path, paths)
+
+        await self._client.request(
+            "PATCH", f"/categories/{found.id}", json={"name": new_name}
+        )
+        return f"Категория «{found.path}» переименована в «{new_name}»."
+
+    async def archive_category(self, path: str, kind: str = "expense") -> str:
+        """Убрать категорию в архив.
+
+        Прошлые операции сохраняют её имя снимком, так что история не
+        портится. Спроси согласия прежде, чем вызывать.
+        """
+        categories = await self._client.categories()
+        paths = build_category_paths(categories, kind=kind)
+        found = find_category_by_path(paths, path)
+        if found is None:
+            return _unknown_category(path, paths)
+
+        await self._client.request("DELETE", f"/categories/{found.id}")
+        return f"Категория «{found.path}» убрана в архив."
+
+    async def update_credit(
+        self,
+        name: str,
+        annual_rate: str | None = None,
+        term_months: str | None = None,
+        monthly_payment: str | None = None,
+        payment_day: str | None = None,
+        new_name: str | None = None,
+    ) -> str:
+        """Поправить условия кредита: ставку, срок, платёж, день.
+
+        Остаток долга здесь не меняется — он считается по платежам.
+        Если долг разошёлся с банком, ищи лишний или недостающий
+        платёж, а не правь итог.
+        """
+        found, error = await self._find_credit(name)
+        if found is None:
+            return error
+
+        body: dict[str, Any] = {}
+        if annual_rate:
+            body["annual_rate"] = str(annual_rate)
+        if term_months:
+            body["term_months"] = int(term_months)
+        if monthly_payment:
+            body["monthly_payment"] = str(monthly_payment)
+        if payment_day:
+            body["payment_day"] = int(payment_day)
+        if new_name:
+            body["name"] = new_name
+        if not body:
+            return "Нечего менять: не передано ни одно поле."
+
+        await self._client.request(
+            "PATCH", f"/credits/{found['id']}", json=body
+        )
+        return f"Кредит «{found['name']}» обновлён."
+
+    async def archive_credit(self, name: str) -> str:
+        """Убрать кредит в архив — когда он закрыт.
+
+        Архивный кредит перестаёт вычитаться из капитала. Спроси
+        согласия прежде, чем вызывать.
+        """
+        found, error = await self._find_credit(name)
+        if found is None:
+            return error
+        await self._client.request("DELETE", f"/credits/{found['id']}")
+        return f"Кредит «{found['name']}» убран в архив."
+
+    async def delete_budget(self, month: str, category_path: str) -> str:
+        """Убрать план по категории на месяц (месяц в формате YYYY-MM).
+
+        Не то же самое, что поставить ноль: план исчезает совсем, и
+        категория перестаёт участвовать в распределении.
+        """
+        categories = await self._client.categories()
+        paths = build_category_paths(categories, kind="expense")
+        category = find_category_by_path(paths, category_path)
+        if category is None:
+            return _unknown_category(category_path, paths)
+
+        rows = (
+            await self._client.request(
+                "GET", "/budgets", params={"month": month}
+            )
+            or []
+        )
+        match = [r for r in rows if r.get("category_id") == category.id]
+        if not match:
+            return f"На {month} плана по «{category.path}» нет."
+
+        await self._client.request("DELETE", f"/budgets/{match[0]['id']}")
+        return f"План по «{category.path}» на {month} убран."
+
+    async def _find_credit(
+        self, name: str
+    ) -> tuple[dict[str, Any] | None, str]:
+        """Найти кредит по названию: точное, затем однозначное."""
+        rows = await self._client.request("GET", "/credits") or []
+        needle = name.casefold().strip()
+
+        exact = [r for r in rows if str(r["name"]).casefold() == needle]
+        if len(exact) == 1:
+            return exact[0], ""
+        partial = [r for r in rows if needle in str(r["name"]).casefold()]
+        if len(partial) == 1:
+            return partial[0], ""
+        if len(partial) > 1:
+            names = ", ".join(f"«{r['name']}»" for r in partial)
+            return None, (
+                f"Под «{name}» подходит несколько кредитов: {names}. "
+                "Уточни, какой именно."
+            )
+        names = ", ".join(f"«{r['name']}»" for r in rows) or "список пуст"
+        return None, f"Кредит «{name}» не найден. Есть: {names}"
 
     # --- чтение ---------------------------------------------------
 

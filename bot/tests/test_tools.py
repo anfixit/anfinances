@@ -17,6 +17,10 @@ class _FakeClient:
         self.budgets: list[dict[str, Any]] = []
         self.transactions: list[dict[str, Any]] = []
         self.recurring: list[dict[str, Any]] = []
+        self.account_rows: list[dict[str, Any]] = []
+        self.credit_rows: list[dict[str, Any]] = [
+            {"id": "cr-1", "name": "Альфа Кредит"}
+        ]
         self._accounts = [
             AccountRead(
                 id="a-1",
@@ -61,6 +65,8 @@ class _FakeClient:
         self.calls.append((method, path, kwargs))
         if method == "GET" and path == "/budgets":
             return list(self.budgets)
+        if method == "GET" and path == "/accounts":
+            return list(self.account_rows)
         if method == "GET" and path == "/recurring":
             return list(self.recurring)
         if method == "GET" and path == "/transactions":
@@ -81,7 +87,7 @@ class _FakeClient:
         if method == "POST" and path == "/transfers":
             return {"id": "tr-1", "legs": []}
         if path == "/credits":
-            return [{"id": "cr-1", "name": "Альфа Кредит"}]
+            return list(self.credit_rows)
         return []
 
 
@@ -438,6 +444,14 @@ async def test_toolbox_exposes_all_tools() -> None:
         "import_statement",
         "update_transaction",
         "delete_transaction",
+        "delete_transfer",
+        "update_account",
+        "restore_account",
+        "update_category",
+        "archive_category",
+        "update_credit",
+        "archive_credit",
+        "delete_budget",
         "delete_credit_payment",
         "archive_account",
         "set_budget",
@@ -701,3 +715,82 @@ async def test_unknown_row_lists_what_exists() -> None:
     result = await box.update_recurring(name="Ипотека", monthly_amount="1")
     assert "не найдена" in result
     assert "Аренда" in result
+
+
+async def test_transfer_is_deleted_whole() -> None:
+    """Ногу перевода по отдельности удалять нельзя."""
+    box, client = _toolbox()
+    result = await box.delete_transfer(transfer_id="tr-7")
+    assert client.calls[0][:2] == ("DELETE", "/transfers/tr-7")
+    assert "целиком" in result
+
+
+async def test_account_is_renamed() -> None:
+    box, client = _toolbox()
+    await box.update_account(name="Сбер", new_name="Сбер карта")
+    method, path, kwargs = client.calls[-1]
+    assert (method, path) == ("PATCH", "/accounts/a-2")
+    assert kwargs["json"] == {"name": "Сбер карта"}
+
+
+async def test_account_type_is_validated() -> None:
+    box, client = _toolbox()
+    result = await box.update_account(name="Сбер", account_type="ерунда")
+    assert "тип счёта" in result.casefold()
+    assert not [c for c in client.calls if c[0] == "PATCH"]
+
+
+async def test_archived_account_is_restored() -> None:
+    box, client = _toolbox()
+    client.account_rows = [
+        {"id": "a-9", "name": "Альфа накопления", "is_archived": True}
+    ]
+    result = await box.restore_account(name="накопления")
+    assert client.calls[-1][:2] == ("POST", "/accounts/a-9/restore")
+    assert "из архива" in result
+
+
+async def test_category_is_renamed() -> None:
+    box, client = _toolbox()
+    await box.update_category(path="Еда → Кофейни", new_name="Кофе")
+    method, path, kwargs = client.calls[-1]
+    assert (method, path) == ("PATCH", "/categories/c-2")
+    assert kwargs["json"] == {"name": "Кофе"}
+
+
+async def test_credit_terms_are_updated() -> None:
+    box, client = _toolbox()
+    await box.update_credit(name="Альфа", monthly_payment="10700")
+    method, path, kwargs = client.calls[-1]
+    assert (method, path) == ("PATCH", "/credits/cr-1")
+    assert kwargs["json"] == {"monthly_payment": "10700"}
+
+
+async def test_ambiguous_credit_asks() -> None:
+    box, client = _toolbox()
+    client.credit_rows = [
+        {"id": "cr-1", "name": "Альфа Кредит"},
+        {"id": "cr-2", "name": "Альфа Ипотека"},
+    ]
+    result = await box.update_credit(name="Альфа", monthly_payment="1")
+    assert "несколько кредитов" in result
+
+
+async def test_budget_line_is_removed() -> None:
+    box, client = _toolbox()
+    client.budgets = [{"id": "b-1", "category_id": "c-2"}]
+    result = await box.delete_budget(
+        month="2026-08", category_path="Еда → Кофейни"
+    )
+    assert client.calls[-1][:2] == ("DELETE", "/budgets/b-1")
+    assert "убран" in result
+
+
+async def test_missing_budget_line_is_reported() -> None:
+    box, client = _toolbox()
+    client.budgets = []
+    result = await box.delete_budget(
+        month="2026-08", category_path="Еда → Кофейни"
+    )
+    assert "плана по" in result
+    assert not [c for c in client.calls if c[0] == "DELETE"]
