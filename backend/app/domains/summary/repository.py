@@ -44,6 +44,10 @@ class SummaryRepository(Protocol):
         self, user_id: uuid.UUID
     ) -> dict[uuid.UUID, uuid.UUID]: ...
 
+    async def category_names(
+        self, user_id: uuid.UUID
+    ) -> dict[uuid.UUID, str]: ...
+
     async def cashflow(
         self,
         user_id: uuid.UUID,
@@ -132,6 +136,15 @@ class SqlSummaryRepository:
             select(Category.id, Category.parent_id).where(
                 Category.user_id == user_id,
                 Category.parent_id.is_not(None),
+            )
+        )
+        return {row[0]: row[1] for row in result.all()}
+
+    async def category_names(self, user_id: uuid.UUID) -> dict[uuid.UUID, str]:
+        """Карта «категория → название» для подписей обязательств."""
+        result = await self._session.execute(
+            select(Category.id, Category.name).where(
+                Category.user_id == user_id,
             )
         )
         return {row[0]: row[1] for row in result.all()}

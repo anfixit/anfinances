@@ -219,6 +219,7 @@ class SummaryService:
         # записана в план-минимум как «Дом → Аренда», а конверт
         # заведён на «Дом». Это те же деньги, и резерв по ним один.
         parents = await self._repo.category_parents(user_id)
+        names = await self._repo.category_names(user_id)
         planned_left = Decimal(0)
         for budget in await self._repo.budgets_for_month(user_id, month_start):
             scope = _scope_of(budget.category_id, parents)
@@ -241,7 +242,7 @@ class SummaryService:
             if budget.rollover:
                 obligations.append(
                     Obligation(
-                        name=_savings_name(budget),
+                        name=_savings_name(budget, names),
                         amount_rub=left,
                         kind="savings",
                     )
@@ -393,14 +394,20 @@ def _month_to_date(month: str) -> date:
         raise ValueError("Месяц должен быть в формате YYYY-MM.") from exc
 
 
-def _savings_name(budget: object) -> str:
+def _savings_name(budget: object, names: dict[uuid.UUID, str]) -> str:
     """Подпись копилки в списке обязательств.
 
-    Имя категории сюда не дотянуть без лишнего запроса, а заметка к
-    лимиту у копилок обычно и есть её название («на зимнюю резину»).
+    Без имени категории все копилки назывались одинаково — «Копилка»,
+    и в списке обязательств их было не различить. Заметка к лимиту у
+    копилок обычно и есть её название («на зимнюю резину»), поэтому
+    она идёт после имени категории, а не вместо него.
     """
     notes = getattr(budget, "notes", None)
-    return str(notes) if notes else "Копилка"
+    category_id = getattr(budget, "category_id", None)
+    name = names.get(category_id) if category_id is not None else None
+    if name is None:
+        return str(notes) if notes else "Копилка"
+    return f"{name} — {notes}" if notes else f"Копилка: {name}"
 
 
 def _scope_of(

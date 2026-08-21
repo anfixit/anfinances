@@ -50,10 +50,12 @@ class _Budget:
         category_id: uuid.UUID,
         planned: Decimal,
         rollover: bool = False,
+        notes: str | None = None,
     ) -> None:
         self.category_id = category_id
         self.planned = planned
         self.rollover = rollover
+        self.notes = notes
 
 
 class _Repo:
@@ -65,6 +67,7 @@ class _Repo:
         spent: dict[uuid.UUID, Decimal] | None = None,
         budgets: list[_Budget] | None = None,
         parents: dict[uuid.UUID, uuid.UUID] | None = None,
+        names: dict[uuid.UUID, str] | None = None,
     ) -> None:
         self._accounts = accounts
         self._credits = credits
@@ -72,11 +75,15 @@ class _Repo:
         self._spent = spent or {}
         self._budgets = budgets or []
         self._parents = parents or {}
+        self._names = names or {}
 
     async def category_parents(
         self, user_id: uuid.UUID
     ) -> dict[uuid.UUID, uuid.UUID]:
         return dict(self._parents)
+
+    async def category_names(self, user_id: uuid.UUID) -> dict[uuid.UUID, str]:
+        return dict(self._names)
 
     async def budgets_for_month(
         self, user_id: uuid.UUID, month: date
@@ -121,6 +128,7 @@ def _service(
     spent: dict[uuid.UUID, Decimal] | None = None,
     budgets: list[_Budget] | None = None,
     parents: dict[uuid.UUID, uuid.UUID] | None = None,
+    names: dict[uuid.UUID, str] | None = None,
 ) -> SummaryService:
     return SummaryService(
         cast(
@@ -132,6 +140,7 @@ def _service(
                 spent,
                 budgets,
                 parents,
+                names,
             ),
         ),
         cast(Any, _Currencies()),
@@ -483,3 +492,45 @@ async def test_unrelated_categories_are_not_collapsed() -> None:
         uuid.uuid4(), "Europe/Moscow", now=_NOW
     )
     assert result.obligations_rub == Decimal("5650")
+
+
+async def test_savings_envelopes_are_named_by_category() -> None:
+    """Три «Копилки» подряд в списке было не различить."""
+    health = uuid.uuid4()
+    tyres = uuid.uuid4()
+    service = _service(
+        [_Account("Альфа", "RUB", Decimal("60000"))],
+        budgets=[
+            _Budget(health, Decimal("5000"), rollover=True),
+            _Budget(tyres, Decimal("8000"), rollover=True),
+        ],
+        names={health: "Здоровье", tyres: "Авто"},
+    )
+    result = await service.daily_allowance(
+        uuid.uuid4(), "Europe/Moscow", now=_NOW
+    )
+    assert [o.name for o in result.obligations] == [
+        "Копилка: Здоровье",
+        "Копилка: Авто",
+    ]
+
+
+async def test_savings_note_goes_after_the_category() -> None:
+    """Заметка уточняет копилку, но не заменяет имя категории."""
+    tyres = uuid.uuid4()
+    service = _service(
+        [_Account("Альфа", "RUB", Decimal("60000"))],
+        budgets=[
+            _Budget(
+                tyres,
+                Decimal("8000"),
+                rollover=True,
+                notes="на зимнюю резину",
+            )
+        ],
+        names={tyres: "Авто"},
+    )
+    result = await service.daily_allowance(
+        uuid.uuid4(), "Europe/Moscow", now=_NOW
+    )
+    assert result.obligations[0].name == "Авто — на зимнюю резину"
