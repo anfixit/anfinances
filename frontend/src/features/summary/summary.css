@@ -69,7 +69,6 @@
   font-size: 1.05rem;
   min-width: 160px;
   text-align: center;
-  text-transform: capitalize;
 }
 
 .stat-row {
@@ -139,5 +138,93 @@
 .rules-row {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 16px;
+  gap: var(--space);
+}
+
+/* ── Четыре правила ВНБ ─────────────────────────────────────── */
+.rules-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 1px;
+  /* Рамки-разделители одним пикселем: сетка из фона просвечивает
+     между плитками, отдельных border у плиток нет. */
+  background: var(--outline-variant);
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--shape-s);
+  overflow: hidden;
+}
+
+.rule {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 12px 14px;
+  background: var(--surface-container-low);
+}
+
+.rule-n {
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--on-surface-variant);
+}
+
+.rule-name {
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.rule-value {
+  font-size: 1.25rem;
+  font-weight: 700;
+}
+
+.rule-hint {
+  font-size: 0.82rem;
+  line-height: 1.35;
+  color: var(--on-surface-variant);
+}
+
+/* Выполнено — зелёная засечка слева, нет — красная. Цветом залит
+   только край: заливка всей плитки превратила бы дашборд в светофор. */
+.rule--ok {
+  box-shadow: inset 3px 0 0 var(--income);
+}
+
+.rule--warn {
+  box-shadow: inset 3px 0 0 var(--expense);
+}
+
+.rule--warn .rule-value {
+  color: var(--expense);
+}
+
+/* ── Плотная таблица чисел ──────────────────────────────────── */
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 12px;
+  font-size: 0.9rem;
+}
+
+.data-table td {
+  padding: 6px 0;
+  border-top: 1px solid var(--outline-variant);
+}
+
+.data-table td:not(:first-child) {
+  text-align: right;
+  white-space: nowrap;
+  padding-left: 12px;
+}
+
+.data-share {
+  color: var(--on-surface-variant);
+  width: 4.5rem;
+}
+
+.data-total td {
+  font-weight: 700;
+  border-top: 2px solid var(--outline);
 }
