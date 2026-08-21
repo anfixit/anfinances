@@ -18,6 +18,8 @@
 сигнатуры — в схему параметров. Это контракт, а не украшение.
 """
 
+import secrets
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any, Literal, Protocol
@@ -44,6 +46,10 @@ _PAGE = 100
 # не так, как ожидается: 10 000 операций по счёту за период хватит.
 _MAX_PAGES = 100
 
+# Сколько строк разбора показывать в ответе модели. Выписка за месяц
+# бывает на две сотни строк, а её ещё надо прочитать в телеграме.
+_PREVIEW_LINES = 40
+
 _ACCOUNT_TYPES = frozenset(
     {"card", "cash", "card_credit", "savings", "investment"}
 )
@@ -57,6 +63,28 @@ class StatementRow(BaseModel):
     kind: Literal["expense", "income"]
     category_path: str
     comment: str | None = None
+
+
+@dataclass
+class PendingImport:
+    """Разобранная выписка, ждущая её согласия.
+
+    Разбор и запись разведены намеренно. Пока они были одним вызовом,
+    бот заносил десятки строк, не показав их, и отменять приходилось
+    руками по одной. Теперь ``preview_statement`` только считает и
+    показывает, а ``import_statement`` пишет — и только на следующем
+    ходу, когда она успела ответить.
+    """
+
+    token: str
+    account_id: str
+    account_name: str
+    items: list[dict[str, Any]]
+    duplicates: int
+    lines: list[str]
+    # Ставится в True при следующем запуске агента, то есть после её
+    # ответа. В том же ходу, где показали разбор, занести нельзя.
+    confirmed: bool = False
 
 
 class _Client(Protocol):
@@ -75,6 +103,7 @@ class ToolBox:
         self._client = client
         self._default_accounts = default_accounts
         self._tz = ZoneInfo(timezone)
+        self.pending_import: PendingImport | None = None
         # Нужны хендлеру, чтобы показать карточку и кнопки выбора.
         self.last_created_id: str | None = None
         self.pending_accounts: list[AccountRead] = []
@@ -87,6 +116,7 @@ class ToolBox:
                 self.create_income,
                 self.create_transfer,
                 self.create_credit_payment,
+                self.preview_statement,
                 self.import_statement,
                 self.update_transaction,
                 self.delete_transaction,
@@ -356,18 +386,22 @@ class ToolBox:
         await self._client.request("DELETE", f"/transactions/{transaction_id}")
         return "Операция удалена."
 
-    async def import_statement(
+    async def preview_statement(
         self, account_name: str, rows: list[StatementRow]
     ) -> str:
-        """Занести разом операции из банковской выписки.
+        """Разобрать выписку и показать, что будет занесено.
+
+        Ничего не записывает. Сверяет строки с уже записанным по
+        этому счёту и возвращает список только новых операций плюс
+        число пропущенных дублей.
 
         Все строки должны быть по одному счёту. Категории проставь
         сам по назначению платежа, опираясь на дерево категорий и на
         прошлые операции; выдумывать новые пути нельзя.
 
-        Строки, которые уже есть в anfinances (та же дата, счёт и
-        сумма), пропускаются — повторная выгрузка за тот же период
-        не задваивает операции.
+        Полученный список покажи ей целиком и дождись ответа. Занести
+        его потом можно вызовом import_statement с выданным токеном —
+        раньше её ответа он всё равно откажет.
         """
         if not rows:
             return "Список операций пуст — нечего заносить."
@@ -385,6 +419,7 @@ class ToolBox:
         }
 
         resolved: list[dict[str, Any]] = []
+        labels: list[str] = []
         unknown: set[str] = set()
         for raw in rows:
             # Модель присылает JSON; в тестах и при прямом вызове —
@@ -405,10 +440,12 @@ class ToolBox:
             if row.comment:
                 item["comment"] = row.comment
             resolved.append(item)
+            labels.append(_row_label(row))
 
         # Молча пропустить строку — потерять операцию незаметно.
         # Лучше не заносить ничего и показать, что не разобралось.
         if unknown:
+            self.pending_import = None
             return (
                 "Не нашла категории: "
                 + ", ".join(sorted(unknown))
@@ -418,25 +455,93 @@ class ToolBox:
 
         seen = await self._existing_keys(account.id, resolved)
         fresh: list[dict[str, Any]] = []
+        lines: list[str] = []
         duplicates = 0
-        for item in resolved:
+        for item, label in zip(resolved, labels, strict=True):
             key = (item["date"][:10], _norm_amount(item["amount"]))
             if key in seen:
                 duplicates += 1
                 continue
             fresh.append(item)
+            lines.append(label)
 
         if not fresh:
+            self.pending_import = None
             return (
-                f"Все {duplicates} операций уже были записаны раньше — "
-                "ничего не добавила."
+                f"Разобрала выписку по счёту «{account.name}». Все "
+                f"{duplicates} операций уже записаны раньше — "
+                "заносить нечего."
+            )
+
+        token = secrets.token_hex(4)
+        self.pending_import = PendingImport(
+            token=token,
+            account_id=account.id,
+            account_name=account.name,
+            items=fresh,
+            duplicates=duplicates,
+            lines=lines,
+        )
+        shown = lines[:_PREVIEW_LINES]
+        rest = len(lines) - len(shown)
+        body = "\n".join(shown)
+        if rest > 0:
+            body += f"\n…и ещё {rest}"
+        skipped = (
+            f" Уже записано раньше и будет пропущено: {duplicates}."
+            if duplicates
+            else " Дублей с уже записанным нет."
+        )
+        return (
+            f"Разобрала выписку по счёту «{account.name}». "
+            f"Новых операций: {len(fresh)}.{skipped}\n\n"
+            f"{body}\n\n"
+            f"Покажи этот список целиком и спроси, заносить ли. "
+            f"Токен для записи: {token}."
+        )
+
+    async def import_statement(self, token: str) -> str:
+        """Занести разобранную выписку после её согласия.
+
+        token — из ответа preview_statement. Вызывать только тогда,
+        когда она ответила согласием: в том же ходу, где показан
+        разбор, инструмент откажет.
+        """
+        pending = self.pending_import
+        if pending is None or pending.token != token:
+            return (
+                "Нечего заносить: сначала разбери выписку через "
+                "preview_statement и покажи ей список."
+            )
+        if not pending.confirmed:
+            return (
+                "Разбор показан, но она ещё не ответила. Покажи ей "
+                "список и дождись согласия — потом занесу."
             )
 
         await self._client.request(
-            "POST", "/import/transactions", json={"items": fresh}
+            "POST", "/import/transactions", json={"items": pending.items}
         )
-        tail = f", пропущено дублей: {duplicates}" if duplicates else ""
-        return f"Занесено операций: {len(fresh)}{tail}."
+        self.pending_import = None
+        tail = (
+            f", пропущено дублей: {pending.duplicates}"
+            if pending.duplicates
+            else ""
+        )
+        return (
+            f"Занесено операций: {len(pending.items)} "
+            f"на счёт «{pending.account_name}»{tail}."
+        )
+
+    def arm_pending_import(self) -> None:
+        """Разрешить запись разбора, показанного на прошлом ходу.
+
+        Вызывается перед каждым прогоном агента, то есть после её
+        сообщения. Так модель не может показать список и тут же его
+        занести, не дав ей возразить.
+        """
+        if self.pending_import is not None:
+            self.pending_import.confirmed = True
 
     async def _existing_keys(
         self, account_id: str, items: list[dict[str, Any]]
@@ -1212,6 +1317,14 @@ def _find_account(
             return account
     matches = [a for a in accounts if needle in a.name.casefold()]
     return matches[0] if len(matches) == 1 else None
+
+
+def _row_label(row: StatementRow) -> str:
+    """Строка разбора так, как её увидит человек в переписке."""
+    sign = "−" if row.kind == "expense" else "+"
+    day = row.date[:10]
+    tail = f" · {row.comment}" if row.comment else ""
+    return f"{day} · {sign}{row.amount} · {row.category_path}{tail}"
 
 
 def _norm_amount(value: str) -> Decimal:

@@ -95,6 +95,8 @@ class _ToolBox(Protocol):
     last_created_id: str | None
     pending_accounts: list[AccountRead]
 
+    def arm_pending_import(self) -> None: ...
+
 
 class AgentRunner:
     def __init__(self, anthropic: Any, toolbox: _ToolBox) -> None:
@@ -123,6 +125,9 @@ class AgentRunner:
         # прилипнет к ответу, который ничего не записывал.
         self._toolbox.last_created_id = None
         self._toolbox.pending_accounts = []
+        # Разбор выписки, показанный на прошлом ходу, теперь можно
+        # заносить: раз пришло новое сообщение — она его видела.
+        self._toolbox.arm_pending_import()
 
         system = build_system_blocks(accounts, categories, timezone_name)
         messages: list[dict[str, Any]] = list(history or [])

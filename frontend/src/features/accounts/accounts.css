@@ -114,13 +114,51 @@
   color: var(--on-surface-variant);
 }
 
+.acc-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+/* На телефоне в строку не помещаются стрелки, точка, название,
+   остаток и две кнопки. Раньше карточка была флексом: имя счёта
+   сжималось ниже своей ширины и вылезало поверх «Изменить».
+   Теперь сетка: сверху счёт и остаток, снизу кнопки. */
 @media (max-width: 640px) {
   .acc-card {
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: auto auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      "arrows dot info balance"
+      "arrows dot actions actions";
+    align-items: center;
+    column-gap: 10px;
+    row-gap: 6px;
+  }
+
+  .acc-arrows {
+    grid-area: arrows;
+  }
+
+  .color-dot {
+    grid-area: dot;
+  }
+
+  .acc-info {
+    grid-area: info;
+    /* Длинное название переносится, а не выезжает за карточку. */
+    overflow-wrap: anywhere;
   }
 
   .acc-balance {
-    order: 3;
+    grid-area: balance;
+    justify-self: end;
+  }
+
+  .acc-actions {
+    grid-area: actions;
+    justify-content: flex-end;
   }
 }
 

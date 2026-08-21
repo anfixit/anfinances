@@ -25,6 +25,10 @@ class _FakeToolBox:
         self.tools: list[Any] = []
         self.last_created_id: str | None = None
         self.pending_accounts: list[AccountRead] = []
+        self.armed = 0
+
+    def arm_pending_import(self) -> None:
+        self.armed += 1
 
 
 class _FakeToolRunner:
@@ -264,3 +268,10 @@ async def test_plain_question_is_not_cached() -> None:
     await runner.run("сколько осталось", [], [], "Europe/Moscow")
     last = messages.kwargs["messages"][-1]["content"][-1]
     assert "cache_control" not in last
+
+
+async def test_each_run_arms_the_pending_import() -> None:
+    """Разбор выписки становится заносимым только с её ответом."""
+    runner, _, box = _pair()
+    await runner.run("да, заноси", [], [], "Europe/Moscow")
+    assert box.armed == 1

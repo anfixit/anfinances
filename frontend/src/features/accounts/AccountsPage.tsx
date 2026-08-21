@@ -172,22 +172,24 @@ export function AccountsPage() {
             <span className="num acc-balance">
               {formatMoney(a.current_balance, a.currency_code)}
             </span>
-            <button
-              type="button"
-              className="link"
-              onClick={() => openEdit(a)}
-            >
-              Изменить
-            </button>
-            <button
-              type="button"
-              className="link danger"
-              onClick={() => {
-                void remove(a)
-              }}
-            >
-              В архив
-            </button>
+            <span className="acc-actions">
+              <button
+                type="button"
+                className="link"
+                onClick={() => openEdit(a)}
+              >
+                Изменить
+              </button>
+              <button
+                type="button"
+                className="link danger"
+                onClick={() => {
+                  void remove(a)
+                }}
+              >
+                В архив
+              </button>
+            </span>
           </li>
         ))}
       </ul>
