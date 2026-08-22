@@ -48,6 +48,7 @@ class Transaction(UUIDMixin, TimestampMixin, Base):
         Index("ix_transactions_user_date", "user_id", "date"),
         Index("ix_transactions_account_id", "account_id"),
         Index("ix_transactions_category_id", "category_id"),
+        Index("ix_transactions_payee_id", "payee_id"),
         Index("ix_transactions_transfer_id", "transfer_id"),
         # Соглашение знаков (Стратегия А) на уровне БД: сервис может
         # ошибиться, БД — нет. Ноги перевода под знаковые правила не
@@ -103,6 +104,12 @@ class Transaction(UUIDMixin, TimestampMixin, Base):
     category_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("categories.id")
     )
+    # Кому платили. ondelete=SET NULL: удаление получателя не должно
+    # уносить операцию, у неё остаётся комментарий и категория.
+    payee_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("payees.id", ondelete="SET NULL")
+    )
+    payee_name_snapshot: Mapped[str | None] = mapped_column(String)
     category_name_snapshot: Mapped[str | None] = mapped_column(String)
     subcategory_name_snapshot: Mapped[str | None] = mapped_column(String)
     account_name_snapshot: Mapped[str | None] = mapped_column(String)

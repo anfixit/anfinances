@@ -34,6 +34,7 @@ from app.core.exceptions import (
 from app.domains.accounts.repository import AccountRepository
 from app.domains.categories.repository import CategoryRepository
 from app.domains.currencies.service import CurrencyService
+from app.domains.payees.service import PayeeService
 from app.domains.transactions.models import Transaction, Transfer
 from app.domains.transactions.repository import (
     TransactionFilter,
@@ -101,11 +102,13 @@ class TransactionService:
         accounts: AccountRepository,
         categories: CategoryRepository,
         currencies: CurrencyService,
+        payees: PayeeService,
     ) -> None:
         self._repo = repo
         self._accounts = accounts
         self._categories = categories
         self._currencies = currencies
+        self._payees = payees
 
     async def list_transactions(
         self, user_id: uuid.UUID, flt: TransactionFilter
@@ -132,6 +135,14 @@ class TransactionService:
             subcategory_name_snapshot,
         ) = await self._validate_category(user_id, data.category_id, data.kind)
 
+        payee = None
+        if data.payee:
+            payee = await self._payees.ensure(user_id, data.payee)
+            # Категория запоминается за получателем: следующая
+            # выписка разнесётся по таблице, а не по догадке модели.
+            if data.category_id is not None:
+                payee.last_category_id = data.category_id
+
         rate = await self._currencies.rate_to_rub(account.currency_code)
         amount = _signed(data.amount, data.kind)
         amount_rub = amount * rate
@@ -145,6 +156,8 @@ class TransactionService:
             amount_rub=amount_rub,
             exchange_rate=rate,
             category_id=data.category_id,
+            payee_id=None if payee is None else payee.id,
+            payee_name_snapshot=None if payee is None else payee.name,
             category_name_snapshot=category_name_snapshot,
             subcategory_name_snapshot=subcategory_name_snapshot,
             account_name_snapshot=account.name,
@@ -172,6 +185,22 @@ class TransactionService:
             )
 
         fields = data.model_dump(exclude_unset=True)
+
+        # Получателя достаём до общего цикла: в модели он лежит
+        # идентификатором, а приходит именем.
+        payee_name = fields.pop("payee", None)
+        if payee_name is not None:
+            if payee_name.strip():
+                payee = await self._payees.ensure(user_id, payee_name)
+                tx.payee_id = payee.id
+                tx.payee_name_snapshot = payee.name
+            else:
+                # Пустая строка — «получателя тут нет», а не имя.
+                payee = None
+                tx.payee_id = None
+                tx.payee_name_snapshot = None
+        else:
+            payee = None
 
         # Счёт меняем первым: от него зависят валюта и курс, а
         # значит и рублёвая оценка суммы ниже.
@@ -215,6 +244,11 @@ class TransactionService:
             tx.amount = _signed(fields["amount"], tx.kind)
             tx.amount_rub = tx.amount * tx.exchange_rate
 
+        # Правка категории — тоже повод запомнить её за получателем:
+        # именно так исправление одной ошибки чинит все следующие.
+        if payee is not None and tx.category_id is not None:
+            payee.last_category_id = tx.category_id
+
         return tx
 
     async def delete_transaction(
@@ -255,6 +289,8 @@ class TransactionService:
 
 
 class TransferService:
+    # Получателя тут нет намеренно: перевод между своими счетами
+    # никому не платит, и поле только путало бы отчёты.
     def __init__(
         self,
         repo: TransactionRepository,

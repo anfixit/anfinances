@@ -3,6 +3,7 @@
 import uuid
 from datetime import UTC, datetime
 from decimal import Decimal
+from typing import Any, cast
 
 import pytest
 
@@ -17,6 +18,7 @@ from app.core.exceptions import (
 )
 from app.domains.accounts.models import Account
 from app.domains.categories.models import Category
+from app.domains.payees.models import Payee
 from app.domains.transactions.models import Transaction
 from app.domains.transactions.schemas import (
     TransactionCreate,
@@ -104,12 +106,31 @@ def _category(kind=CategoryKind.EXPENSE) -> Category:
     )
 
 
-def _service(accounts, cats, rates):
+class FakePayees:
+    """Справочник получателей в памяти: ensure заводит на лету."""
+
+    def __init__(self) -> None:
+        self.by_key: dict[str, Any] = {}
+
+    async def ensure(self, user_id, name):  # type: ignore[no-untyped-def]
+        key = " ".join(name.split()).casefold()
+        if key not in self.by_key:
+            self.by_key[key] = Payee(
+                id=uuid.uuid4(),
+                user_id=user_id,
+                name=" ".join(name.split()),
+                name_key=key,
+            )
+        return self.by_key[key]
+
+
+def _service(accounts, cats, rates, payees=None):
     return TransactionService(
         FakeTxRepo(),
         FakeAccounts(accounts),
         FakeCategories(cats),
         FakeCurrencies(rates),
+        cast(Any, payees or FakePayees()),
     )
 
 
@@ -219,3 +240,97 @@ async def test_get_missing() -> None:
     svc = _service([], [], {})
     with pytest.raises(NotFoundError):
         await svc.get_transaction(uuid.uuid4(), USER)
+
+
+async def test_payee_remembers_the_category_it_was_spent_on() -> None:
+    """Ради этого всё и затевалось: выписку разносит таблица."""
+    acc = _account("RUB")
+    cat = _category()
+    payees = FakePayees()
+    svc = _service([acc], [cat], {}, payees)
+
+    await svc.create_transaction(
+        USER,
+        TransactionCreate(
+            account_id=acc.id,
+            kind=TransactionKind.EXPENSE,
+            amount=Decimal("540"),
+            date=NOW,
+            category_id=cat.id,
+            payee="  ПЯТЁРОЧКА  ",
+        ),
+    )
+
+    payee = payees.by_key["пятёрочка"]
+    assert payee.name == "ПЯТЁРОЧКА", "имя храним как ввели"
+    assert payee.last_category_id == cat.id
+
+
+async def test_fixing_the_category_fixes_the_hint_too() -> None:
+    """Исправление одной ошибки должно чинить все следующие."""
+    acc = _account("RUB")
+    wrong = _category()
+    right = _category()
+    payees = FakePayees()
+    svc = _service([acc], [wrong, right], {}, payees)
+
+    tx = await svc.create_transaction(
+        USER,
+        TransactionCreate(
+            account_id=acc.id,
+            kind=TransactionKind.EXPENSE,
+            amount=Decimal("540"),
+            date=NOW,
+            category_id=wrong.id,
+            payee="Лента",
+        ),
+    )
+    await svc.update_transaction(
+        tx.id,
+        USER,
+        TransactionUpdate(category_id=right.id, payee="Лента"),
+    )
+
+    assert payees.by_key["лента"].last_category_id == right.id
+
+
+async def test_transaction_without_a_payee_creates_none() -> None:
+    """Наличная трата в киоске получателя не заводит."""
+    acc = _account("RUB")
+    payees = FakePayees()
+    svc = _service([acc], [], {}, payees)
+
+    tx = await svc.create_transaction(
+        USER,
+        TransactionCreate(
+            account_id=acc.id,
+            kind=TransactionKind.EXPENSE,
+            amount=Decimal("100"),
+            date=NOW,
+        ),
+    )
+    assert tx.payee_id is None
+    assert payees.by_key == {}
+
+
+async def test_empty_payee_clears_the_link() -> None:
+    """Пустая строка — «получателя тут нет», а не имя из пробелов."""
+    acc = _account("RUB")
+    payees = FakePayees()
+    svc = _service([acc], [], {}, payees)
+
+    tx = await svc.create_transaction(
+        USER,
+        TransactionCreate(
+            account_id=acc.id,
+            kind=TransactionKind.EXPENSE,
+            amount=Decimal("100"),
+            date=NOW,
+            payee="Ошибка",
+        ),
+    )
+    assert tx.payee_id is not None
+
+    await svc.update_transaction(tx.id, USER, TransactionUpdate(payee=""))
+    assert tx.payee_id is None
+    assert tx.payee_name_snapshot is None

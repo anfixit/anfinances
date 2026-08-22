@@ -39,6 +39,10 @@ class TransactionCreate(BaseModel):
     category_id: uuid.UUID | None = None
     required: RequiredKind | None = None
     comment: str | None = None
+    # Получатель приходит именем, а не идентификатором: он заводится
+    # сам при первой встрече. Требовать заранее заведённого значило
+    # бы ронять запись траты из-за справочника.
+    payee: str | None = Field(default=None, max_length=200)
 
 
 class TransactionUpdate(BaseModel):
@@ -51,6 +55,7 @@ class TransactionUpdate(BaseModel):
     category_id: uuid.UUID | None = None
     required: RequiredKind | None = None
     comment: str | None = None
+    payee: str | None = Field(default=None, max_length=200)
 
 
 class TransactionRead(BaseModel):
@@ -66,6 +71,8 @@ class TransactionRead(BaseModel):
     amount_rub: Decimal
     exchange_rate: Decimal
     category_id: uuid.UUID | None
+    payee_id: uuid.UUID | None
+    payee_name_snapshot: str | None
     category_name_snapshot: str | None
     subcategory_name_snapshot: str | None
     account_name_snapshot: str | None

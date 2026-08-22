@@ -19,6 +19,8 @@ from app.domains.export.schemas import ExportBundle
 from app.domains.import_.repository import SqlImportRepository
 from app.domains.import_.schemas import ImportResult, ImportTransactions
 from app.domains.import_.service import ImportService
+from app.domains.payees.repository import SqlPayeeRepository
+from app.domains.payees.service import PayeeService
 from app.domains.transactions.repository import SqlTransactionRepository
 from app.domains.transactions.service import TransactionService
 
@@ -35,6 +37,7 @@ def get_import_service(db: DbSession, settings: SettingsDep) -> ImportService:
         SqlAccountRepository(db),
         SqlCategoryRepository(db),
         currencies,
+        PayeeService(SqlPayeeRepository(db)),
     )
     return ImportService(SqlImportRepository(db), transactions)
 

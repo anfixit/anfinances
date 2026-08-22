@@ -21,6 +21,8 @@ from app.domains.currencies.providers.er_api import (
 )
 from app.domains.currencies.repository import SqlCurrencyRepository
 from app.domains.currencies.service import CurrencyService
+from app.domains.payees.repository import SqlPayeeRepository
+from app.domains.payees.service import PayeeService
 from app.domains.transactions.models import Transaction
 from app.domains.transactions.repository import (
     SqlTransactionRepository,
@@ -58,6 +60,7 @@ def get_transaction_service(
         SqlAccountRepository(db),
         SqlCategoryRepository(db),
         _currencies(db, settings),
+        PayeeService(SqlPayeeRepository(db)),
     )
 
 

@@ -85,6 +85,7 @@ def _service() -> tuple[TransactionService, _Tx]:
         cast(Any, _Accounts()),
         cast(Any, None),
         cast(Any, _Currencies()),
+        cast(Any, None),
     )
     return service, tx
 
