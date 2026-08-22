@@ -4,6 +4,7 @@ import { useAccounts } from "@/features/accounts/hooks"
 import type { Account } from "@/features/accounts/types"
 import { CategorySelect } from "@/features/categories/CategorySelect"
 import { useCategories } from "@/features/categories/hooks"
+import { usePayees } from "@/features/payees/hooks"
 import {
   useCreateTransaction,
   useCreateTransfer,
@@ -73,6 +74,10 @@ export function TransactionSheet({
   const [comment, setComment] = useState(
     transaction?.comment ?? sourceLeg?.comment ?? "",
   )
+  const [payee, setPayee] = useState(
+    transaction?.payee_name_snapshot ?? "",
+  )
+  const payees = usePayees()
   const [formError, setFormError] = useState<string | null>(null)
 
   // Обычная операция
@@ -187,6 +192,9 @@ export function TransactionSheet({
                 ? (required as never)
                 : null,
             comment: comment || null,
+            // Пустая строка — «получателя тут нет»; бэкенд по ней
+            // снимает связь, а null означал бы «не трогай».
+            payee: payee.trim(),
           },
         },
         { onSuccess: onDone, onError },
@@ -203,6 +211,7 @@ export function TransactionSheet({
         category_id: categoryId || null,
         required: mode === "expense" && required ? (required as never) : null,
         comment: comment || null,
+        payee: payee.trim() || null,
       },
       { onSuccess: onDone, onError },
     )
@@ -428,6 +437,25 @@ export function TransactionSheet({
           onChange={(e) => setDate(e.target.value || blank())}
         />
       </label>
+
+      {mode !== "transfer" && (
+        <label className="field">
+          <span>Получатель</span>
+          {/* Свободный ввод со списком known: новый магазин заведётся
+              сам, а знакомый подставит запомненную категорию. */}
+          <input
+            list="payee-options"
+            value={payee}
+            placeholder="Пятёрочка, Яндекс Go…"
+            onChange={(e) => setPayee(e.target.value)}
+          />
+          <datalist id="payee-options">
+            {(payees.data ?? []).map((p) => (
+              <option key={p.id} value={p.name} />
+            ))}
+          </datalist>
+        </label>
+      )}
 
       <label className="field">
         <span>Комментарий</span>

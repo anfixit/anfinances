@@ -19,6 +19,7 @@ const NAV_ITEMS: readonly NavItem[] = [
   { to: "/credits", label: "Кредиты" },
   { to: "/accounts", label: "Счета" },
   { to: "/categories", label: "Категории" },
+  { to: "/payees", label: "Получатели" },
   { to: "/currencies", label: "Валюты" },
   { to: "/settings", label: "Настройки" },
 ]

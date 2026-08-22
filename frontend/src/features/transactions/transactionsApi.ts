@@ -16,6 +16,7 @@ export interface TransactionCreateInput {
   category_id?: string | null
   required?: RequiredKind | null
   comment?: string | null
+  payee?: string | null
 }
 
 export interface TransactionUpdateInput {
@@ -25,6 +26,9 @@ export interface TransactionUpdateInput {
   category_id?: string | null
   required?: RequiredKind | null
   comment?: string | null
+  // Пустая строка снимает связь с получателем; отсутствие поля
+  // означает «не трогай».
+  payee?: string
 }
 
 export interface TransferCreateInput {

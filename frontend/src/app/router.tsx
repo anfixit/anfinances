@@ -9,6 +9,7 @@ import { CategoriesPage } from "@/features/categories/CategoriesPage"
 import { CreditsPage } from "@/features/credits/CreditsPage"
 import { CurrenciesPage } from "@/features/currencies/CurrenciesPage"
 import { LoginPage } from "@/features/auth/LoginPage"
+import { PayeesPage } from "@/features/payees/PayeesPage"
 import { RecurringPage } from "@/features/recurring/RecurringPage"
 import { SettingsPage } from "@/features/settings/SettingsPage"
 import { DashboardPage } from "@/features/summary/DashboardPage"
@@ -32,6 +33,7 @@ export const router = createBrowserRouter([
           { path: "/credits", element: <CreditsPage /> },
           { path: "/accounts", element: <AccountsPage /> },
           { path: "/categories", element: <CategoriesPage /> },
+          { path: "/payees", element: <PayeesPage /> },
           { path: "/currencies", element: <CurrenciesPage /> },
           { path: "/settings", element: <SettingsPage /> },
           { path: "/backup", element: <BackupPage /> },

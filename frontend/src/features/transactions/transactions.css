@@ -141,6 +141,14 @@
   color: var(--on-surface-variant);
 }
 
+/* Получатель заметнее комментария: «Пятёрочка» говорит больше, чем
+   «п/п 672282, card2card с карты 9561». */
+.tx-payee {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--on-surface);
+}
+
 .tx-comment {
   font-size: 0.85rem;
   color: var(--on-surface-variant);

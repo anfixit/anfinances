@@ -13,6 +13,8 @@ export interface Transaction {
   amount_rub: Money
   exchange_rate: Money
   category_id: string | null
+  payee_id: string | null
+  payee_name_snapshot: string | null
   category_name_snapshot: string | null
   subcategory_name_snapshot: string | null
   account_name_snapshot: string | null

@@ -63,6 +63,9 @@ class StatementRow(BaseModel):
     kind: Literal["expense", "income"]
     category_path: str
     comment: str | None = None
+    # Кому платили: «Пятёрочка», «Яндекс Go». Не номер платёжного
+    # поручения и не «Оплата товара» — имя торговой точки.
+    payee: str | None = None
 
 
 @dataclass
@@ -140,6 +143,11 @@ class ToolBox:
                 self.delete_recurring,
                 self.list_accounts,
                 self.list_categories,
+                self.list_payees,
+                self.list_new_payees,
+                self.get_by_payee,
+                self.rename_payee,
+                self.merge_payees,
                 self.list_recurring,
                 self.get_capital,
                 self.get_by_category,
@@ -163,6 +171,7 @@ class ToolBox:
         currency_code: str | None = None,
         when: str | None = None,
         comment: str | None = None,
+        payee: str | None = None,
     ) -> str:
         """Записать трату.
 
@@ -172,6 +181,9 @@ class ToolBox:
         account_name — название счёта, если оно прозвучало.
         currency_code — валюта траты (RUB, UZS, USD), если названа.
         when — ISO-дата или дата со временем; по умолчанию сейчас.
+        payee — кому платили: «Пятёрочка», «Яндекс Go». Ставь всегда,
+        когда магазин назван: по получателю сайт запоминает категорию
+        и в следующий раз подставит её сам.
         """
         return await self._ordinary(
             "expense",
@@ -181,6 +193,7 @@ class ToolBox:
             currency_code,
             when,
             comment,
+            payee,
         )
 
     async def create_income(
@@ -191,11 +204,12 @@ class ToolBox:
         currency_code: str | None = None,
         when: str | None = None,
         comment: str | None = None,
+        payee: str | None = None,
     ) -> str:
         """Записать доход. Параметры те же, что у create_expense.
 
         Категория берётся из доходного дерева: расходные пути здесь
-        не подойдут.
+        не подойдут. payee — от кого пришло, если это осмысленно.
         """
         return await self._ordinary(
             "income",
@@ -205,6 +219,7 @@ class ToolBox:
             currency_code,
             when,
             comment,
+            payee,
         )
 
     async def create_transfer(
@@ -395,9 +410,13 @@ class ToolBox:
         этому счёту и возвращает список только новых операций плюс
         число пропущенных дублей.
 
-        Все строки должны быть по одному счёту. Категории проставь
-        сам по назначению платежа, опираясь на дерево категорий и на
-        прошлые операции; выдумывать новые пути нельзя.
+        Все строки должны быть по одному счёту.
+
+        В каждой строке заполняй payee — кому платили («Пятёрочка»,
+        «Яндекс Go»), а не номер платёжного поручения. По знакомому
+        получателю категорию подставит сам сайт, из прошлого раза; в
+        разборе такие строки помечены «из памяти». Category_path всё
+        равно проставляй: он пойдёт в дело для незнакомых.
 
         Полученный список покажи ей целиком и дождись ответа. Занести
         его потом можно вызовом import_statement с выданным токеном —
@@ -418,6 +437,14 @@ class ToolBox:
             for kind in ("expense", "income")
         }
 
+        # Память по получателям: та самая причина, по которой
+        # получатели вообще заведены. Знакомый магазин получает
+        # категорию из прошлого раза, а не из догадки модели.
+        remembered = await self._remembered_categories()
+        by_id = {
+            path.id: path.path for paths in trees.values() for path in paths
+        }
+
         resolved: list[dict[str, Any]] = []
         labels: list[str] = []
         unknown: set[str] = set()
@@ -427,7 +454,22 @@ class ToolBox:
             row = StatementRow.model_validate(raw)
             paths = trees.get(row.kind, [])
             found = find_category_by_path(paths, row.category_path)
-            if found is None:
+
+            known = (
+                remembered.get(_payee_key(row.payee)) if row.payee else None
+            )
+            # Память сильнее догадки, но только если категория ещё
+            # существует: удалённую подставлять нельзя.
+            if known is not None and known in by_id:
+                category_id: str | None = known
+                label_path = by_id[known]
+                from_memory = True
+            else:
+                category_id = found.id if found is not None else None
+                label_path = row.category_path
+                from_memory = False
+
+            if category_id is None:
                 unknown.add(row.category_path)
                 continue
             item: dict[str, Any] = {
@@ -435,12 +477,14 @@ class ToolBox:
                 "kind": row.kind,
                 "amount": str(row.amount),
                 "date": self._moment(row.date),
-                "category_id": found.id,
+                "category_id": category_id,
             }
             if row.comment:
                 item["comment"] = row.comment
+            if row.payee:
+                item["payee"] = row.payee
             resolved.append(item)
-            labels.append(_row_label(row))
+            labels.append(_row_label(row, label_path, from_memory))
 
         # Молча пропустить строку — потерять операцию незаметно.
         # Лучше не заносить ничего и показать, что не разобралось.
@@ -542,6 +586,15 @@ class ToolBox:
         """
         if self.pending_import is not None:
             self.pending_import.confirmed = True
+
+    async def _remembered_categories(self) -> dict[str, str]:
+        """Ключ получателя → категория его прошлой операции."""
+        rows = await self._client.request("GET", "/payees")
+        return {
+            _payee_key(row["name"]): row["last_category_id"]
+            for row in (rows or [])
+            if row.get("last_category_id")
+        }
 
     async def _existing_keys(
         self, account_id: str, items: list[dict[str, Any]]
@@ -1162,6 +1215,93 @@ class ToolBox:
             for a in accounts
         )
 
+    async def list_payees(self) -> str:
+        """Известные получатели и запомненная за каждым категория."""
+        rows = await self._client.request("GET", "/payees")
+        if not rows:
+            return "Получателей пока нет."
+        return "\n".join(
+            f"{row['name']} — {row.get('last_category_id') or 'без категории'}"
+            for row in rows
+        )
+
+    async def list_new_payees(self) -> str:
+        """Получатели, впервые встретившиеся за последний месяц.
+
+        Так замечают забытую подписку и чужое списание. Считается по
+        дате первой операции, а не по дате заведения записи.
+        """
+        rows = await self._client.request("GET", "/payees/new")
+        if not rows:
+            return "Новых получателей за месяц нет."
+        return ", ".join(row["name"] for row in rows)
+
+    async def get_by_payee(self, month: str) -> str:
+        """Кому ушли деньги за месяц (YYYY-MM).
+
+        Категория говорит, на что потрачено; получатель — кому.
+        """
+        return str(
+            await self._client.request(
+                "GET", "/payees/spending", params={"month": month}
+            )
+        )
+
+    async def rename_payee(self, name: str, new_name: str) -> str:
+        """Переименовать получателя.
+
+        Если имя уже занято другим — это слияние, а не правка;
+        используй merge_payees.
+        """
+        found = await self._find_payee(name)
+        if isinstance(found, str):
+            return found
+        await self._client.request(
+            "PATCH", f"/payees/{found['id']}", json={"name": new_name}
+        )
+        return f"Получатель «{found['name']}» теперь «{new_name}»."
+
+    async def merge_payees(self, name: str, into: str) -> str:
+        """Слить получателя в другого.
+
+        Один магазин приезжает из разных выписок под разными именами
+        («WILDBERRIES RU» и «Wildberries»). Операции первого
+        перевешиваются на второго, первый удаляется.
+        """
+        source = await self._find_payee(name)
+        if isinstance(source, str):
+            return source
+        target = await self._find_payee(into)
+        if isinstance(target, str):
+            return target
+        result = await self._client.request(
+            "POST", f"/payees/{source['id']}/merge/{target['id']}"
+        )
+        moved = (result or {}).get("moved", 0)
+        return (
+            f"«{source['name']}» слит в «{target['name']}», "
+            f"перевешено операций: {moved}."
+        )
+
+    async def _find_payee(self, name: str) -> dict[str, Any] | str:
+        """Получатель по имени. Строка в ответе — сообщение о проблеме."""
+        rows = await self._client.request("GET", "/payees") or []
+        key = _payee_key(name)
+        exact: list[dict[str, Any]] = [
+            row for row in rows if _payee_key(row["name"]) == key
+        ]
+        if exact:
+            return exact[0]
+        partial: list[dict[str, Any]] = [
+            row for row in rows if key in _payee_key(row["name"])
+        ]
+        if len(partial) == 1:
+            return partial[0]
+        if not partial:
+            return f"Получатель «{name}» не найден."
+        names = ", ".join(row["name"] for row in partial)
+        return f"Несколько получателей подходят: {names}. Уточни."
+
     async def list_categories(self, kind: str = "expense") -> str:
         """Дерево категорий путями. kind: expense или income."""
         categories = await self._client.categories()
@@ -1239,6 +1379,7 @@ class ToolBox:
         currency_code: str | None,
         when: str | None,
         comment: str | None,
+        payee: str | None = None,
     ) -> str:
         categories = await self._client.categories()
         paths = build_category_paths(categories, kind=kind)
@@ -1268,6 +1409,8 @@ class ToolBox:
         }
         if comment:
             body["comment"] = comment
+        if payee:
+            body["payee"] = payee
 
         created = await self._client.request(
             "POST", "/transactions", json=body
@@ -1319,12 +1462,25 @@ def _find_account(
     return matches[0] if len(matches) == 1 else None
 
 
-def _row_label(row: StatementRow) -> str:
-    """Строка разбора так, как её увидит человек в переписке."""
+def _payee_key(name: str) -> str:
+    """Свёрнутое имя получателя — так же, как его сворачивает сайт."""
+    return " ".join(name.split()).casefold()
+
+
+def _row_label(
+    row: StatementRow, category_path: str, from_memory: bool
+) -> str:
+    """Строка разбора так, как её увидит человек в переписке.
+
+    Откуда взялась категория — видно: подставленную из памяти она
+    проверит иначе, чем угаданную.
+    """
     sign = "−" if row.kind == "expense" else "+"
     day = row.date[:10]
+    who = f" · {row.payee}" if row.payee else ""
     tail = f" · {row.comment}" if row.comment else ""
-    return f"{day} · {sign}{row.amount} · {row.category_path}{tail}"
+    source = " (из памяти)" if from_memory else ""
+    return f"{day} · {sign}{row.amount} · {category_path}{source}{who}{tail}"
 
 
 def _norm_amount(value: str) -> Decimal:

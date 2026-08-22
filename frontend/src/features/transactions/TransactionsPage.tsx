@@ -350,6 +350,9 @@ export function TransactionsPage() {
                 <span className="tx-sub">
                   {account} · {formatDate(t.date)}
                 </span>
+                {t.payee_name_snapshot !== null && (
+                  <span className="tx-payee">{t.payee_name_snapshot}</span>
+                )}
                 {t.comment && <span className="tx-comment">{t.comment}</span>}
               </div>
               <span className={`amount ${isIncome ? "income" : "expense"}`}>

@@ -18,6 +18,7 @@ class _FakeClient:
         self.transactions: list[dict[str, Any]] = []
         self.recurring: list[dict[str, Any]] = []
         self.account_rows: list[dict[str, Any]] = []
+        self.payees: list[dict[str, Any]] = []
         self.credit_rows: list[dict[str, Any]] = [
             {"id": "cr-1", "name": "Альфа Кредит"}
         ]
@@ -67,6 +68,8 @@ class _FakeClient:
             return list(self.budgets)
         if method == "GET" and path == "/accounts":
             return list(self.account_rows)
+        if method == "GET" and path == "/payees":
+            return list(self.payees)
         if method == "GET" and path == "/recurring":
             return list(self.recurring)
         if method == "GET" and path == "/transactions":
@@ -465,6 +468,11 @@ async def test_toolbox_exposes_all_tools() -> None:
         "delete_recurring",
         "list_accounts",
         "list_categories",
+        "list_payees",
+        "list_new_payees",
+        "get_by_payee",
+        "rename_payee",
+        "merge_payees",
         "list_recurring",
         "get_capital",
         "get_by_category",
@@ -866,3 +874,97 @@ async def test_missing_budget_line_is_reported() -> None:
     )
     assert "плана по" in result
     assert not [c for c in client.calls if c[0] == "DELETE"]
+
+
+async def test_known_payee_sets_the_category_from_memory() -> None:
+    """Ради этого получателей и завели: категорию даёт таблица."""
+    box, client = _toolbox()
+    client.payees = [
+        {"id": "p-1", "name": "ПЯТЁРОЧКА", "last_category_id": "c-2"}
+    ]
+    preview = await box.preview_statement(
+        account_name="Альфа",
+        rows=[
+            _row(
+                category_path="Развлечения",
+                payee="пятёрочка",
+                amount="540",
+            )
+        ],
+    )
+    assert "из памяти" in preview
+    assert "Еда → Кофейни" in preview
+
+    await _apply(box, preview)
+    post = next(c for c in client.calls if c[0] == "POST")
+    assert post[2]["json"]["items"][0]["category_id"] == "c-2"
+
+
+async def test_unknown_payee_falls_back_to_the_guess() -> None:
+    box, client = _toolbox()
+    client.payees = []
+    preview = await box.preview_statement(
+        account_name="Альфа",
+        rows=[_row(payee="Новый магазин")],
+    )
+    assert "из памяти" not in preview
+    assert "Новый магазин" in preview
+
+    await _apply(box, preview)
+    post = next(c for c in client.calls if c[0] == "POST")
+    item = post[2]["json"]["items"][0]
+    assert item["category_id"] == "c-2"
+    assert item["payee"] == "Новый магазин"
+
+
+async def test_memory_pointing_at_a_deleted_category_is_ignored() -> None:
+    """Удалённую категорию подставлять нельзя — операция не запишется."""
+    box, client = _toolbox()
+    client.payees = [
+        {"id": "p-1", "name": "Лента", "last_category_id": "c-удалена"}
+    ]
+    preview = await box.preview_statement(
+        account_name="Альфа", rows=[_row(payee="Лента")]
+    )
+    assert "из памяти" not in preview
+
+    await _apply(box, preview)
+    post = next(c for c in client.calls if c[0] == "POST")
+    assert post[2]["json"]["items"][0]["category_id"] == "c-2"
+
+
+async def test_payees_are_merged_by_name() -> None:
+    """Один магазин из разных выписок под разными именами."""
+    box, client = _toolbox()
+    client.payees = [
+        {"id": "p-1", "name": "WILDBERRIES RU", "last_category_id": None},
+        {"id": "p-2", "name": "Wildberries", "last_category_id": "c-2"},
+    ]
+    result = await box.merge_payees(name="WILDBERRIES RU", into="Wildberries")
+    method, path, _ = client.calls[-1]
+    assert (method, path) == ("POST", "/payees/p-1/merge/p-2")
+    assert "слит" in result
+
+
+async def test_ambiguous_payee_asks_instead_of_guessing() -> None:
+    box, client = _toolbox()
+    client.payees = [
+        {"id": "p-1", "name": "Яндекс Go", "last_category_id": None},
+        {"id": "p-2", "name": "Яндекс Лавка", "last_category_id": None},
+    ]
+    result = await box.rename_payee(name="Яндекс", new_name="Я")
+    assert "несколько получателей" in result.casefold()
+    assert not [c for c in client.calls if c[0] == "PATCH"]
+
+
+async def test_expense_sends_the_payee() -> None:
+    box, client = _toolbox()
+    await box.create_expense(
+        amount="540",
+        category_path="Еда → Кофейни",
+        account_name="Альфа",
+        payee="Пятёрочка",
+    )
+    method, path, kwargs = client.calls[0]
+    assert (method, path) == ("POST", "/transactions")
+    assert kwargs["json"]["payee"] == "Пятёрочка"

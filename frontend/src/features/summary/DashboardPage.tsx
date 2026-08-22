@@ -21,6 +21,7 @@ import {
   useDashboard,
   useMoneyAge,
 } from "@/features/summary/hooks"
+import { useSpendingByPayee } from "@/features/payees/hooks"
 import { buildRules, overspentCategories } from "@/features/summary/rules"
 import type { Rule } from "@/features/summary/rules"
 import { formatMoney, sumMoney } from "@/lib/money"
@@ -104,6 +105,7 @@ export function DashboardPage() {
   const cats = useByCategory(month)
   const categoriesQ = useCategories()
   const budgetsQ = useBudgets(month)
+  const payeesQ = useSpendingByPayee(month)
 
   const catName = (id: string | null): string => {
     if (id === null) {
@@ -409,6 +411,29 @@ export function DashboardPage() {
           </>
         )}
       </div>
+
+      {/* Категория говорит, на что ушли деньги; получатель — кому.
+          Без второго «Продукты 12 340» не подсказывает, что делать. */}
+      {payeesQ.data && payeesQ.data.items.length > 0 && (
+        <div className="card">
+          <h2>Кому ушли деньги</h2>
+          <table className="data-table">
+            <tbody>
+              {payeesQ.data.items.slice(0, 12).map((p) => (
+                <tr key={p.payee_id}>
+                  <td>{p.name}</td>
+                  <td className="num data-share">
+                    {p.operations} оп.
+                  </td>
+                  <td className="num">
+                    {formatMoney(p.amount_rub, "RUB")}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       <div className="card">
         <h2>Расходы по категориям</h2>
