@@ -156,7 +156,7 @@ export function TransactionsPage() {
   }
 
   const patchFilter = (
-    key: Exclude<keyof TransactionFilters, "kind">,
+    key: Exclude<keyof TransactionFilters, "kind" | "uncategorized">,
     value: string,
   ) => {
     setFilters((f) => {

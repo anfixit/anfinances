@@ -6,6 +6,7 @@ import type { Category } from "@/features/categories/types"
 import { useCategories } from "@/features/categories/hooks"
 import { listBudgets } from "@/features/budgets/budgetsApi"
 import { BudgetForm } from "@/features/budgets/BudgetForm"
+import { CategoryTransactions } from "@/features/budgets/CategoryTransactions"
 import { MoveSheet } from "@/features/budgets/MoveSheet"
 import {
   useBudgets,
@@ -57,6 +58,7 @@ export function BudgetsPage() {
   const [month, setMonth] = useState<string>(() => currentMonth())
   const goalsQ = useGoals(month)
   const [goalFor, setGoalFor] = useState<Category | null>(null)
+  const [expanded, setExpanded] = useState<string | null>(null)
   const [sheet, setSheet] = useState<SheetState | null>(null)
   const [open, setOpen] = useState<Record<string, boolean>>({})
   const [moving, setMoving] = useState<{
@@ -242,9 +244,18 @@ export function BudgetsPage() {
       <div className={cls} key={cat.id}>
         <div className="budget-head">
           <span className="budget-name">{label}</span>
-          <span className="num budget-figures">
+          {/* Цифра «потрачено» кликабельна: за ней раскрывается
+              список операций, из которых она сложилась. */}
+          <button
+            type="button"
+            className="link num budget-figures"
+            aria-expanded={expanded === cat.id}
+            onClick={() => {
+              setExpanded((current) => (current === cat.id ? null : cat.id))
+            }}
+          >
             {rub(spent)} / {rub(available)}
-          </span>
+          </button>
         </div>
         <div className="bar">
           <div
@@ -255,6 +266,9 @@ export function BudgetsPage() {
             }}
           />
         </div>
+        {expanded === cat.id && (
+          <CategoryTransactions categoryId={cat.id} month={month} />
+        )}
         <div className="budget-foot">
           <span className={`num ${over ? "expense" : ""}`}>
             {over ? "перерасход " : "остаток "}

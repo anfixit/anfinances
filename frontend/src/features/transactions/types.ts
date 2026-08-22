@@ -39,6 +39,9 @@ export interface TransactionCursor {
 }
 
 export interface TransactionFilters {
+  // Операции без категории: бюджет их молча пропускает, и разобрать
+  // их можно только отдельным списком.
+  uncategorized?: boolean
   date_from?: string
   date_to?: string
   account_id?: string

@@ -104,3 +104,6 @@ class MoneyAgeResult(BaseModel):
     current_month_expense_rub: Decimal
     coverage: Decimal | None
     is_covered: bool
+    # Средний возраст потраченных денег в днях. None — тратить было
+    # нечего или не из чего: у новой базы возраст не «ноль дней».
+    age_days: int | None = None

@@ -94,6 +94,7 @@ async def list_transactions(
     account_id: uuid.UUID | None = None,
     category_id: uuid.UUID | None = None,
     kind: TransactionKind | None = None,
+    uncategorized: bool = False,
 ) -> ApiResponse[list[TransactionRead]]:
     range_from, range_to = optional_date_range_utc(
         date_from,
@@ -109,6 +110,7 @@ async def list_transactions(
         account_id=account_id,
         category_id=category_id,
         kind=kind,
+        uncategorized=uncategorized,
     )
     items = await service.list_transactions(user.id, flt)
     next_cursor = None

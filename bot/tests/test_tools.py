@@ -479,6 +479,7 @@ async def test_toolbox_exposes_all_tools() -> None:
         "delete_recurring",
         "list_accounts",
         "list_categories",
+        "list_uncategorized",
         "set_goal",
         "list_goals",
         "delete_goal",

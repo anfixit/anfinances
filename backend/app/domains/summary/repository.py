@@ -48,6 +48,10 @@ class SummaryRepository(Protocol):
         self, user_id: uuid.UUID
     ) -> dict[uuid.UUID, str]: ...
 
+    async def money_flows(
+        self, user_id: uuid.UUID, since: datetime
+    ) -> list[tuple[datetime, Decimal]]: ...
+
     async def cashflow(
         self,
         user_id: uuid.UUID,
@@ -148,6 +152,26 @@ class SqlSummaryRepository:
             )
         )
         return {row[0]: row[1] for row in result.all()}
+
+    async def money_flows(
+        self, user_id: uuid.UUID, since: datetime
+    ) -> list[tuple[datetime, Decimal]]:
+        """Приходы и расходы по времени — сырьё для возраста денег.
+
+        Переводы исключены: перекладывание между своими счетами не
+        приносит и не тратит деньги, а FIFO принял бы его за приход и
+        обнулил бы возраст.
+        """
+        result = await self._session.execute(
+            select(Transaction.date, Transaction.amount_rub)
+            .where(
+                Transaction.user_id == user_id,
+                Transaction.transfer_id.is_(None),
+                Transaction.date >= since,
+            )
+            .order_by(Transaction.date)
+        )
+        return [(row[0], row[1]) for row in result.all()]
 
     async def cashflow(
         self,

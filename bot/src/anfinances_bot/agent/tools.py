@@ -143,6 +143,7 @@ class ToolBox:
                 self.delete_recurring,
                 self.list_accounts,
                 self.list_categories,
+                self.list_uncategorized,
                 self.set_goal,
                 self.list_goals,
                 self.delete_goal,
@@ -1218,6 +1219,25 @@ class ToolBox:
             f"{a.name}: {a.current_balance} {a.currency_code}"
             for a in accounts
         )
+
+    async def list_uncategorized(self) -> str:
+        """Операции без категории — их бюджет не видит.
+
+        Пока категории нет, операция не попадает ни в один конверт и
+        молча выпадает из планов.
+        """
+        rows = await self._client.request(
+            "GET", "/transactions", params={"uncategorized": True, "limit": 50}
+        )
+        if not rows:
+            return "Все операции разобраны по категориям."
+        lines = [
+            f"{str(row['date'])[:10]} · {row['amount']} · "
+            f"{row.get('payee_name_snapshot') or row.get('comment') or '—'} "
+            f"(id {row['id']})"
+            for row in rows
+        ]
+        return "\n".join(lines)
 
     async def set_goal(
         self,

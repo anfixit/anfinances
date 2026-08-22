@@ -22,6 +22,7 @@ import {
   useMoneyAge,
 } from "@/features/summary/hooks"
 import { useSpendingByPayee } from "@/features/payees/hooks"
+import { useTransactions } from "@/features/transactions/hooks"
 import { buildRules, overspentCategories } from "@/features/summary/rules"
 import type { Rule } from "@/features/summary/rules"
 import { formatMoney, sumMoney } from "@/lib/money"
@@ -106,6 +107,9 @@ export function DashboardPage() {
   const categoriesQ = useCategories()
   const budgetsQ = useBudgets(month)
   const payeesQ = useSpendingByPayee(month)
+  // Операции без категории бюджет молча пропускает. Пока их не
+  // видно, они и не разбираются.
+  const looseQ = useTransactions({ uncategorized: true })
 
   const catName = (id: string | null): string => {
     if (id === null) {
@@ -158,6 +162,8 @@ export function DashboardPage() {
           },
         ]
       : pieHead
+
+  const loose = looseQ.data?.pages.flatMap((p) => p.items) ?? []
 
   const catTotal = sumMoney((cats.data?.items ?? []).map((i) => i.amount_rub))
 
@@ -269,6 +275,37 @@ export function DashboardPage() {
               </p>
             )}
           </div>
+        </div>
+      )}
+
+      {loose.length > 0 && (
+        <div className="card">
+          <h2>Без категории</h2>
+          <p className="allowance-note">
+            Эти операции бюджет не видит — пока у них нет категории, они
+            не попадают ни в один конверт.
+          </p>
+          <table className="data-table">
+            <tbody>
+              {loose.slice(0, 10).map((t) => (
+                <tr key={t.id}>
+                  <td>
+                    {new Date(t.date).toLocaleDateString("ru-RU")}
+                    {t.payee_name_snapshot !== null &&
+                      ` · ${t.payee_name_snapshot}`}
+                  </td>
+                  <td className="num">
+                    {formatMoney(t.amount, t.currency_code)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {loose.length > 10 && (
+            <p className="allowance-note">
+              Показаны первые 10. Остальные — на странице операций.
+            </p>
+          )}
         </div>
       )}
 

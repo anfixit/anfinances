@@ -15,9 +15,21 @@ from app.domains.summary.service import SummaryService
 class _StubRepo:
     """Отдаёт заранее заданные пары (доход, расход) по вызовам."""
 
-    def __init__(self, pairs: list[tuple[Decimal, Decimal]]) -> None:
+    def __init__(
+        self,
+        pairs: list[tuple[Decimal, Decimal]],
+        flows: list[tuple[datetime, Decimal]] | None = None,
+    ) -> None:
         self._pairs = pairs
+        self._flows = flows or []
         self.calls: list[tuple[datetime, datetime]] = []
+        self.flow_since: datetime | None = None
+
+    async def money_flows(
+        self, user_id: uuid.UUID, since: datetime
+    ) -> list[tuple[datetime, Decimal]]:
+        self.flow_since = since
+        return list(self._flows)
 
     async def cashflow(
         self,

@@ -21,6 +21,7 @@ from app.core.datetime import (
 )
 from app.core.exceptions import NotFoundError
 from app.domains.currencies.service import CurrencyService
+from app.domains.summary.money_age import Flow, age_of_money
 from app.domains.summary.repository import SummaryRepository
 from app.domains.summary.schemas import (
     AccountBalance,
@@ -164,8 +165,19 @@ class SummaryService:
         # Расход хранится отрицательным — берём модуль.
         expense_abs = abs(expense)
 
+        # Возраст считаем по последнему полугодию: за больший срок
+        # очередь FIFO разрастается, а старые привычки к сегодняшнему
+        # показателю отношения не имеют.
+        since = _shift_month(current, -6)
+        since_utc, _ = month_bounds_utc(since, timezone_name)
+        flows = [
+            Flow(at=at, amount=amount)
+            for at, amount in await self._repo.money_flows(user_id, since_utc)
+        ]
+
         coverage = None if expense_abs == 0 else income / expense_abs
         return MoneyAgeResult(
+            age_days=age_of_money(flows),
             previous_month=previous.strftime("%Y-%m"),
             current_month=current.strftime("%Y-%m"),
             previous_month_income_rub=income,

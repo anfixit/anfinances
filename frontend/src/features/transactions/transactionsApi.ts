@@ -58,12 +58,13 @@ export async function listTransactions(
   cursor: TransactionCursor | null,
   limit = 20,
 ): Promise<TransactionPage> {
-  const params: Record<string, string | number> = { limit }
+  const params: Record<string, string | number | boolean> = { limit }
   if (filters.date_from) params.date_from = filters.date_from
   if (filters.date_to) params.date_to = filters.date_to
   if (filters.account_id) params.account_id = filters.account_id
   if (filters.category_id) params.category_id = filters.category_id
   if (filters.kind) params.kind = filters.kind
+  if (filters.uncategorized) params.uncategorized = true
   if (cursor) {
     params.cursor_date = cursor.cursor_date
     params.cursor_id = cursor.cursor_id

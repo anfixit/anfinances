@@ -64,4 +64,5 @@ export interface MoneyAge {
   current_month_expense_rub: Money
   coverage: string | null
   is_covered: boolean
+  age_days: number | null
 }

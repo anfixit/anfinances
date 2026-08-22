@@ -220,3 +220,28 @@ async def test_payee_without_operations_is_not_new(
         ledger["user"], datetime(2026, 8, 22, tzinfo=UTC)
     )
     assert rows == []
+
+
+async def test_uncategorized_filter_skips_transfer_legs(
+    db_session: AsyncSession, ledger: dict[str, uuid.UUID]
+) -> None:
+    """У ноги перевода категории нет по определению, разбирать нечего."""
+    from app.domains.transactions.models import Transfer  # noqa: PLC0415
+    from app.domains.transactions.repository import (  # noqa: PLC0415
+        SqlTransactionRepository,
+        TransactionFilter,
+    )
+
+    transfer = Transfer(user_id=ledger["user"])
+    db_session.add(transfer)
+    await db_session.flush()
+
+    leg = await _spend(db_session, ledger, None, Decimal("100"))
+    leg.transfer_id = transfer.id
+    await _spend(db_session, ledger, None, Decimal("250"))
+    await db_session.flush()
+
+    rows = await SqlTransactionRepository(db_session).list_page(
+        ledger["user"], TransactionFilter(uncategorized=True, limit=50)
+    )
+    assert [abs(r.amount) for r in rows] == [Decimal("250")]

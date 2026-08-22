@@ -27,6 +27,7 @@ class TransactionFilter:
         account_id: uuid.UUID | None = None,
         category_id: uuid.UUID | None = None,
         kind: TransactionKind | None = None,
+        uncategorized: bool = False,
     ) -> None:
         self.limit = limit
         self.cursor_date = cursor_date
@@ -35,6 +36,9 @@ class TransactionFilter:
         self.date_to = date_to
         self.account_id = account_id
         self.category_id = category_id
+        # Операции без категории бюджет молча пропускает: их не с чем
+        # сверить. Отдельный фильтр — чтобы их было где разобрать.
+        self.uncategorized = uncategorized
         self.kind = kind
 
 
@@ -78,7 +82,14 @@ class SqlTransactionRepository:
             stmt = stmt.where(Transaction.date < flt.date_to)
         if flt.account_id is not None:
             stmt = stmt.where(Transaction.account_id == flt.account_id)
-        if flt.category_id is not None:
+        if flt.uncategorized:
+            # Ноги перевода категории не имеют по определению — они не
+            # «неразобранные», и в список к разбору им не место.
+            stmt = stmt.where(
+                Transaction.category_id.is_(None),
+                Transaction.transfer_id.is_(None),
+            )
+        elif flt.category_id is not None:
             stmt = stmt.where(Transaction.category_id == flt.category_id)
         if flt.kind is not None:
             stmt = stmt.where(Transaction.kind == flt.kind)

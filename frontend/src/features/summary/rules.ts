@@ -12,6 +12,22 @@ import { sumMoney } from "@/lib/money"
 
 export type RuleStatus = "ok" | "warn" | "unknown"
 
+/** «1 день», «3 дня», «17 дней» — иначе читается как машинный вывод. */
+export function dayWord(days: number): string {
+  const last = days % 10
+  const tens = days % 100
+  if (tens >= 11 && tens <= 14) {
+    return `${String(days)} дней`
+  }
+  if (last === 1) {
+    return `${String(days)} день`
+  }
+  if (last >= 2 && last <= 4) {
+    return `${String(days)} дня`
+  }
+  return `${String(days)} дней`
+}
+
 export interface Rule {
   n: number
   name: string
@@ -95,9 +111,15 @@ export function buildRules(
       hint:
         age === undefined
           ? ""
-          : age.is_covered
-            ? "Траты этого месяца покрыты доходом прошлого. Возраст денег в порядке."
-            : "Тратите быстрее, чем зарабатывали в прошлом месяце.",
+          : `${
+              age.is_covered
+                ? "Траты этого месяца покрыты доходом прошлого."
+                : "Тратите быстрее, чем зарабатывали в прошлом месяце."
+            }${
+              age.age_days === null
+                ? ""
+                : ` Возраст денег: ${dayWord(age.age_days)}.`
+            }`,
     },
   ]
 }
