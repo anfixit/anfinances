@@ -29,6 +29,7 @@ from app.domains.credits.routes import router as credits_router
 from app.domains.currencies.routes import router as currencies_router
 from app.domains.currencies.scheduler import refresh_rates_periodically
 from app.domains.export.routes import router as export_router
+from app.domains.goals.routes import router as goals_router
 from app.domains.import_.routes import router as import_router
 from app.domains.payees.routes import router as payees_router
 from app.domains.reconciliation.routes import (
@@ -251,6 +252,7 @@ def create_app() -> FastAPI:
     app.include_router(recurring_router, prefix=prefix)
     app.include_router(users_router, prefix=prefix)
     app.include_router(export_router, prefix=prefix)
+    app.include_router(goals_router, prefix=prefix)
     app.include_router(import_router, prefix=prefix)
 
     return app

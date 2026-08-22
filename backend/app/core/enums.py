@@ -39,3 +39,14 @@ class OAuthProvider(StrEnum):
     VK = "vk"
     YANDEX = "yandex"
     ODNOKLASSNIKI = "odnoklassniki"
+
+
+class GoalKind(StrEnum):
+    """Вид цели по категории.
+
+    MONTHLY — нужно столько каждый месяц (подписка, аренда).
+    BY_DATE — нужно накопить столько к дате (страховка, отпуск).
+    """
+
+    MONTHLY = "monthly"
+    BY_DATE = "by_date"

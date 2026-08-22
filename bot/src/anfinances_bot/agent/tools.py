@@ -143,6 +143,9 @@ class ToolBox:
                 self.delete_recurring,
                 self.list_accounts,
                 self.list_categories,
+                self.set_goal,
+                self.list_goals,
+                self.delete_goal,
                 self.check_account_balance,
                 self.list_payees,
                 self.list_new_payees,
@@ -1215,6 +1218,68 @@ class ToolBox:
             f"{a.name}: {a.current_balance} {a.currency_code}"
             for a in accounts
         )
+
+    async def set_goal(
+        self,
+        category_path: str,
+        amount: str,
+        target_date: str | None = None,
+    ) -> str:
+        """Поставить цель накопления по категории.
+
+        target_date — ISO-дата: тогда это «накопить столько к сроку»,
+        и сайт сам посчитает взнос каждого месяца от уже накопленного.
+        Без даты — «нужно столько каждый месяц».
+
+        Цель на категорию одна: новая заменяет прежнюю.
+        """
+        categories = await self._client.categories()
+        paths = build_category_paths(categories, kind="expense")
+        found = find_category_by_path(paths, category_path)
+        if found is None:
+            return _unknown_category(category_path, paths)
+
+        body: dict[str, Any] = {
+            "category_id": found.id,
+            "kind": "by_date" if target_date else "monthly",
+            "amount": str(amount),
+        }
+        if target_date:
+            body["target_date"] = target_date[:10]
+        await self._client.request("PUT", "/goals", json=body)
+        when = f" к {target_date[:10]}" if target_date else " каждый месяц"
+        return f"Цель по «{found.path}»: {amount}{when}."
+
+    async def list_goals(self, month: str) -> str:
+        """Цели и взнос каждого на месяц YYYY-MM."""
+        rows = await self._client.request(
+            "GET", "/goals", params={"month": month}
+        )
+        if not rows:
+            return "Целей пока нет."
+        categories = {c.id: c for c in await self._client.categories()}
+        lines = []
+        for row in rows:
+            category = categories.get(row["category_id"])
+            name = category.name if category else "категория"
+            if row["is_reached"]:
+                lines.append(f"{name}: цель достигнута")
+                continue
+            lines.append(
+                f"{name}: нужно ещё {row['still_to_add']} в этом месяце "
+                f"(накоплено {row['accumulated']} из {row['amount']})"
+            )
+        return "\n".join(lines)
+
+    async def delete_goal(self, category_path: str) -> str:
+        """Убрать цель по категории. Копилка и накопленное останутся."""
+        categories = await self._client.categories()
+        paths = build_category_paths(categories, kind="expense")
+        found = find_category_by_path(paths, category_path)
+        if found is None:
+            return _unknown_category(category_path, paths)
+        await self._client.request("DELETE", f"/goals/{found.id}")
+        return f"Цель по «{found.path}» убрана."
 
     async def check_account_balance(
         self, account_name: str, bank_balance: str, on_date: str | None = None

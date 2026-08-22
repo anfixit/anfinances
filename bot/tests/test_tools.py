@@ -19,6 +19,7 @@ class _FakeClient:
         self.recurring: list[dict[str, Any]] = []
         self.account_rows: list[dict[str, Any]] = []
         self.payees: list[dict[str, Any]] = []
+        self.goals: list[dict[str, Any]] = []
         self.reconcile_preview: dict[str, Any] = {
             "computed_balance": "-300",
             "statement_balance": "-300",
@@ -76,6 +77,8 @@ class _FakeClient:
             return list(self.account_rows)
         if method == "GET" and path == "/payees":
             return list(self.payees)
+        if method == "GET" and path == "/goals":
+            return list(self.goals)
         if path.endswith("/reconcile/preview"):
             return dict(self.reconcile_preview)
         if method == "GET" and path == "/recurring":
@@ -476,6 +479,9 @@ async def test_toolbox_exposes_all_tools() -> None:
         "delete_recurring",
         "list_accounts",
         "list_categories",
+        "set_goal",
+        "list_goals",
+        "delete_goal",
         "check_account_balance",
         "list_payees",
         "list_new_payees",
@@ -1008,3 +1014,52 @@ async def test_balance_check_writes_nothing() -> None:
     await box.check_account_balance(account_name="Альфа", bank_balance="0")
     paths = [c[1] for c in client.calls]
     assert all(p.endswith("/reconcile/preview") for p in paths), paths
+
+
+async def test_goal_with_a_date_is_a_saving_goal() -> None:
+    box, client = _toolbox()
+    result = await box.set_goal(
+        category_path="Еда → Кофейни",
+        amount="60000",
+        target_date="2026-12-01",
+    )
+    method, path, kwargs = client.calls[-1]
+    assert (method, path) == ("PUT", "/goals")
+    assert kwargs["json"] == {
+        "category_id": "c-2",
+        "kind": "by_date",
+        "amount": "60000",
+        "target_date": "2026-12-01",
+    }
+    assert "к 2026-12-01" in result
+
+
+async def test_goal_without_a_date_is_monthly() -> None:
+    box, client = _toolbox()
+    await box.set_goal(category_path="Еда → Кофейни", amount="5000")
+    kwargs = client.calls[-1][2]
+    assert kwargs["json"]["kind"] == "monthly"
+    assert "target_date" not in kwargs["json"]
+
+
+async def test_goal_refuses_an_unknown_category() -> None:
+    box, client = _toolbox()
+    result = await box.set_goal(category_path="Ерунда", amount="100")
+    assert "ерунда" in result.casefold()
+    assert not [c for c in client.calls if c[0] == "PUT"]
+
+
+async def test_goals_report_what_is_left_to_put_in() -> None:
+    box, client = _toolbox()
+    client.goals = [
+        {
+            "category_id": "c-2",
+            "amount": "60000",
+            "accumulated": "40000",
+            "still_to_add": "4000",
+            "is_reached": False,
+        }
+    ]
+    result = await box.list_goals(month="2026-08")
+    assert "Кофейни" in result
+    assert "4000" in result

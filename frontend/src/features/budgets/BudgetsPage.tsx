@@ -14,6 +14,8 @@ import {
 } from "@/features/budgets/hooks"
 import type { Budget } from "@/features/budgets/types"
 import { useByCategory, useDailyAllowance } from "@/features/summary/hooks"
+import { GoalSheet } from "@/features/goals/GoalSheet"
+import { useGoals } from "@/features/goals/hooks"
 import { useRecurring } from "@/features/recurring/hooks"
 import { Sheet } from "@/components/Sheet"
 import { useConfirm } from "@/components/confirm-context"
@@ -53,6 +55,8 @@ export function BudgetsPage() {
   const { confirm, notify } = useConfirm()
   const qc = useQueryClient()
   const [month, setMonth] = useState<string>(() => currentMonth())
+  const goalsQ = useGoals(month)
+  const [goalFor, setGoalFor] = useState<Category | null>(null)
   const [sheet, setSheet] = useState<SheetState | null>(null)
   const [open, setOpen] = useState<Record<string, boolean>>({})
   const [moving, setMoving] = useState<{
@@ -206,6 +210,7 @@ export function BudgetsPage() {
   const renderRow = (cat: Category, label: string, indent: boolean) => {
     const b = byCat.get(cat.id)
     const minimum = minimums.get(cat.id) ?? 0
+    const goal = (goalsQ.data ?? []).find((g) => g.category_id === cat.id)
     const belowMinimum = minimum > 0 && Number(b?.planned ?? 0) < minimum
     const cls = `budget-row${indent ? " indent" : ""}`
     if (!b) {
@@ -270,6 +275,22 @@ export function BudgetsPage() {
                 : `минимум ${rub(minimum)}`}
             </span>
           )}
+          {goal !== undefined && (
+            <span
+              className={
+                goal.is_reached ? "chip-static" : "chip-static warn"
+              }
+              title={
+                goal.kind === "by_date"
+                  ? `Цель ${rub(Number(goal.amount))} к ${goal.target_date ?? ""}. Накоплено ${rub(Number(goal.accumulated))}.`
+                  : `Цель ${rub(Number(goal.amount))} каждый месяц`
+              }
+            >
+              {goal.is_reached
+                ? "цель достигнута"
+                : `в этом месяце ${rub(Number(goal.still_to_add))}`}
+            </span>
+          )}
           {over && (
             <button
               type="button"
@@ -286,6 +307,15 @@ export function BudgetsPage() {
             </button>
           )}
           <span className="spacer" />
+          <button
+            type="button"
+            className="link"
+            onClick={() => {
+              setGoalFor(cat)
+            }}
+          >
+            Цель
+          </button>
           <button
             type="button"
             className="link"
@@ -474,6 +504,25 @@ export function BudgetsPage() {
           )
         })}
       </ul>
+
+      <Sheet
+        open={goalFor !== null}
+        title={`Цель: ${goalFor?.name ?? ""}`}
+        onClose={() => {
+          setGoalFor(null)
+        }}
+      >
+        {goalFor !== null && (
+          <GoalSheet
+            key={goalFor.id}
+            category={goalFor}
+            month={month}
+            onDone={() => {
+              setGoalFor(null)
+            }}
+          />
+        )}
+      </Sheet>
 
       <Sheet
         open={sheet !== null}
