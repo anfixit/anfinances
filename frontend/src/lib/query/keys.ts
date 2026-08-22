@@ -7,6 +7,8 @@ export const queryKeys = {
   accounts: ["accounts"] as const,
   categories: ["categories"] as const,
   payees: ["payees"] as const,
+  reconciliations: (accountId: string) =>
+    ["reconciliations", accountId] as const,
   newPayees: ["payees", "new"] as const,
   payeeSpending: (month: string) => ["payees", "spending", month] as const,
   currencies: ["currencies"] as const,

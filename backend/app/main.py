@@ -31,6 +31,9 @@ from app.domains.currencies.scheduler import refresh_rates_periodically
 from app.domains.export.routes import router as export_router
 from app.domains.import_.routes import router as import_router
 from app.domains.payees.routes import router as payees_router
+from app.domains.reconciliation.routes import (
+    router as reconciliation_router,
+)
 from app.domains.recurring.routes import router as recurring_router
 from app.domains.summary.routes import router as summary_router
 from app.domains.transactions.routes import (
@@ -244,6 +247,7 @@ def create_app() -> FastAPI:
     app.include_router(transfer_router, prefix=prefix)
     app.include_router(summary_router, prefix=prefix)
     app.include_router(budgets_router, prefix=prefix)
+    app.include_router(reconciliation_router, prefix=prefix)
     app.include_router(recurring_router, prefix=prefix)
     app.include_router(users_router, prefix=prefix)
     app.include_router(export_router, prefix=prefix)

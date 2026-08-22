@@ -115,3 +115,9 @@ class Transaction(UUIDMixin, TimestampMixin, Base):
     account_name_snapshot: Mapped[str | None] = mapped_column(String)
     to_account_name_snapshot: Mapped[str | None] = mapped_column(String)
     comment: Mapped[str | None] = mapped_column(Text)
+    # Когда операция попала под сверку с выпиской банка. Отметка, а
+    # не замок: «не могу исправить свои же данные» хуже, чем
+    # незамеченная правка старого.
+    reconciled_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )

@@ -21,6 +21,7 @@ from app.domains.categories import models as _categories  # noqa: F401
 from app.domains.credits import models as _credits  # noqa: F401
 from app.domains.currencies import models as _currencies  # noqa: F401
 from app.domains.payees import models as _payees  # noqa: F401
+from app.domains.reconciliation import models as _recon  # noqa: F401
 from app.domains.recurring import models as _recurring  # noqa: F401
 from app.domains.transactions import models as _transactions  # noqa: F401
 

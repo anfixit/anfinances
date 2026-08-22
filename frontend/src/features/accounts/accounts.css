@@ -114,6 +114,12 @@
   color: var(--on-surface-variant);
 }
 
+/* Итог сверки: три строки, где важна не красота, а то, сходится
+   ли. Разделители, как в остальных таблицах чисел. */
+.recon-result .acc-row:first-child {
+  border-top: none;
+}
+
 .acc-actions {
   display: flex;
   align-items: center;

@@ -6,6 +6,7 @@ import {
   useReorderAccounts,
 } from "@/features/accounts/hooks"
 import { AccountForm } from "@/features/accounts/AccountForm"
+import { ReconcileSheet } from "@/features/accounts/ReconcileSheet"
 import { TYPE_LABELS } from "@/features/accounts/types"
 import type { Account } from "@/features/accounts/types"
 import { Sheet } from "@/components/Sheet"
@@ -19,6 +20,7 @@ export function AccountsPage() {
   const archive = useArchiveAccount()
   const reorder = useReorderAccounts()
   const [sheetOpen, setSheetOpen] = useState(false)
+  const [reconciling, setReconciling] = useState<Account | null>(null)
   const [editing, setEditing] = useState<Account | null>(null)
 
   const openCreate = () => {
@@ -176,6 +178,15 @@ export function AccountsPage() {
               <button
                 type="button"
                 className="link"
+                onClick={() => {
+                  setReconciling(a)
+                }}
+              >
+                Сверить
+              </button>
+              <button
+                type="button"
+                className="link"
                 onClick={() => openEdit(a)}
               >
                 Изменить
@@ -193,6 +204,24 @@ export function AccountsPage() {
           </li>
         ))}
       </ul>
+
+      <Sheet
+        open={reconciling !== null}
+        title={`Сверка: ${reconciling?.name ?? ""}`}
+        onClose={() => {
+          setReconciling(null)
+        }}
+      >
+        {reconciling !== null && (
+          <ReconcileSheet
+            key={reconciling.id}
+            account={reconciling}
+            onDone={() => {
+              setReconciling(null)
+            }}
+          />
+        )}
+      </Sheet>
 
       <Sheet
         open={sheetOpen}

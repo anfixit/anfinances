@@ -143,6 +143,7 @@ class ToolBox:
                 self.delete_recurring,
                 self.list_accounts,
                 self.list_categories,
+                self.check_account_balance,
                 self.list_payees,
                 self.list_new_payees,
                 self.get_by_payee,
@@ -1214,6 +1215,58 @@ class ToolBox:
             f"{a.name}: {a.current_balance} {a.currency_code}"
             for a in accounts
         )
+
+    async def check_account_balance(
+        self, account_name: str, bank_balance: str, on_date: str | None = None
+    ) -> str:
+        """Сверить счёт с остатком из банка. Ничего не меняет.
+
+        bank_balance — остаток, который показывает банк (для кредитки
+        может быть отрицательным). on_date — ISO-дата, по умолчанию
+        сегодня; берётся конец этого дня.
+
+        Расхождение означает задвоенную, пропавшую или не туда
+        записанную операцию. Сначала предложи поискать её, а не
+        закрывать корректировкой.
+        """
+        accounts = await self._client.accounts()
+        account = _find_account(accounts, account_name)
+        if account is None:
+            names = ", ".join(a.name for a in accounts)
+            return f"Счёт не найден. Доступные: {names}"
+
+        result = await self._client.request(
+            "POST",
+            f"/accounts/{account.id}/reconcile/preview",
+            json={
+                "statement_balance": str(bank_balance),
+                "date": self._end_of_day(on_date),
+            },
+        )
+        diff = Decimal(str(result["difference"]))
+        head = (
+            f"Счёт «{account.name}»: записано "
+            f"{result['computed_balance']}, банк показывает "
+            f"{result['statement_balance']}."
+        )
+        if diff == 0:
+            return (
+                f"{head} Сходится. Под отметку сверки попадёт операций: "
+                f"{result['unreconciled_count']}."
+            )
+        where = (
+            "не хватает дохода или записан лишний расход"
+            if diff > 0
+            else "не хватает траты или доход записан дважды"
+        )
+        return f"{head} Расхождение {diff}: {where}."
+
+    def _end_of_day(self, value: str | None) -> str:
+        """Конец указанного дня: выписка за 21-е включает всё 21-е."""
+        moment = datetime.fromisoformat(self._moment(value))
+        return moment.replace(
+            hour=23, minute=59, second=59, microsecond=0
+        ).isoformat()
 
     async def list_payees(self) -> str:
         """Известные получатели и запомненная за каждым категория."""

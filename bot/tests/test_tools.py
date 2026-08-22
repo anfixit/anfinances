@@ -19,6 +19,12 @@ class _FakeClient:
         self.recurring: list[dict[str, Any]] = []
         self.account_rows: list[dict[str, Any]] = []
         self.payees: list[dict[str, Any]] = []
+        self.reconcile_preview: dict[str, Any] = {
+            "computed_balance": "-300",
+            "statement_balance": "-300",
+            "difference": "0",
+            "unreconciled_count": 4,
+        }
         self.credit_rows: list[dict[str, Any]] = [
             {"id": "cr-1", "name": "Альфа Кредит"}
         ]
@@ -70,6 +76,8 @@ class _FakeClient:
             return list(self.account_rows)
         if method == "GET" and path == "/payees":
             return list(self.payees)
+        if path.endswith("/reconcile/preview"):
+            return dict(self.reconcile_preview)
         if method == "GET" and path == "/recurring":
             return list(self.recurring)
         if method == "GET" and path == "/transactions":
@@ -468,6 +476,7 @@ async def test_toolbox_exposes_all_tools() -> None:
         "delete_recurring",
         "list_accounts",
         "list_categories",
+        "check_account_balance",
         "list_payees",
         "list_new_payees",
         "get_by_payee",
@@ -968,3 +977,34 @@ async def test_expense_sends_the_payee() -> None:
     method, path, kwargs = client.calls[0]
     assert (method, path) == ("POST", "/transactions")
     assert kwargs["json"]["payee"] == "Пятёрочка"
+
+
+async def test_balance_check_reports_a_match() -> None:
+    box, _ = _toolbox()
+    result = await box.check_account_balance(
+        account_name="Альфа", bank_balance="-300"
+    )
+    assert "сходится" in result.casefold()
+    assert "4" in result
+
+
+async def test_balance_check_names_what_a_gap_means() -> None:
+    """«Расхождение 200» само по себе не подсказывает, что искать."""
+    box, client = _toolbox()
+    client.reconcile_preview = {
+        "computed_balance": "-500",
+        "statement_balance": "-300",
+        "difference": "200",
+        "unreconciled_count": 4,
+    }
+    result = await box.check_account_balance(
+        account_name="Альфа", bank_balance="-300"
+    )
+    assert "лишний расход" in result
+
+
+async def test_balance_check_writes_nothing() -> None:
+    box, client = _toolbox()
+    await box.check_account_balance(account_name="Альфа", bank_balance="0")
+    paths = [c[1] for c in client.calls]
+    assert all(p.endswith("/reconcile/preview") for p in paths), paths
