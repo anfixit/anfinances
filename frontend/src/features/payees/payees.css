@@ -1,0 +1,79 @@
+/* Экран получателей. Подключается в main.tsx.
+
+   Строка держится на трёх колонках: имя с категорией тянется, «слить
+   в…» и кнопки — фиксированной ширины. Раньше ширину всем задавало
+   содержимое: селект мерялся по самому длинному получателю в списке,
+   `.row-name` держал жёсткие 220px, и минимальная ширина строки
+   выходила за карточку. У каждой строки на свою величину — поэтому
+   кнопки и не совпадали по вертикали. */
+
+.payee-row {
+  gap: 12px;
+}
+
+/* Имя и категория — одна тянущаяся колонка (как `.acc-info` на
+   счетах). Она забирает весь остаток ширины, поэтому всё, что
+   правее, у всех строк начинается на одном месте. */
+.payee-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.payee-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-weight: 500;
+}
+
+/* Длинное имя или длинный путь категории обрезаются многоточием,
+   а не растягивают строку и не переносятся на три этажа. */
+.payee-name__text,
+.payee-info .acc-meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.payee-name .tree-count {
+  flex-shrink: 0;
+}
+
+.payee-merge {
+  flex: 0 0 auto;
+  width: 190px;
+  min-width: 0;
+}
+
+.payee-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.payee-edit__input {
+  flex: 1;
+  min-width: 0;
+}
+
+@media (max-width: 640px) {
+  /* Узкий экран: `.row` переносит строки, имя занимает всю ширину,
+     селект тянется под неё. */
+  .payee-info {
+    flex-basis: 100%;
+  }
+
+  .payee-merge {
+    flex: 1 1 auto;
+    width: auto;
+  }
+
+  .payee-actions {
+    flex-wrap: wrap;
+  }
+}
