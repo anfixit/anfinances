@@ -129,8 +129,12 @@ function PayeeRow({
 
   if (editing) {
     return (
-      <span className="row">
-        <input value={name} onChange={(e) => setName(e.target.value)} />
+      <span className="row payee-row">
+        <input
+          className="payee-edit__input"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+        />
         <button
           type="button"
           disabled={rename.isPending}
@@ -155,14 +159,16 @@ function PayeeRow({
   }
 
   return (
-    <span className="row">
-      <span className="row-name">
-        {payee.name}
-        {isNew && <span className="tree-count">новый</span>}
+    <span className="row payee-row">
+      <span className="payee-info">
+        <span className="payee-name">
+          <span className="payee-name__text">{payee.name}</span>
+          {isNew && <span className="tree-count">новый</span>}
+        </span>
+        <span className="acc-meta">{hint ?? "категория не запомнена"}</span>
       </span>
-      <span className="acc-meta">{hint ?? "категория не запомнена"}</span>
-      <span className="spacer" />
       <select
+        className="payee-merge"
         value={mergeInto}
         onChange={(e) => {
           setMergeInto(e.target.value)
@@ -177,29 +183,31 @@ function PayeeRow({
             </option>
           ))}
       </select>
-      <button
-        type="button"
-        className="link"
-        disabled={mergeInto === "" || merge.isPending}
-        onClick={() => {
-          void onMerge()
-        }}
-      >
-        Слить
-      </button>
-      <button type="button" className="link" onClick={() => setEditing(true)}>
-        Переименовать
-      </button>
-      <button
-        type="button"
-        className="link danger"
-        disabled={remove.isPending}
-        onClick={() => {
-          void onDelete()
-        }}
-      >
-        Удалить
-      </button>
+      <span className="payee-actions">
+        <button
+          type="button"
+          className="link"
+          disabled={mergeInto === "" || merge.isPending}
+          onClick={() => {
+            void onMerge()
+          }}
+        >
+          Слить
+        </button>
+        <button type="button" className="link" onClick={() => setEditing(true)}>
+          Переименовать
+        </button>
+        <button
+          type="button"
+          className="link danger"
+          disabled={remove.isPending}
+          onClick={() => {
+            void onDelete()
+          }}
+        >
+          Удалить
+        </button>
+      </span>
     </span>
   )
 }
