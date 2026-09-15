@@ -515,9 +515,9 @@ def _row(**over: Any) -> dict[str, Any]:
 
 async def _apply(box: Any, result: str) -> str:
     """Пройти путь «показали → она ответила → занесли»."""
-    token = result.rsplit("Токен для записи: ", 1)[1].rstrip(".")
+    del result  # разбор уже лежит в боксе, токена больше нет
     box.arm_pending_import()
-    return await box.import_statement(token=token)
+    return await box.import_statement()
 
 
 async def test_statement_preview_writes_nothing() -> None:
@@ -537,9 +537,8 @@ async def test_statement_preview_writes_nothing() -> None:
 async def test_statement_import_needs_her_answer_first() -> None:
     """В том же ходу, где показан разбор, заносить нельзя."""
     box, client = _toolbox()
-    result = await box.preview_statement(account_name="Альфа", rows=[_row()])
-    token = result.rsplit("Токен для записи: ", 1)[1].rstrip(".")
-    denied = await box.import_statement(token=token)
+    await box.preview_statement(account_name="Альфа", rows=[_row()])
+    denied = await box.import_statement()
     assert "не ответила" in denied
     assert not [c for c in client.calls if c[0] == "POST"]
 
@@ -566,32 +565,85 @@ async def test_statement_import_posts_all_rows_at_once() -> None:
 
 async def test_statement_import_without_preview_is_refused() -> None:
     box, client = _toolbox()
-    result = await box.import_statement(token="deadbeef")
+    result = await box.import_statement()
     assert "сначала разбери" in result.casefold()
     assert client.calls == []
 
 
-async def test_statement_import_rejects_a_foreign_token() -> None:
-    """Токен из другого разбора не должен заносить этот."""
+async def test_import_of_an_unpreviewed_account_is_refused() -> None:
+    """Разбор по «Альфе» не даёт права заносить «Сбер»."""
     box, client = _toolbox()
     await box.preview_statement(account_name="Альфа", rows=[_row()])
     box.arm_pending_import()
-    result = await box.import_statement(token="00000000")
-    assert "сначала разбери" in result.casefold()
+    result = await box.import_statement(account_name="Сбер")
+    assert "разбора нет" in result
     assert not [c for c in client.calls if c[0] == "POST"]
 
 
 async def test_statement_import_is_not_repeatable() -> None:
-    """Второй вызов с тем же токеном не должен задваивать выписку."""
+    """Второй вызов не должен задваивать выписку."""
     box, client = _toolbox()
-    preview = await box.preview_statement(account_name="Альфа", rows=[_row()])
-    token = preview.rsplit("Токен для записи: ", 1)[1].rstrip(".")
+    await box.preview_statement(account_name="Альфа", rows=[_row()])
     box.arm_pending_import()
-    await box.import_statement(token=token)
-    again = await box.import_statement(token=token)
+    await box.import_statement()
+    again = await box.import_statement()
 
     assert len([c for c in client.calls if c[0] == "POST"]) == 1
     assert "сначала разбери" in again.casefold()
+
+
+async def test_statements_for_several_accounts_are_all_kept() -> None:
+    """Выписка по трём счетам: единственный слот затирал первые два."""
+    box, client = _toolbox()
+    await box.preview_statement(account_name="Альфа", rows=[_row()])
+    await box.preview_statement(account_name="Сбер", rows=[_row(amount="450")])
+    result = await _apply(box, "")
+
+    posts = [c for c in client.calls if c[0] == "POST"]
+    assert len(posts) == 1, "одним запросом — всё или ничего"
+    accounts = {i["account_id"] for i in posts[0][2]["json"]["items"]}
+    assert accounts == {"a-1", "a-2"}
+    assert "Альфа" in result
+    assert "Сбер" in result
+
+
+async def test_reparsing_after_her_yes_keeps_the_yes() -> None:
+    """Ровно та петля: «заноси» → модель разбирает заново → отказ."""
+    box, client = _toolbox()
+    await box.preview_statement(account_name="Альфа", rows=[_row()])
+    box.arm_pending_import()  # она ответила «заноси»
+    # Модель на всякий случай разобрала выписку ещё раз — те же строки.
+    await box.preview_statement(account_name="Альфа", rows=[_row()])
+
+    result = await box.import_statement()
+    assert "Занесено" in result
+    assert len([c for c in client.calls if c[0] == "POST"]) == 1
+
+
+async def test_changed_rows_need_a_new_yes() -> None:
+    """Она одобрила одно, а заносить собрались другое — нельзя."""
+    box, client = _toolbox()
+    await box.preview_statement(account_name="Альфа", rows=[_row()])
+    box.arm_pending_import()
+    await box.preview_statement(
+        account_name="Альфа", rows=[_row(amount="999")]
+    )
+
+    result = await box.import_statement()
+    assert "не ответила" in result
+    assert not [c for c in client.calls if c[0] == "POST"]
+
+
+async def test_one_account_can_be_imported_alone() -> None:
+    box, client = _toolbox()
+    await box.preview_statement(account_name="Альфа", rows=[_row()])
+    await box.preview_statement(account_name="Сбер", rows=[_row(amount="450")])
+    box.arm_pending_import()
+
+    await box.import_statement(account_name="Альфа")
+    post = next(c for c in client.calls if c[0] == "POST")
+    assert {i["account_id"] for i in post[2]["json"]["items"]} == {"a-1"}
+    assert list(box.pending_imports) == ["a-2"], "«Сбер» ждёт дальше"
 
 
 async def test_statement_preview_skips_existing_rows() -> None:
@@ -627,7 +679,7 @@ async def test_statement_preview_reports_unknown_categories() -> None:
         rows=[_row(), _row(category_path="Ерунда")],
     )
     assert "ерунда" in result.casefold()
-    assert box.pending_import is None
+    assert box.pending_imports == {}
     assert not [c for c in client.calls if c[0] == "POST"]
 
 
@@ -681,7 +733,7 @@ async def test_statement_preview_pages_through_existing_rows() -> None:
     result = await box.preview_statement(account_name="Альфа", rows=[_row()])
     assert not [c for c in client.calls if c[0] == "POST"]
     assert "уже записаны раньше" in result.casefold()
-    assert box.pending_import is None
+    assert box.pending_imports == {}
 
 
 async def test_move_budget_sends_both_categories() -> None:

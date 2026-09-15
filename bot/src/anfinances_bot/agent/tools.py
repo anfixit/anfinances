@@ -18,7 +18,6 @@
 сигнатуры — в схему параметров. Это контракт, а не украшение.
 """
 
-import secrets
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
@@ -77,14 +76,20 @@ class PendingImport:
     руками по одной. Теперь ``preview_statement`` только считает и
     показывает, а ``import_statement`` пишет — и только на следующем
     ходу, когда она успела ответить.
+
+    Хранятся по счёту, а не одним экземпляром: выписка часто идёт по
+    трём счетам сразу, и единственный слот затирал первые два разбора.
     """
 
-    token: str
     account_id: str
     account_name: str
     items: list[dict[str, Any]]
     duplicates: int
     lines: list[str]
+    # Что именно показано. Модель любит на «да» разобрать выписку
+    # заново; если строки те же — согласие остаётся в силе, иначе
+    # каждое «да» сбрасывало бы само себя.
+    fingerprint: tuple[tuple[str, ...], ...]
     # Ставится в True при следующем запуске агента, то есть после её
     # ответа. В том же ходу, где показали разбор, занести нельзя.
     confirmed: bool = False
@@ -106,7 +111,7 @@ class ToolBox:
         self._client = client
         self._default_accounts = default_accounts
         self._tz = ZoneInfo(timezone)
-        self.pending_import: PendingImport | None = None
+        self.pending_imports: dict[str, PendingImport] = {}
         # Нужны хендлеру, чтобы показать карточку и кнопки выбора.
         self.last_created_id: str | None = None
         self.pending_accounts: list[AccountRead] = []
@@ -423,9 +428,10 @@ class ToolBox:
         разборе такие строки помечены «из памяти». Category_path всё
         равно проставляй: он пойдёт в дело для незнакомых.
 
-        Полученный список покажи ей целиком и дождись ответа. Занести
-        его потом можно вызовом import_statement с выданным токеном —
-        раньше её ответа он всё равно откажет.
+        Полученный список покажи ей целиком и дождись ответа. Когда
+        она согласится, вызови import_statement — разбирать заново не
+        нужно, показанное уже лежит наготове. Разборы по разным счетам
+        копятся рядом и не затирают друг друга.
         """
         if not rows:
             return "Список операций пуст — нечего заносить."
@@ -494,7 +500,7 @@ class ToolBox:
         # Молча пропустить строку — потерять операцию незаметно.
         # Лучше не заносить ничего и показать, что не разобралось.
         if unknown:
-            self.pending_import = None
+            self.pending_imports.pop(account.id, None)
             return (
                 "Не нашла категории: "
                 + ", ".join(sorted(unknown))
@@ -515,21 +521,29 @@ class ToolBox:
             lines.append(label)
 
         if not fresh:
-            self.pending_import = None
+            self.pending_imports.pop(account.id, None)
             return (
                 f"Разобрала выписку по счёту «{account.name}». Все "
                 f"{duplicates} операций уже записаны раньше — "
                 "заносить нечего."
             )
 
-        token = secrets.token_hex(4)
-        self.pending_import = PendingImport(
-            token=token,
+        fingerprint = _fingerprint(fresh)
+        previous = self.pending_imports.get(account.id)
+        self.pending_imports[account.id] = PendingImport(
             account_id=account.id,
             account_name=account.name,
             items=fresh,
             duplicates=duplicates,
             lines=lines,
+            fingerprint=fingerprint,
+            # Те же строки, что она уже видела и одобрила, — согласие
+            # в силе. Изменилось хоть что-то — нужно новое «да».
+            confirmed=(
+                previous is not None
+                and previous.confirmed
+                and previous.fingerprint == fingerprint
+            ),
         )
         shown = lines[:_PREVIEW_LINES]
         rest = len(lines) - len(shown)
@@ -545,52 +559,90 @@ class ToolBox:
             f"Разобрала выписку по счёту «{account.name}». "
             f"Новых операций: {len(fresh)}.{skipped}\n\n"
             f"{body}\n\n"
-            f"Покажи этот список целиком и спроси, заносить ли. "
-            f"Токен для записи: {token}."
+            "Покажи этот список целиком и спроси, заносить ли. Когда "
+            "она согласится — вызови import_statement, разбирать заново "
+            "не нужно."
         )
 
-    async def import_statement(self, token: str) -> str:
-        """Занести разобранную выписку после её согласия.
+    async def import_statement(self, account_name: str | None = None) -> str:
+        """Занести показанный разбор после её согласия.
 
-        token — из ответа preview_statement. Вызывать только тогда,
-        когда она ответила согласием: в том же ходу, где показан
-        разбор, инструмент откажет.
+        Вызывай, когда она согласилась — «да», «заноси», «ок».
+        Разбирать выписку заново для этого не нужно: всё показанное
+        уже лежит наготове, по всем счетам сразу. account_name — только
+        если она просит занести один счёт из нескольких.
+
+        В том же ходу, где показан разбор, инструмент откажет: она
+        должна успеть его увидеть.
         """
-        pending = self.pending_import
-        if pending is None or pending.token != token:
+        if not self.pending_imports:
             return (
                 "Нечего заносить: сначала разбери выписку через "
                 "preview_statement и покажи ей список."
             )
-        if not pending.confirmed:
+
+        chosen = list(self.pending_imports.values())
+        if account_name is not None:
+            account = _find_account(
+                await self._client.accounts(), account_name
+            )
+            chosen = [
+                p
+                for p in chosen
+                if account is not None and p.account_id == account.id
+            ]
+            if not chosen:
+                names = ", ".join(
+                    f"«{p.account_name}»"
+                    for p in self.pending_imports.values()
+                )
+                return (
+                    f"По «{account_name}» разбора нет. Ждут записи: {names}."
+                )
+
+        ready = [p for p in chosen if p.confirmed]
+        waiting = [p for p in chosen if not p.confirmed]
+        if not ready:
+            names = ", ".join(f"«{p.account_name}»" for p in waiting)
             return (
-                "Разбор показан, но она ещё не ответила. Покажи ей "
-                "список и дождись согласия — потом занесу."
+                f"Разбор по {names} показан, но она ещё не ответила. "
+                "Дождись её согласия — потом занесу."
             )
 
+        # Одним запросом: либо записалось всё одобренное, либо ничего.
         await self._client.request(
-            "POST", "/import/transactions", json={"items": pending.items}
+            "POST",
+            "/import/transactions",
+            json={"items": [item for p in ready for item in p.items]},
         )
-        self.pending_import = None
-        tail = (
-            f", пропущено дублей: {pending.duplicates}"
-            if pending.duplicates
-            else ""
-        )
-        return (
-            f"Занесено операций: {len(pending.items)} "
-            f"на счёт «{pending.account_name}»{tail}."
-        )
+        for p in ready:
+            del self.pending_imports[p.account_id]
+
+        parts = [
+            f"«{p.account_name}» — {len(p.items)}"
+            + (f" (дублей пропущено: {p.duplicates})" if p.duplicates else "")
+            for p in ready
+        ]
+        tail = ""
+        if waiting:
+            # Эти строки изменились после её «да» — заносить их по
+            # старому согласию нельзя.
+            names = ", ".join(f"«{p.account_name}»" for p in waiting)
+            tail = (
+                f" Разбор по {names} изменился после её ответа — "
+                "покажи его заново."
+            )
+        return "Занесено операций: " + ", ".join(parts) + "." + tail
 
     def arm_pending_import(self) -> None:
-        """Разрешить запись разбора, показанного на прошлом ходу.
+        """Разрешить запись разборов, показанных на прошлом ходу.
 
         Вызывается перед каждым прогоном агента, то есть после её
         сообщения. Так модель не может показать список и тут же его
         занести, не дав ей возразить.
         """
-        if self.pending_import is not None:
-            self.pending_import.confirmed = True
+        for pending in self.pending_imports.values():
+            pending.confirmed = True
 
     async def _remembered_categories(self) -> dict[str, str]:
         """Ключ получателя → категория его прошлой операции."""
@@ -1603,6 +1655,25 @@ def _find_account(
 def _payee_key(name: str) -> str:
     """Свёрнутое имя получателя — так же, как его сворачивает сайт."""
     return " ".join(name.split()).casefold()
+
+
+def _fingerprint(
+    items: list[dict[str, Any]],
+) -> tuple[tuple[str, ...], ...]:
+    """Отпечаток разбора: те же ли строки, что она уже видела."""
+    return tuple(
+        sorted(
+            (
+                str(item["date"]),
+                str(item["kind"]),
+                str(item["amount"]),
+                str(item["category_id"]),
+                str(item.get("comment") or ""),
+                str(item.get("payee") or ""),
+            )
+            for item in items
+        )
+    )
 
 
 def _row_label(
