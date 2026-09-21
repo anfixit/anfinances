@@ -46,3 +46,10 @@ class Payee(UUIDMixin, TimestampMixin, Base):
     last_category_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("categories.id", ondelete="SET NULL")
     )
+    # Маркетплейс продаёт всё подряд: вчера корм, сегодня поводок для
+    # SUP-борда. Запоминать за ним категорию — значит подставлять
+    # неверную в каждую следующую покупку. Такой получатель память не
+    # пишет и не отдаёт.
+    varied_categories: Mapped[bool] = mapped_column(
+        default=False, server_default="false", nullable=False
+    )

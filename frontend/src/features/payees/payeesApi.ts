@@ -27,6 +27,16 @@ export async function renamePayee(id: string, name: string): Promise<Payee> {
   return unwrap(res)
 }
 
+export async function setPayeeVaried(
+  id: string,
+  varied: boolean,
+): Promise<Payee> {
+  const res = await api.patch<ApiResponse<Payee>>(`/payees/${id}`, {
+    varied_categories: varied,
+  })
+  return unwrap(res)
+}
+
 export async function mergePayees(
   sourceId: string,
   targetId: string,

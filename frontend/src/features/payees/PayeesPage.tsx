@@ -8,6 +8,7 @@ import {
   useNewPayees,
   usePayees,
   useRenamePayee,
+  useSetPayeeVaried,
 } from "@/features/payees/hooks"
 import type { Payee } from "@/features/payees/types"
 import { categoryPath } from "@/features/categories/path"
@@ -34,7 +35,9 @@ export function PayeesPage() {
       <p className="rec-help">
         Кому уходят деньги. За каждым получателем сайт запоминает
         категорию последней операции и подставляет её в следующий раз —
-        поэтому выписки разносятся сами.
+        поэтому выписки разносятся сами. Там, где покупают всё подряд,
+        отметьте «разные категории»: память им только мешает. Ozon,
+        Wildberries и Яндекс Маркет отмечаются сами.
       </p>
 
       {fresh.data && fresh.data.length > 0 && (
@@ -87,6 +90,7 @@ function PayeeRow({
   const rename = useRenamePayee()
   const merge = useMergePayees()
   const remove = useDeletePayee()
+  const varied = useSetPayeeVaried()
   const { confirm } = useConfirm()
   const [editing, setEditing] = useState(false)
   const [name, setName] = useState(payee.name)
@@ -165,7 +169,22 @@ function PayeeRow({
           <span className="payee-name__text">{payee.name}</span>
           {isNew && <span className="tree-count">новый</span>}
         </span>
-        <span className="acc-meta">{hint ?? "категория не запомнена"}</span>
+        <span className="acc-meta">
+          {payee.varied_categories
+            ? "категория зависит от покупки"
+            : (hint ?? "категория не запомнена")}
+        </span>
+        <label className="payee-varied">
+          <input
+            type="checkbox"
+            checked={payee.varied_categories}
+            disabled={varied.isPending}
+            onChange={(e) => {
+              varied.mutate({ id: payee.id, varied: e.target.checked })
+            }}
+          />
+          разные категории
+        </label>
       </span>
       <select
         className="payee-merge"

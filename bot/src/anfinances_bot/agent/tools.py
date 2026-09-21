@@ -162,6 +162,7 @@ class ToolBox:
                 self.get_by_payee,
                 self.rename_payee,
                 self.merge_payees,
+                self.set_payee_varied,
                 self.list_recurring,
                 self.get_capital,
                 self.get_by_category,
@@ -735,12 +736,17 @@ class ToolBox:
             pending.confirmed = True
 
     async def _remembered_categories(self) -> dict[str, str]:
-        """Ключ получателя → категория его прошлой операции."""
+        """Ключ получателя → категория его прошлой операции.
+
+        Получатели с разными категориями (маркетплейсы) сюда не
+        попадают: у Ozon категория зависит от товара, и подставленная
+        «из памяти» была бы неверной.
+        """
         rows = await self._client.request("GET", "/payees")
         return {
             _payee_key(row["name"]): row["last_category_id"]
             for row in (rows or [])
-            if row.get("last_category_id")
+            if row.get("last_category_id") and not row.get("varied_categories")
         }
 
     async def _existing_keys(
@@ -1562,6 +1568,26 @@ class ToolBox:
             f"«{source['name']}» слит в «{target['name']}», "
             f"перевешено операций: {moved}."
         )
+
+    async def set_payee_varied(self, name: str, varied: bool = True) -> str:
+        """Отметить, что у получателя категории разные.
+
+        Для маркетплейсов и магазинов, где покупают всё подряд: память
+        «получатель → категория» им не пишется и не подставляется,
+        категорию каждый раз выбирают по товару. Ozon, Wildberries и
+        Яндекс Маркет помечаются сами; это — для остальных.
+        """
+        found = await self._find_payee(name)
+        if isinstance(found, str):
+            return found
+        await self._client.request(
+            "PATCH",
+            f"/payees/{found['id']}",
+            json={"varied_categories": varied},
+        )
+        if varied:
+            return f"«{found['name']}»: категории разные, запоминать не буду."
+        return f"«{found['name']}»: снова запоминаю категорию."
 
     async def _find_payee(self, name: str) -> dict[str, Any] | str:
         """Получатель по имени. Строка в ответе — сообщение о проблеме."""

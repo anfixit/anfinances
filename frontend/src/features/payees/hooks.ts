@@ -7,6 +7,7 @@ import {
   listPayees,
   mergePayees,
   renamePayee,
+  setPayeeVaried,
   spendingByPayee,
 } from "@/features/payees/payeesApi"
 import { queryKeys } from "@/lib/query/keys"
@@ -38,6 +39,15 @@ export function useRenamePayee() {
   return useMutation({
     mutationFn: (vars: { id: string; name: string }) =>
       renamePayee(vars.id, vars.name),
+    onSuccess: () => invalidate(qc),
+  })
+}
+
+export function useSetPayeeVaried() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (vars: { id: string; varied: boolean }) =>
+      setPayeeVaried(vars.id, vars.varied),
     onSuccess: () => invalidate(qc),
   })
 }

@@ -491,6 +491,7 @@ async def test_toolbox_exposes_all_tools() -> None:
         "get_by_payee",
         "rename_payee",
         "merge_payees",
+        "set_payee_varied",
         "list_recurring",
         "get_capital",
         "get_by_category",
@@ -1167,3 +1168,30 @@ async def test_income_can_be_relabelled_as_a_loan() -> None:
     method, path, kwargs = client.calls[-1]
     assert (method, path) == ("PATCH", "/transactions/tx-9")
     assert kwargs["json"] == {"kind": "loan"}
+
+
+async def test_varied_payee_gives_no_memory() -> None:
+    """У Ozon категория зависит от товара — память не подставляется."""
+    box, client = _toolbox()
+    client.payees = [
+        {
+            "id": "p-1",
+            "name": "Ozon",
+            "last_category_id": "c-2",
+            "varied_categories": True,
+        }
+    ]
+    preview = await box.preview_statement(
+        account_name="Альфа", rows=[_row(payee="OZON")]
+    )
+    assert "из памяти" not in preview
+
+
+async def test_payee_can_be_marked_varied() -> None:
+    box, client = _toolbox()
+    client.payees = [{"id": "p-7", "name": "Лента", "last_category_id": None}]
+    result = await box.set_payee_varied(name="Лента")
+    method, path, kwargs = client.calls[-1]
+    assert (method, path) == ("PATCH", "/payees/p-7")
+    assert kwargs["json"] == {"varied_categories": True}
+    assert "не буду" in result

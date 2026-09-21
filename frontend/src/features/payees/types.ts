@@ -5,6 +5,8 @@ export interface Payee {
   id: string
   name: string
   last_category_id: string | null
+  // Маркетплейс: категория зависит от товара, память не пишется.
+  varied_categories: boolean
   created_at: IsoDate
   updated_at: IsoDate
 }

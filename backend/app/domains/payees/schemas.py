@@ -21,6 +21,7 @@ class PayeeCreate(BaseModel):
 
 class PayeeUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=200)
+    varied_categories: bool | None = None
 
 
 class PayeeRead(BaseModel):
@@ -29,6 +30,7 @@ class PayeeRead(BaseModel):
     id: uuid.UUID
     name: str
     last_category_id: uuid.UUID | None
+    varied_categories: bool
     created_at: datetime
     updated_at: datetime
 

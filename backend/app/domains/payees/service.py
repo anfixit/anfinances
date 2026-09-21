@@ -47,6 +47,30 @@ def _aware(value: datetime) -> datetime:
     return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
 
 
+# Маркетплейсы продают всё подряд — категория у них зависит от товара,
+# а не от магазина. Помечаются «разными категориями» сами, при первой
+# встрече: из выписки они приходят под именами вроде «OZON.RU».
+_MARKETPLACES = (
+    "ozon",
+    "озон",
+    "wildberries",
+    "вайлдберриз",
+    "яндекс маркет",
+    "яндекс.маркет",
+    "yandex market",
+    "market.yandex",
+    "aliexpress",
+    "алиэкспресс",
+    "мегамаркет",
+    "megamarket",
+)
+
+
+def is_marketplace(name: str) -> bool:
+    folded = name.casefold()
+    return any(mark in folded for mark in _MARKETPLACES)
+
+
 class PayeeService:
     def __init__(self, repo: PayeeRepository) -> None:
         self._repo = repo
@@ -85,7 +109,12 @@ class PayeeService:
         if existing is not None:
             return existing
         return await self._repo.add(
-            Payee(user_id=user_id, name=cleaned, name_key=key)
+            Payee(
+                user_id=user_id,
+                name=cleaned,
+                name_key=key,
+                varied_categories=is_marketplace(cleaned),
+            )
         )
 
     async def update_payee(
@@ -102,6 +131,12 @@ class PayeeService:
                 )
             payee.name = name
             payee.name_key = key
+        if data.varied_categories is not None:
+            payee.varied_categories = data.varied_categories
+            if data.varied_categories:
+                # Отметку ставят именно потому, что память врёт —
+                # запомненное стираем сразу.
+                payee.last_category_id = None
         return payee
 
     async def merge_payees(
@@ -119,7 +154,13 @@ class PayeeService:
         source = await self.get_payee(source_id, user_id)
         target = await self.get_payee(target_id, user_id)
         moved = await self._repo.reassign(source.id, target.id)
-        if target.last_category_id is None:
+        # Если хоть один из двоих — маркетплейс, то и слитый тоже.
+        target.varied_categories = (
+            target.varied_categories or source.varied_categories
+        )
+        if target.varied_categories:
+            target.last_category_id = None
+        elif target.last_category_id is None:
             target.last_category_id = source.last_category_id
         await self._repo.delete(source)
         return moved

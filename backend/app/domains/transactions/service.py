@@ -149,7 +149,7 @@ class TransactionService:
             payee = await self._payees.ensure(user_id, data.payee)
             # Категория запоминается за получателем: следующая
             # выписка разнесётся по таблице, а не по догадке модели.
-            if data.category_id is not None:
+            if data.category_id is not None and not payee.varied_categories:
                 payee.last_category_id = data.category_id
 
         rate = await self._currencies.rate_to_rub(account.currency_code)
@@ -285,7 +285,11 @@ class TransactionService:
 
         # Правка категории — тоже повод запомнить её за получателем:
         # именно так исправление одной ошибки чинит все следующие.
-        if payee is not None and tx.category_id is not None:
+        if (
+            payee is not None
+            and tx.category_id is not None
+            and not payee.varied_categories
+        ):
             payee.last_category_id = tx.category_id
 
         return tx

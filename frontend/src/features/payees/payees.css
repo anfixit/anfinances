@@ -77,3 +77,18 @@
     flex-wrap: wrap;
   }
 }
+
+/* Отметка «разные категории»: мелко, под именем — это настройка, а
+   не главное в строке. */
+.payee-varied {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8rem;
+  color: var(--on-surface-variant);
+  cursor: pointer;
+}
+
+.payee-varied input {
+  margin: 0;
+}
