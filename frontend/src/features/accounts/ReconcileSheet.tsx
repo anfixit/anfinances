@@ -1,6 +1,5 @@
 import { useState } from "react"
 
-import { useCategories } from "@/features/categories/hooks"
 import {
   usePreviewReconciliation,
   useReconcile,
@@ -31,14 +30,12 @@ export function ReconcileSheet({
 }) {
   const [balance, setBalance] = useState("")
   const [date, setDate] = useState(today())
-  const [category, setCategory] = useState("")
   const [error, setError] = useState<string | null>(null)
   const [seen, setSeen] = useState<ReconciliationPreview | null>(null)
 
   const preview = usePreviewReconciliation()
   const apply = useReconcile()
   const history = useReconciliations(account.id)
-  const categories = useCategories()
 
   const onError = (e: unknown) => {
     setError(e instanceof AppError ? e.message : "Не получилось")
@@ -67,7 +64,6 @@ export function ReconcileSheet({
           statement_balance: balance.trim(),
           date: endOfDay(date),
           adjust,
-          adjustment_category_id: adjust ? category || null : null,
         },
       },
       { onSuccess: onDone, onError },
@@ -142,22 +138,6 @@ export function ReconcileSheet({
         </div>
       )}
 
-      {seen !== null && !matches && (
-        <label className="field">
-          <span>Категория корректировки</span>
-          <select
-            value={category}
-            onChange={(e) => setCategory(e.target.value)}
-          >
-            <option value="">Без категории</option>
-            {(categories.data ?? []).map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
-        </label>
-      )}
 
       {error !== null && <p className="error">{error}</p>}
 

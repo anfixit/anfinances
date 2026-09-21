@@ -125,7 +125,9 @@ class SqlBudgetRepository:
             )
             .where(
                 Transaction.user_id == user_id,
-                Transaction.kind == TransactionKind.EXPENSE,
+                Transaction.kind.in_(
+                    (TransactionKind.EXPENSE, TransactionKind.REFUND)
+                ),
                 Transaction.date >= date_from,
                 Transaction.date < date_to,
             )
@@ -174,7 +176,9 @@ class SqlBudgetRepository:
             )
             .where(
                 Transaction.user_id == user_id,
-                Transaction.kind == TransactionKind.EXPENSE,
+                Transaction.kind.in_(
+                    (TransactionKind.EXPENSE, TransactionKind.REFUND)
+                ),
                 Transaction.date < before,
             )
             .group_by(Transaction.category_id)

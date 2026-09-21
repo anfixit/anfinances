@@ -22,7 +22,6 @@ class ReconcileRequest(BaseModel):
     # сначала надо поискать пропавшую или задвоенную запись, а
     # корректировка — последнее средство.
     adjust: bool = False
-    adjustment_category_id: uuid.UUID | None = None
 
 
 class ReconciliationPreview(BaseModel):

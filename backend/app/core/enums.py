@@ -22,10 +22,25 @@ class CategoryKind(StrEnum):
 
 
 class TransactionKind(StrEnum):
+    """Тип операции.
+
+    Три последних — деньги, которые приходят или правятся, но не
+    являются ни заработком, ни тратой. Пока их не было, кредит на
+    430 000 и возврат с Ozon записывались доходом, и график доходов
+    показывал плюс там, где был минус.
+
+    LOAN — получение кредита: остаток растёт, но это долг.
+    REFUND — возврат: ложится в категорию траты и уменьшает её.
+    ADJUSTMENT — корректировка учёта после сверки, со своим знаком.
+    """
+
     EXPENSE = "expense"
     INCOME = "income"
     TRANSFER = "transfer"
     CREDIT_PAYMENT = "credit_payment"
+    LOAN = "loan"
+    REFUND = "refund"
+    ADJUSTMENT = "adjustment"
 
 
 class RequiredKind(StrEnum):

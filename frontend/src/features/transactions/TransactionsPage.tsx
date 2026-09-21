@@ -56,6 +56,18 @@ function transactionCategoryLabel(
   if (transaction.kind === "credit_payment") {
     return "Платёж по кредиту"
   }
+  if (transaction.kind === "loan") {
+    return "Получение кредита"
+  }
+  if (transaction.kind === "adjustment") {
+    return "Корректировка"
+  }
+  if (transaction.kind === "refund") {
+    const path =
+      snapshotCategoryPath(transaction) ??
+      categoryPath(categoryById, transaction.category_id)
+    return path ? `Возврат · ${path}` : "Возврат"
+  }
   return (
     snapshotCategoryPath(transaction) ??
     categoryPath(categoryById, transaction.category_id) ??

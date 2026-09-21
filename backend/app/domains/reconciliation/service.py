@@ -119,29 +119,18 @@ class ReconciliationService:
     ) -> uuid.UUID:
         """Операция, закрывающая расхождение.
 
-        Знак разницы задаёт тип: банк богаче — значит был неучтённый
-        доход, беднее — неучтённый расход. Сумма в API всегда
-        положительная, знак ставит сам сервис транзакций.
+        Корректировка — не доход и не трата, а правка учёта: в графики
+        доходов и расходов она не попадает. Раньше тут создавался доход
+        или расход, и каждая сверка искажала месячные итоги. Знак —
+        само направление разницы.
         """
-        kind = (
-            TransactionKind.INCOME
-            if difference > 0
-            else TransactionKind.EXPENSE
-        )
-        category_id = data.adjustment_category_id
-        if category_id is not None:
-            category = await self._categories.get(category_id, user_id)
-            if category is None:
-                raise NotFoundError("Категория корректировки не найдена.")
-
         tx = await self._transactions.create_transaction(
             user_id,
             TransactionCreate(
                 account_id=account_id,
-                kind=kind,
-                amount=abs(difference),
+                kind=TransactionKind.ADJUSTMENT,
+                amount=difference,
                 date=data.date,
-                category_id=category_id,
                 comment="Корректировка по сверке с банком",
             ),
         )

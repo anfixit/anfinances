@@ -67,6 +67,12 @@ class Transaction(UUIDMixin, TimestampMixin, Base):
             "CAST(kind AS TEXT) <> 'INCOME' OR amount > 0",
             name="ck_transactions_income_positive",
         ),
+        # Кредит и возврат — всегда приход. Корректировка бывает
+        # любого знака: направление и есть её смысл.
+        CheckConstraint(
+            "CAST(kind AS TEXT) NOT IN ('LOAN', 'REFUND') OR amount > 0",
+            name="ck_transactions_inflow_positive",
+        ),
         CheckConstraint(
             "(amount > 0 AND amount_rub > 0)"
             " OR (amount < 0 AND amount_rub < 0)",

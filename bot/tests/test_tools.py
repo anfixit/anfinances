@@ -453,6 +453,8 @@ async def test_toolbox_exposes_all_tools() -> None:
     assert names == {
         "create_expense",
         "create_income",
+        "create_refund",
+        "record_loan_received",
         "create_transfer",
         "create_credit_payment",
         "preview_statement",
@@ -1116,3 +1118,52 @@ async def test_goals_report_what_is_left_to_put_in() -> None:
     result = await box.list_goals(month="2026-08")
     assert "Кофейни" in result
     assert "4000" in result
+
+
+async def test_refund_goes_into_the_expense_tree() -> None:
+    """Возврат с Ozon уменьшает трату, а не притворяется доходом."""
+    box, client = _toolbox()
+    await box.create_refund(
+        amount="690.50", category_path="Еда → Кофейни", account_name="Альфа"
+    )
+    body = client.calls[-1][2]["json"]
+    assert body["kind"] == "refund"
+    assert body["category_id"] == "c-2"
+
+
+async def test_loan_is_recorded_without_a_category() -> None:
+    box, client = _toolbox()
+    result = await box.record_loan_received(
+        amount="430000", account_name="Альфа"
+    )
+    body = client.calls[-1][2]["json"]
+    assert body["kind"] == "loan"
+    assert "category_id" not in body
+    assert "не входит" in result
+
+
+async def test_statement_rows_can_be_loans_and_refunds() -> None:
+    box, client = _toolbox()
+    preview = await box.preview_statement(
+        account_name="Альфа",
+        rows=[
+            _row(kind="loan", category_path="", amount="430000"),
+            _row(kind="refund", amount="690.50"),
+        ],
+    )
+    assert "Получение кредита" in preview
+    assert "возврат · Еда → Кофейни" in preview
+
+    await _apply(box, preview)
+    items = next(c for c in client.calls if c[0] == "POST")[2]["json"]["items"]
+    by_kind = {i["kind"]: i for i in items}
+    assert by_kind["loan"]["category_id"] is None
+    assert by_kind["refund"]["category_id"] == "c-2"
+
+
+async def test_income_can_be_relabelled_as_a_loan() -> None:
+    box, client = _toolbox()
+    await box.update_transaction(transaction_id="tx-9", change_kind_to="loan")
+    method, path, kwargs = client.calls[-1]
+    assert (method, path) == ("PATCH", "/transactions/tx-9")
+    assert kwargs["json"] == {"kind": "loan"}

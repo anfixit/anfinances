@@ -33,6 +33,10 @@ _KIND_RU = {
     TransactionKind.EXPENSE: "Расход",
     TransactionKind.INCOME: "Доход",
     TransactionKind.TRANSFER: "Перевод",
+    TransactionKind.CREDIT_PAYMENT: "Платёж по кредиту",
+    TransactionKind.LOAN: "Получение кредита",
+    TransactionKind.REFUND: "Возврат",
+    TransactionKind.ADJUSTMENT: "Корректировка",
 }
 _REQUIRED_RU = {
     RequiredKind.REQUIRED: "Обязательно",

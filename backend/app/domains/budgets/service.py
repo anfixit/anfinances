@@ -264,7 +264,9 @@ class BudgetService:
                 ),
                 start=Decimal(0),
             )
-            spent = abs(spent_value)
+            # Возврат возвращает деньги в конверт. abs сделал бы из
+            # месяца с одним только возвратом перерасход.
+            spent = -spent_value
             if budget.rollover:
                 before_planned = planned_before.get(
                     budget.category_id, Decimal(0)

@@ -52,14 +52,23 @@ __all__ = ["TransactionService", "TransferService"]
 _KIND_TO_CATEGORY = {
     TransactionKind.EXPENSE: CategoryKind.EXPENSE,
     TransactionKind.INCOME: CategoryKind.INCOME,
+    # Возврат ложится в категорию той траты, которую он уменьшает.
+    TransactionKind.REFUND: CategoryKind.EXPENSE,
 }
+
+# Кредит и корректировка — не доход и не трата, категории у них нет.
+_NO_CATEGORY = frozenset({TransactionKind.LOAN, TransactionKind.ADJUSTMENT})
 
 
 def _signed(amount: Decimal, kind: TransactionKind) -> Decimal:
-    """Применить знак к положительной сумме по типу операции.
+    """Применить знак к сумме по типу операции.
 
-    Доход — плюс, расход — минус. Сумма на входе всегда > 0.
+    Расход и платёж по кредиту — минус; доход, возврат и получение
+    кредита — плюс. Корректировка приходит уже со знаком: направление
+    у неё и есть смысл.
     """
+    if kind == TransactionKind.ADJUSTMENT:
+        return amount
     if kind in {TransactionKind.EXPENSE, TransactionKind.CREDIT_PAYMENT}:
         return -amount
     return amount
@@ -202,6 +211,31 @@ class TransactionService:
         else:
             payee = None
 
+        # Смена типа — переразметка, а не новая операция: модуль суммы
+        # и дата остаются, по новому типу меняются знак и категория.
+        new_kind = fields.pop("kind", None)
+        if new_kind is not None and new_kind != tx.kind:
+            direction = -1 if tx.amount < 0 else 1
+            magnitude = abs(tx.amount)
+            tx.kind = new_kind
+            tx.amount = (
+                magnitude * direction
+                if new_kind == TransactionKind.ADJUSTMENT
+                else _signed(magnitude, new_kind)
+            )
+            tx.amount_rub = tx.amount * tx.exchange_rate
+            if new_kind != TransactionKind.EXPENSE:
+                # Обязательность — свойство траты.
+                tx.required = None
+            if new_kind in _NO_CATEGORY:
+                # Прежнюю категорию снимаем. Явно переданную — нет:
+                # её отвергнет проверка ниже, и это правильно.
+                fields.setdefault("category_id", None)
+            elif "category_id" not in fields:
+                # Прежняя категория могла быть из другого дерева:
+                # доход «Корректировка баланса» возвратом не станет.
+                fields["category_id"] = tx.category_id
+
         # Счёт меняем первым: от него зависят валюта и курс, а
         # значит и рублёвая оценка суммы ниже.
         new_account_id = fields.pop("account_id", None)
@@ -240,8 +274,13 @@ class TransactionService:
 
         if "amount" in fields:
             # на входе положительная сумма — заново проставляем
-            # знак по kind; курс запечён, меняется только модуль
-            tx.amount = _signed(fields["amount"], tx.kind)
+            # знак по kind; курс запечён, меняется только модуль.
+            # У корректировки знак — направление, его сохраняем.
+            if tx.kind == TransactionKind.ADJUSTMENT:
+                magnitude = fields["amount"]
+                tx.amount = magnitude if tx.amount > 0 else -magnitude
+            else:
+                tx.amount = _signed(fields["amount"], tx.kind)
             tx.amount_rub = tx.amount * tx.exchange_rate
 
         # Правка категории — тоже повод запомнить её за получателем:
@@ -271,6 +310,19 @@ class TransactionService:
         category_id: uuid.UUID | None,
         kind: TransactionKind,
     ) -> tuple[str | None, str | None]:
+        if kind in _NO_CATEGORY:
+            if category_id is not None:
+                raise ValidationFailedError(
+                    "У получения кредита и корректировки нет категории: "
+                    "это не доход и не трата."
+                )
+            return None, None
+        if kind == TransactionKind.REFUND and category_id is None:
+            raise ValidationFailedError(
+                "Возврат уменьшает трату в категории — укажите, в какой "
+                "была покупка."
+            )
+
         expected = _KIND_TO_CATEGORY.get(kind)
         if expected is None:
             return None, None
@@ -283,7 +335,9 @@ class TransactionService:
             not_found="Категория не найдена.",
             archived="Категория в архиве.",
             kind_mismatch=(
-                "Тип категории не совпадает с типом операции (расход/доход)."
+                "Тип категории не совпадает с типом операции: расход и "
+                "возврат — в категориях расходов, доход — в категориях "
+                "доходов."
             ),
         )
 

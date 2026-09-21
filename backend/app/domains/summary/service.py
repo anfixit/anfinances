@@ -114,8 +114,9 @@ class SummaryService:
             timezone_name,
         )
         income, expense = await self._repo.cashflow(user_id, start, end)
-        # expense хранится отрицательным — модуль для отображения
-        expense_abs = abs(expense)
+        # Расход хранится отрицательным. Не abs: если возвратов за
+        # период больше трат, abs превратил бы их в трату.
+        expense_abs = -expense
         return CashflowResult(
             date_from=date_from,
             date_to=date_to,
@@ -134,7 +135,9 @@ class SummaryService:
         start, end = month_bounds_utc(month_date, timezone_name)
         rows = await self._repo.spending_by_category(user_id, start, end)
         items = [
-            CategorySpending(category_id=cat_id, amount_rub=abs(total))
+            # Минус, а не abs: категория, где за месяц был только
+            # возврат, должна уйти в минус, а не показать трату.
+            CategorySpending(category_id=cat_id, amount_rub=-total)
             for cat_id, total in rows
         ]
         items.sort(key=lambda x: x.amount_rub, reverse=True)
@@ -162,8 +165,8 @@ class SummaryService:
 
         cur_start, cur_end = month_bounds_utc(current, timezone_name)
         _, expense = await self._repo.cashflow(user_id, cur_start, cur_end)
-        # Расход хранится отрицательным — берём модуль.
-        expense_abs = abs(expense)
+        # Расход хранится отрицательным; возвраты его уменьшают.
+        expense_abs = -expense
 
         # Возраст считаем по последнему полугодию: за больший срок
         # очередь FIFO разрастается, а старые привычки к сегодняшнему
@@ -213,7 +216,7 @@ class SummaryService:
         spent_rows = await self._repo.spending_by_category(user_id, start, end)
         # Траты без категории в резервы не входят: их не с чем сверить.
         spent = {
-            cat_id: abs(total)
+            cat_id: -total
             for cat_id, total in spent_rows
             if cat_id is not None
         }

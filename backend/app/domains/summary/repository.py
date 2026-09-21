@@ -167,6 +167,8 @@ class SqlSummaryRepository:
             .where(
                 Transaction.user_id == user_id,
                 Transaction.transfer_id.is_(None),
+                # Корректировка — правка учёта, а не пришедшие деньги.
+                Transaction.kind != TransactionKind.ADJUSTMENT,
                 Transaction.date >= since,
             )
             .order_by(Transaction.date)
@@ -189,10 +191,13 @@ class SqlSummaryRepository:
                 Transaction.user_id == user_id,
                 Transaction.date >= date_from,
                 Transaction.date < date_to,
+                # Кредит и корректировка не доход и не трата — их тут
+                # нет. Возврат есть: он уменьшает расход.
                 Transaction.kind.in_(
                     (
                         TransactionKind.INCOME,
                         TransactionKind.EXPENSE,
+                        TransactionKind.REFUND,
                     )
                 ),
             )
@@ -203,8 +208,10 @@ class SqlSummaryRepository:
         for kind, total in result.all():
             if kind == TransactionKind.INCOME:
                 income = total
-            elif kind == TransactionKind.EXPENSE:
-                expense = total
+            elif kind in (TransactionKind.EXPENSE, TransactionKind.REFUND):
+                # Расход отрицательный, возврат положительный — сумма
+                # и есть чистый расход.
+                expense += total
         credit_expense = await credit_expense_total_rub(
             self._session,
             user_id,
@@ -229,7 +236,9 @@ class SqlSummaryRepository:
                 Transaction.user_id == user_id,
                 Transaction.date >= date_from,
                 Transaction.date < date_to,
-                Transaction.kind == TransactionKind.EXPENSE,
+                Transaction.kind.in_(
+                    (TransactionKind.EXPENSE, TransactionKind.REFUND)
+                ),
             )
             .group_by(Transaction.category_id)
         )

@@ -28,13 +28,22 @@ __all__ = [
     "TransferUpdate",
 ]
 
-OrdinaryKind = Literal[TransactionKind.EXPENSE, TransactionKind.INCOME]
+# Всё, кроме ног перевода и платежей по кредиту: у тех свои домены.
+OrdinaryKind = Literal[
+    TransactionKind.EXPENSE,
+    TransactionKind.INCOME,
+    TransactionKind.REFUND,
+    TransactionKind.LOAN,
+    TransactionKind.ADJUSTMENT,
+]
 
 
 class TransactionCreate(BaseModel):
     account_id: uuid.UUID
     kind: OrdinaryKind
-    amount: Decimal = Field(gt=0)
+    # Знак ставит сервис по типу. Исключение — корректировка: у неё
+    # направление и есть смысл, поэтому сумма приходит со знаком.
+    amount: Decimal
     date: datetime
     category_id: uuid.UUID | None = None
     required: RequiredKind | None = None
@@ -44,11 +53,24 @@ class TransactionCreate(BaseModel):
     # бы ронять запись траты из-за справочника.
     payee: str | None = Field(default=None, max_length=200)
 
+    @model_validator(mode="after")
+    def _amount_sign(self) -> "TransactionCreate":
+        if self.kind == TransactionKind.ADJUSTMENT:
+            if self.amount == 0:
+                raise ValueError("Корректировка на ноль ничего не меняет.")
+        elif self.amount <= 0:
+            raise ValueError("Сумма должна быть больше нуля.")
+        return self
+
 
 class TransactionUpdate(BaseModel):
     # Смена счёта разрешена: «записала не на тот счёт» — обычная
-    # ошибка, и удалять операцию ради неё незачем. Тип операции
-    # менять по-прежнему нельзя: это другая операция, а не правка.
+    # ошибка, и удалять операцию ради неё незачем.
+    #
+    # Смена типа — тоже: кредит, записанный доходом, или возврат,
+    # записанный доходом, — ошибка разметки, а не другая операция.
+    # Сумма и дата при этом не трогаются, меняется только смысл.
+    kind: OrdinaryKind | None = None
     account_id: uuid.UUID | None = None
     amount: Decimal | None = Field(default=None, gt=0)
     date: datetime | None = None

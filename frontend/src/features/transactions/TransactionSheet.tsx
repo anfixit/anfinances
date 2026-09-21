@@ -15,13 +15,46 @@ import {
   ordinaryTxSchema,
   transferTxSchema,
 } from "@/features/transactions/schemas"
+import type { OrdinaryKind } from "@/features/transactions/transactionsApi"
 import type {
   Transaction,
   Transfer,
 } from "@/features/transactions/types"
 import { AppError } from "@/lib/api/errors"
 
-type Mode = "expense" | "income" | "transfer"
+type Mode = OrdinaryKind | "transfer"
+type InflowKind = "income" | "refund" | "loan" | "adjustment"
+
+const INFLOW_LABELS: Record<InflowKind, string> = {
+  income: "Доход",
+  refund: "Возврат",
+  loan: "Кредит",
+  adjustment: "Корректировка",
+}
+
+// Без подсказки «Возврат» и «Кредит» снова начнут записывать
+// доходом — и график опять покажет плюс там, где минус.
+const INFLOW_HINTS: Record<InflowKind, string> = {
+  income: "Заработок: зарплата, оплата проекта, кэшбэк.",
+  refund:
+    "Вернули деньги за покупку или вернули свою долю. Уменьшит траты " +
+    "в категории — выберите ту, где была покупка.",
+  loan:
+    "Деньги пришли, но это долг: в доходы не попадёт. Сам кредит " +
+    "ведите в разделе «Кредиты».",
+  adjustment:
+    "Правка остатка после сверки. Не доход и не трата — в графики " +
+    "не попадает.",
+}
+
+function isInflowKind(value: Mode): value is InflowKind {
+  return (
+    value === "income" ||
+    value === "refund" ||
+    value === "loan" ||
+    value === "adjustment"
+  )
+}
 
 // datetime-local в текущей таймзоне (YYYY-MM-DDTHH:mm).
 function toLocalInput(value: string | Date): string {
@@ -65,7 +98,16 @@ export function TransactionSheet({
     if (transfer) {
       return "transfer"
     }
-    return transaction?.kind === "income" ? "income" : "expense"
+    const kind = transaction?.kind
+    if (
+      kind === "income" ||
+      kind === "refund" ||
+      kind === "loan" ||
+      kind === "adjustment"
+    ) {
+      return kind
+    }
+    return "expense"
   })
   const [date, setDate] = useState<string>(() => {
     const value = transaction?.date ?? sourceLeg?.date
@@ -165,12 +207,31 @@ export function TransactionSheet({
     setCategoryId("")
   }
 
+  const isInflow = isInflowKind(mode)
+  // У кредита и корректировки категории нет вовсе.
+  const showCategory =
+    mode === "expense" || mode === "income" || mode === "refund"
+  // Переразметка разрешена и при правке: кредит, записанный доходом,
+  // — ошибка разметки, а не другая операция.
+  const inflowOptions: InflowKind[] =
+    mode === "adjustment" || transaction?.kind === "adjustment"
+      ? ["income", "refund", "loan", "adjustment"]
+      : ["income", "refund", "loan"]
+  const changeInflow = (next: InflowKind) => {
+    // Доход и возврат берут категории из разных деревьев, а у
+    // кредита и корректировки их нет — прежний выбор не годится.
+    if (next !== mode) {
+      setCategoryId("")
+    }
+    setMode(next)
+  }
+
   const submitOrdinary = () => {
     const parsed = ordinaryTxSchema.safeParse({
       account_id: accountId,
       amount,
       date,
-      category_id: categoryId || null,
+      category_id: showCategory ? categoryId || null : null,
       required: mode === "expense" && required ? required : null,
       comment: comment || null,
     })
@@ -183,10 +244,13 @@ export function TransactionSheet({
         {
           id: transaction.id,
           input: {
+            ...(mode !== transaction.kind
+              ? { kind: mode as OrdinaryKind }
+              : {}),
             account_id: accountId,
             amount: amount.trim(),
             date: new Date(date).toISOString(),
-            category_id: categoryId || null,
+            category_id: showCategory ? categoryId || null : null,
             required:
               mode === "expense" && required
                 ? (required as never)
@@ -205,10 +269,10 @@ export function TransactionSheet({
     createTx.mutate(
       {
         account_id: accountId,
-        kind: mode === "income" ? "income" : "expense",
+        kind: mode as OrdinaryKind,
         amount: amount.trim(),
         date: new Date(date).toISOString(),
-        category_id: categoryId || null,
+        category_id: showCategory ? categoryId || null : null,
         required: mode === "expense" && required ? (required as never) : null,
         comment: comment || null,
         payee: payee.trim() || null,
@@ -279,7 +343,7 @@ export function TransactionSheet({
           </button>
           <button
             type="button"
-            aria-pressed={mode === "income"}
+            aria-pressed={isInflow}
             onClick={() => changeMode("income")}
           >
             Доход
@@ -294,11 +358,22 @@ export function TransactionSheet({
         </div>
       )}
 
-      {transaction && (
-        <p className="form-note">
-          Тип операции и счёт нельзя изменить. Для переноса на другой
-          счёт удалите операцию и создайте новую.
-        </p>
+      {isInflow && (
+        <>
+          <div className="segmented" role="group" aria-label="Что пришло">
+            {inflowOptions.map((kind) => (
+              <button
+                key={kind}
+                type="button"
+                aria-pressed={mode === kind}
+                onClick={() => changeInflow(kind)}
+              >
+                {INFLOW_LABELS[kind]}
+              </button>
+            ))}
+          </div>
+          <p className="form-note">{INFLOW_HINTS[mode]}</p>
+        </>
       )}
 
       {mode !== "transfer" && (
@@ -328,13 +403,19 @@ export function TransactionSheet({
               onChange={(e) => setAmount(e.target.value)}
             />
           </label>
-          <CategorySelect
-            categories={categories}
-            kind={ordinaryKind}
-            value={categoryId}
-            onChange={setCategoryId}
-            emptyLabel="— без категории —"
-          />
+          {showCategory && (
+            <CategorySelect
+              categories={categories}
+              kind={ordinaryKind}
+              value={categoryId}
+              onChange={setCategoryId}
+              emptyLabel={
+                mode === "refund"
+                  ? "— где была покупка —"
+                  : "— без категории —"
+              }
+            />
+          )}
           {mode === "expense" && (
             <label className="field">
               <span>Обязательность</span>

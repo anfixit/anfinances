@@ -12,10 +12,9 @@ from decimal import Decimal
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.enums import CategoryKind, TransactionKind
+from app.core.enums import TransactionKind
 from app.core.exceptions import ValidationFailedError
 from app.domains.accounts.repository import SqlAccountRepository
-from app.domains.categories.models import Category
 from app.domains.categories.repository import SqlCategoryRepository
 from app.domains.payees.repository import SqlPayeeRepository
 from app.domains.payees.service import PayeeService
@@ -128,10 +127,10 @@ async def test_adjustment_closes_the_gap(
     assert again.difference == Decimal(0)
 
 
-async def test_bank_richer_than_records_creates_income(
+async def test_gap_is_closed_by_an_adjustment_not_income(
     db_session: AsyncSession, ledger: dict[str, uuid.UUID]
 ) -> None:
-    """Не хватает дохода — корректировка приходом, а не расходом."""
+    """Каждая сверка раньше рисовала в графике выдуманный доход."""
     service = _service(db_session)
     await _spend(db_session, ledger, Decimal("300"), EARLY)
 
@@ -142,8 +141,9 @@ async def test_bank_richer_than_records_creates_income(
     )
     tx = await db_session.get(Transaction, row.adjustment_transaction_id)
     assert tx is not None
-    assert tx.kind == TransactionKind.INCOME
+    assert tx.kind == TransactionKind.ADJUSTMENT
     assert tx.amount == Decimal("200")
+    assert tx.category_id is None
 
 
 async def test_operations_after_the_date_are_not_counted(
@@ -212,28 +212,3 @@ async def test_initial_balance_is_part_of_the_computed_balance(
     )
     assert result.computed_balance == Decimal("700")
     assert result.difference == Decimal(0)
-
-
-async def test_adjustment_lands_in_the_given_category(
-    db_session: AsyncSession, ledger: dict[str, uuid.UUID]
-) -> None:
-    category = Category(
-        user_id=ledger["user"],
-        name="Корректировка баланса",
-        kind=CategoryKind.EXPENSE,
-    )
-    db_session.add(category)
-    await db_session.flush()
-
-    service = _service(db_session)
-    await _spend(db_session, ledger, Decimal("300"), EARLY)
-    row = await service.reconcile(
-        ledger["rub"],
-        ledger["user"],
-        _request(
-            "-500", LATE, adjust=True, adjustment_category_id=category.id
-        ),
-    )
-    tx = await db_session.get(Transaction, row.adjustment_transaction_id)
-    assert tx is not None
-    assert tx.category_id == category.id

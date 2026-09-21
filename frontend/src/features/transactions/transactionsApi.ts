@@ -8,9 +8,17 @@ import { api, unwrap } from "@/lib/api/client"
 import type { ApiResponse } from "@/types/api"
 import type { RequiredKind } from "@/types/enums"
 
+// Всё, что записывается обычной формой: без переводов и платежей.
+export type OrdinaryKind =
+  | "expense"
+  | "income"
+  | "refund"
+  | "loan"
+  | "adjustment"
+
 export interface TransactionCreateInput {
   account_id: string
-  kind: "expense" | "income"
+  kind: OrdinaryKind
   amount: string
   date: string
   category_id?: string | null
@@ -20,6 +28,8 @@ export interface TransactionCreateInput {
 }
 
 export interface TransactionUpdateInput {
+  // Переразметка: кредит или возврат, записанные доходом.
+  kind?: OrdinaryKind
   account_id?: string
   amount?: string
   date?: string

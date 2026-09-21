@@ -124,7 +124,9 @@ class SqlPayeeRepository:
             .join(Payee, Payee.id == Transaction.payee_id)
             .where(
                 Transaction.user_id == user_id,
-                Transaction.kind == TransactionKind.EXPENSE,
+                Transaction.kind.in_(
+                    (TransactionKind.EXPENSE, TransactionKind.REFUND)
+                ),
                 Transaction.date >= date_from,
                 Transaction.date < date_to,
             )
@@ -132,7 +134,7 @@ class SqlPayeeRepository:
             .order_by(func.sum(Transaction.amount_rub))
         )
         return [
-            (row[0], row[1], abs(row[2] or Decimal(0)), row[3])
+            (row[0], row[1], -(row[2] or Decimal(0)), row[3])
             for row in result.all()
         ]
 

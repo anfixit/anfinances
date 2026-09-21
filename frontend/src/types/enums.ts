@@ -13,3 +13,7 @@ export type TransactionKind =
   | "income"
   | "transfer"
   | "credit_payment"
+  // Не доход и не трата: получение кредита, возврат, правка учёта.
+  | "loan"
+  | "refund"
+  | "adjustment"

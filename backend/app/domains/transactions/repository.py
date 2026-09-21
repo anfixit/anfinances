@@ -85,9 +85,14 @@ class SqlTransactionRepository:
         if flt.uncategorized:
             # Ноги перевода категории не имеют по определению — они не
             # «неразобранные», и в список к разбору им не место.
+            # Кредиту и корректировке категория не положена вовсе — они
+            # тоже не «неразобранные».
             stmt = stmt.where(
                 Transaction.category_id.is_(None),
                 Transaction.transfer_id.is_(None),
+                Transaction.kind.in_(
+                    (TransactionKind.EXPENSE, TransactionKind.INCOME)
+                ),
             )
         elif flt.category_id is not None:
             stmt = stmt.where(Transaction.category_id == flt.category_id)

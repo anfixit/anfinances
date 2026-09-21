@@ -59,8 +59,10 @@ class StatementRow(BaseModel):
 
     date: str
     amount: str
-    kind: Literal["expense", "income"]
-    category_path: str
+    # refund — возврат за покупку (в категорию той покупки), loan —
+    # получение кредита (без категории). Ни то ни другое не доход.
+    kind: Literal["expense", "income", "refund", "loan"]
+    category_path: str = ""
     comment: str | None = None
     # Кому платили: «Пятёрочка», «Яндекс Go». Не номер платёжного
     # поручения и не «Оплата товара» — имя торговой точки.
@@ -122,6 +124,8 @@ class ToolBox:
             for method in (
                 self.create_expense,
                 self.create_income,
+                self.create_refund,
+                self.record_loan_received,
                 self.create_transfer,
                 self.create_credit_payment,
                 self.preview_statement,
@@ -230,6 +234,71 @@ class ToolBox:
             when,
             comment,
             payee,
+        )
+
+    async def create_refund(
+        self,
+        amount: str,
+        category_path: str,
+        account_name: str | None = None,
+        currency_code: str | None = None,
+        when: str | None = None,
+        comment: str | None = None,
+        payee: str | None = None,
+    ) -> str:
+        """Записать возврат денег за покупку.
+
+        Возврат — не доход. Он ложится в категорию той траты, за
+        которую вернули деньги, и уменьшает её: category_path — из
+        дерева расходов, где была покупка («Здоровье → Лекарства»).
+        Сюда же — когда кто-то вернул свою долю за общую покупку.
+        Кэшбэк — это доход, а не возврат.
+        """
+        return await self._ordinary(
+            "refund",
+            amount,
+            category_path,
+            account_name,
+            currency_code,
+            when,
+            comment,
+            payee,
+            category_kind="expense",
+        )
+
+    async def record_loan_received(
+        self,
+        amount: str,
+        account_name: str,
+        when: str | None = None,
+        comment: str | None = None,
+    ) -> str:
+        """Записать получение кредита на счёт.
+
+        Деньги пришли, но это долг, а не доход: в графики доходов
+        не попадает. Сам кредит — остаток долга и платёж — ведётся
+        отдельно, через create_credit, если его ещё нет.
+        """
+        accounts = await self._client.accounts()
+        account = _find_account(accounts, account_name)
+        if account is None:
+            names = ", ".join(a.name for a in accounts)
+            return f"Счёт не найден. Доступные: {names}"
+        body: dict[str, Any] = {
+            "account_id": account.id,
+            "kind": "loan",
+            "amount": str(amount),
+            "date": self._moment(when),
+        }
+        if comment:
+            body["comment"] = comment
+        created = await self._client.request(
+            "POST", "/transactions", json=body
+        )
+        self.last_created_id = created["id"]
+        return (
+            f"Записано получение кредита: {amount} на «{account.name}». "
+            "В доходы не входит."
         )
 
     async def create_transfer(
@@ -365,16 +434,25 @@ class ToolBox:
         kind: str = "expense",
         when: str | None = None,
         comment: str | None = None,
+        change_kind_to: Literal["expense", "income", "refund", "loan"]
+        | None = None,
     ) -> str:
         """Поправить уже записанную операцию.
 
         Меняются только переданные поля. Счёт сменить можно — если
         валюта нового счёта другая, рублёвая оценка пересчитается
-        сама. Тип операции сменить нельзя: расход вместо дохода —
-        это другая операция, её надо удалить и записать заново.
-        kind нужен, чтобы искать категорию в нужном дереве.
+        сама. kind — в каком дереве искать категорию (expense/income).
+
+        change_kind_to — переразметка: кредит или возврат, записанные
+        доходом, становятся тем, чем были. Сумма и дата остаются. Для
+        refund передай category_path покупки, у loan категории нет.
         """
         body: dict[str, Any] = {}
+        if change_kind_to is not None:
+            body["kind"] = change_kind_to
+            if change_kind_to == "loan" and category_path:
+                return "У получения кредита категории нет — не передавай её."
+            kind = "income" if change_kind_to == "income" else "expense"
         if account_name:
             accounts = await self._client.accounts()
             account = _find_account(accounts, account_name)
@@ -452,8 +530,9 @@ class ToolBox:
         # получатели вообще заведены. Знакомый магазин получает
         # категорию из прошлого раза, а не из догадки модели.
         remembered = await self._remembered_categories()
-        by_id = {
-            path.id: path.path for paths in trees.values() for path in paths
+        ids_by_tree = {
+            tree: {path.id: path.path for path in paths}
+            for tree, paths in trees.items()
         }
 
         resolved: list[dict[str, Any]] = []
@@ -463,26 +542,37 @@ class ToolBox:
             # Модель присылает JSON; в тестах и при прямом вызове —
             # уже готовые объекты. Принимаем и то, и другое.
             row = StatementRow.model_validate(raw)
-            paths = trees.get(row.kind, [])
-            found = find_category_by_path(paths, row.category_path)
-
-            known = (
-                remembered.get(_payee_key(row.payee)) if row.payee else None
-            )
-            # Память сильнее догадки, но только если категория ещё
-            # существует: удалённую подставлять нельзя.
-            if known is not None and known in by_id:
-                category_id: str | None = known
-                label_path = by_id[known]
-                from_memory = True
-            else:
-                category_id = found.id if found is not None else None
-                label_path = row.category_path
+            category_id: str | None
+            if row.kind == "loan":
+                # Получение кредита — не доход и не трата: категории нет.
+                category_id = None
+                label_path = "Получение кредита"
                 from_memory = False
+            else:
+                # Возврат ищет категорию среди расходов: он уменьшает
+                # ту трату, за которую вернули деньги.
+                tree = "income" if row.kind == "income" else "expense"
+                paths = trees.get(tree, [])
+                found = find_category_by_path(paths, row.category_path)
+                # Память по получателю — только для трат и возвратов:
+                # и только если категория ещё жива и из того же дерева.
+                known = (
+                    remembered.get(_payee_key(row.payee))
+                    if row.payee and row.kind != "income"
+                    else None
+                )
+                if known is not None and known in ids_by_tree[tree]:
+                    category_id = known
+                    label_path = ids_by_tree[tree][known]
+                    from_memory = True
+                else:
+                    category_id = found.id if found is not None else None
+                    label_path = row.category_path
+                    from_memory = False
 
-            if category_id is None:
-                unknown.add(row.category_path)
-                continue
+                if category_id is None:
+                    unknown.add(row.category_path)
+                    continue
             item: dict[str, Any] = {
                 "account_id": account.id,
                 "kind": row.kind,
@@ -1570,9 +1660,11 @@ class ToolBox:
         when: str | None,
         comment: str | None,
         payee: str | None = None,
+        category_kind: str | None = None,
     ) -> str:
         categories = await self._client.categories()
-        paths = build_category_paths(categories, kind=kind)
+        # У возврата тип операции свой, а дерево категорий — расходное.
+        paths = build_category_paths(categories, kind=category_kind or kind)
         category = find_category_by_path(paths, category_path)
         if category is None:
             return _unknown_category(category_path, paths)
@@ -1685,11 +1777,15 @@ def _row_label(
     проверит иначе, чем угаданную.
     """
     sign = "−" if row.kind == "expense" else "+"
+    kind_note = "возврат · " if row.kind == "refund" else ""
     day = row.date[:10]
     who = f" · {row.payee}" if row.payee else ""
     tail = f" · {row.comment}" if row.comment else ""
     source = " (из памяти)" if from_memory else ""
-    return f"{day} · {sign}{row.amount} · {category_path}{source}{who}{tail}"
+    return (
+        f"{day} · {sign}{row.amount} · {kind_note}{category_path}"
+        f"{source}{who}{tail}"
+    )
 
 
 def _norm_amount(value: str) -> Decimal:
