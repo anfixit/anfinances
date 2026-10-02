@@ -655,7 +655,7 @@ async def test_statement_preview_skips_existing_rows() -> None:
     client.transactions = [
         {
             "account_id": "a-1",
-            "amount": "300.0000",
+            "amount": "-300.0000",
             "date": "2026-08-01T09:00:00+00:00",
             "kind": "expense",
         }
@@ -712,6 +712,56 @@ async def test_statement_duplicate_inside_one_file_is_kept() -> None:
     assert len(items) == 2
 
 
+async def test_one_recorded_coffee_skips_only_one_of_two() -> None:
+    """Два кофе за день в выписке, один уже записан руками — раньше
+    пропускались оба, и второй терялся молча."""
+    box, client = _toolbox()
+    client.transactions = [
+        {
+            "id": "old-1",
+            "account_id": "a-1",
+            "amount": "-300.0000",
+            "date": "2026-08-01T09:00:00+00:00",
+        }
+    ]
+    preview = await box.preview_statement(
+        account_name="Альфа", rows=[_row(), _row()]
+    )
+    assert "Новых операций: 1" in preview
+    assert "будет пропущено: 1" in preview.casefold()
+
+
+async def test_refund_is_not_a_duplicate_of_the_purchase() -> None:
+    """Купила и вернула в тот же день: суммы равны, направления — нет."""
+    box, client = _toolbox()
+    client.transactions = [
+        {
+            "id": "old-1",
+            "account_id": "a-1",
+            "amount": "-300.0000",
+            "date": "2026-08-01T09:00:00+00:00",
+        }
+    ]
+    preview = await box.preview_statement(
+        account_name="Альфа", rows=[_row(kind="refund")]
+    )
+    assert "Новых операций: 1" in preview
+
+
+async def test_unreadable_date_stops_the_preview() -> None:
+    """Непонятная дата раньше становилась сегодняшней — операция из
+    августа молча уезжала в октябрь."""
+    box, client = _toolbox()
+    result = await box.preview_statement(
+        account_name="Альфа",
+        rows=[_row(), _row(date="31 авг")],
+    )
+    assert "31 авг" in result
+    assert "ничего не занесено" in result
+    assert box.pending_imports == {}
+    assert not [c for c in client.calls if c[0] == "POST"]
+
+
 async def test_statement_preview_pages_through_existing_rows() -> None:
     """Сверка обязана дочитать все страницы, а не первую сотню."""
     box, client = _toolbox()
@@ -728,7 +778,7 @@ async def test_statement_preview_pages_through_existing_rows() -> None:
         {
             "id": "old-dup",
             "account_id": "a-1",
-            "amount": "300.0000",
+            "amount": "-300.0000",
             "date": "2026-08-01T09:00:00+00:00",
         }
     ]

@@ -18,6 +18,7 @@
 сигнатуры — в схему параметров. Это контракт, а не украшение.
 """
 
+from collections import Counter
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
@@ -539,10 +540,17 @@ class ToolBox:
         resolved: list[dict[str, Any]] = []
         labels: list[str] = []
         unknown: set[str] = set()
+        bad_dates: list[str] = []
         for raw in rows:
             # Модель присылает JSON; в тестах и при прямом вызове —
             # уже готовые объекты. Принимаем и то, и другое.
             row = StatementRow.model_validate(raw)
+            # Непонятная дата раньше молча становилась сегодняшней —
+            # и операция из прошлого месяца уезжала в этот.
+            moment = self._strict_moment(row.date)
+            if moment is None:
+                bad_dates.append(row.date or "(пусто)")
+                continue
             category_id: str | None
             if row.kind == "loan":
                 # Получение кредита — не доход и не трата: категории нет.
@@ -578,7 +586,7 @@ class ToolBox:
                 "account_id": account.id,
                 "kind": row.kind,
                 "amount": str(row.amount),
-                "date": self._moment(row.date),
+                "date": moment,
                 "category_id": category_id,
             }
             if row.comment:
@@ -590,22 +598,33 @@ class ToolBox:
 
         # Молча пропустить строку — потерять операцию незаметно.
         # Лучше не заносить ничего и показать, что не разобралось.
-        if unknown:
+        if unknown or bad_dates:
             self.pending_imports.pop(account.id, None)
-            return (
-                "Не нашла категории: "
-                + ", ".join(sorted(unknown))
-                + ". Подбери существующие пути и повтори — "
-                "ничего не занесено."
-            )
+            problems: list[str] = []
+            if unknown:
+                problems.append(
+                    "Не нашла категории: "
+                    + ", ".join(sorted(unknown))
+                    + ". Подбери существующие пути."
+                )
+            if bad_dates:
+                problems.append(
+                    "Не поняла даты: "
+                    + ", ".join(bad_dates[:_MAX_HINTS])
+                    + ". Нужен формат ГГГГ-ММ-ДД."
+                )
+            return " ".join(problems) + " Повтори — ничего не занесено."
 
+        # Счётчик, а не множество: две одинаковые покупки за день — обычное
+        # дело. Если записана одна, пропустить надо одну, а не обе.
         seen = await self._existing_keys(account.id, resolved)
         fresh: list[dict[str, Any]] = []
         lines: list[str] = []
         duplicates = 0
         for item, label in zip(resolved, labels, strict=True):
-            key = (item["date"][:10], _norm_amount(item["amount"]))
-            if key in seen:
+            key = (item["date"][:10], _item_amount(item))
+            if seen[key] > 0:
+                seen[key] -= 1
                 duplicates += 1
                 continue
             fresh.append(item)
@@ -751,7 +770,7 @@ class ToolBox:
 
     async def _existing_keys(
         self, account_id: str, items: list[dict[str, Any]]
-    ) -> set[tuple[str, Decimal]]:
+    ) -> Counter[tuple[str, Decimal]]:
         """Что по этому счёту уже записано в диапазоне выписки.
 
         Страницу API отдаёт не больше чем по сотне, поэтому читаем до
@@ -759,7 +778,7 @@ class ToolBox:
         означал бы тихо задвоенные строки.
         """
         if not items:
-            return set()
+            return Counter()
         dates = sorted(item["date"][:10] for item in items)
         params: dict[str, Any] = {
             "account_id": account_id,
@@ -768,7 +787,7 @@ class ToolBox:
             "limit": _PAGE,
         }
 
-        seen: set[tuple[str, Decimal]] = set()
+        seen: Counter[tuple[str, Decimal]] = Counter()
         for _ in range(_MAX_PAGES):
             rows = await self._client.request(
                 "GET", "/transactions", params=params
@@ -1737,11 +1756,15 @@ class ToolBox:
         """
         if not when:
             return datetime.now(UTC).isoformat()
+        return self._strict_moment(when) or datetime.now(UTC).isoformat()
+
+    def _strict_moment(self, when: str) -> str | None:
+        """То же, но непонятная дата — это None, а не «сейчас»."""
         try:
-            parsed = datetime.fromisoformat(when)
+            parsed = datetime.fromisoformat(when.strip())
         except ValueError:
-            return datetime.now(UTC).isoformat()
-        if len(when) <= 10:
+            return None
+        if len(when.strip()) <= 10:
             # Голая дата: ставим полдень, чтобы пересчёт часового
             # пояса не перекинул операцию в соседние сутки.
             parsed = parsed.replace(hour=12)
@@ -1815,8 +1838,18 @@ def _row_label(
 
 
 def _norm_amount(value: str) -> Decimal:
-    """Сравнивать суммы как числа: «300» и «300.0000» — одно и то же."""
+    """Сравнивать суммы как числа: «300» и «300.0000» — одно и то же.
+
+    Знак сохраняем: покупка на 300 и возврат 300 в тот же день — две
+    разные операции, а не дубль друг друга.
+    """
     try:
-        return abs(Decimal(value))
+        return Decimal(value).normalize()
     except InvalidOperation:
         return Decimal(0)
+
+
+def _item_amount(item: dict[str, Any]) -> Decimal:
+    """Сумма строки выписки со знаком, как её запишет сайт."""
+    amount = abs(_norm_amount(str(item["amount"])))
+    return -amount if item["kind"] == "expense" else amount
