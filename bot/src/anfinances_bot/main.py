@@ -60,6 +60,10 @@ class Deps:
         self.client = client
         self._runner = runner
         self._profile = profile
+        # Набор инструментов один на всех: в нём лежат id созданной
+        # операции и кнопки выбора счёта. Два прогона разом — фраза и
+        # напоминание о встрече — перепутали бы, к чему что относится.
+        self._lock = asyncio.Lock()
 
     async def resolve(
         self,
@@ -70,17 +74,18 @@ class Deps:
     ) -> AgentReply:
         # Счета и категории тянем каждый раз: она их правит на сайте,
         # а устаревший список тихо испортил бы разнесение операций.
-        accounts = await self.client.accounts()
-        categories = await self.client.categories()
-        return await self._runner.run(
-            text,
-            accounts,
-            categories,
-            self._profile.timezone,
-            history=history,
-            images=images,
-            pdfs=pdfs,
-        )
+        async with self._lock:
+            accounts = await self.client.accounts()
+            categories = await self.client.categories()
+            return await self._runner.run(
+                text,
+                accounts,
+                categories,
+                self._profile.timezone,
+                history=history,
+                images=images,
+                pdfs=pdfs,
+            )
 
     async def delete_transaction(self, transaction_id: str) -> None:
         await self.client.request("DELETE", f"/transactions/{transaction_id}")

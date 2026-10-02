@@ -71,6 +71,10 @@ class Session:
     history: list[dict[str, Any]] = field(default_factory=list)
     pending_accounts: list[AccountRead] = field(default_factory=list)
     pending_fix_id: str | None = None
+    # Сообщения одного чата — по очереди. Телеграм отдаёт их боту
+    # параллельно, и второе «а на сбере?» уходило в модель раньше,
+    # чем в истории появлялся ответ на первое.
+    lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
     def remember(self, question: str, answer: str) -> None:
         self.history.append({"role": "user", "content": question})
@@ -268,6 +272,21 @@ async def _run(
     на десятки тысяч знаков иначе уезжала бы в модель на каждом
     следующем сообщении.
     """
+    async with session.lock:
+        await _run_locked(
+            message, deps, session, prompt, remember_as, images, pdfs
+        )
+
+
+async def _run_locked(
+    message: Any,
+    deps: _Deps,
+    session: Session,
+    prompt: str,
+    remember_as: str | None,
+    images: list[tuple[str, str]] | None,
+    pdfs: list[str] | None,
+) -> None:
     try:
         async with _typing(message):
             reply = await deps.resolve(prompt, session.history, images, pdfs)

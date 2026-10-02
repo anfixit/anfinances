@@ -457,3 +457,32 @@ async def test_failing_typing_status_does_not_lose_the_answer() -> None:
     message = _LiveMessage("кофе 300", bot=_BrokenBot())
     await handle_user_text(message, _Deps(AgentReply(text="ок")), Session())
     assert message.sent[0].text == "ок"
+
+
+async def test_second_message_waits_for_the_first_answer() -> None:
+    """«Кофе 300», и сразу «а на сбере?» — второе должно уйти в модель
+    уже с ответом на первое, а не параллельно с ним."""
+    session = Session()
+    release = asyncio.Event()
+
+    class _Ordered(_Deps):
+        async def resolve(self, text: str, history: Any, *a: Any) -> Any:
+            if text == "кофе 300":
+                await release.wait()
+            return await super().resolve(text, history, *a)
+
+    deps = _Ordered(AgentReply(text="Записала"))
+    first = asyncio.create_task(
+        handle_user_text(_Message("кофе 300"), deps, session)
+    )
+    second = asyncio.create_task(
+        handle_user_text(_Message("а на сбере?"), deps, session)
+    )
+    await asyncio.sleep(0)
+    release.set()
+    await asyncio.gather(first, second)
+
+    texts = [text for text, _ in deps.seen]
+    assert texts == ["кофе 300", "а на сбере?"]
+    _, history_of_second = deps.seen[1]
+    assert history_of_second[0]["content"] == "кофе 300"
