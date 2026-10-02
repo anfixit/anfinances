@@ -26,3 +26,9 @@ class ImportResult(BaseModel):
     budgets: int
     recurring: int
     currencies: int
+    # Появились в бэкапе версии 2; у версии 1 их нет — отсюда нули.
+    credits: int = 0
+    credit_payments: int = 0
+    payees: int = 0
+    goals: int = 0
+    reconciliations: int = 0

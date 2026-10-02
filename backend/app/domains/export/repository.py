@@ -17,7 +17,11 @@ from app.domains.accounts.models import Account
 from app.domains.auth.models import User
 from app.domains.budgets.models import Budget
 from app.domains.categories.models import Category
+from app.domains.credits.models import Credit, CreditPayment
 from app.domains.currencies.models import UserCurrency
+from app.domains.goals.models import CategoryGoal
+from app.domains.payees.models import Payee
+from app.domains.reconciliation.models import Reconciliation
 from app.domains.recurring.models import RecurringExpense
 from app.domains.transactions.models import Transaction, Transfer
 
@@ -49,6 +53,20 @@ class ExportRepository(Protocol):
     async def list_recurring(
         self, user_id: uuid.UUID
     ) -> list[RecurringExpense]: ...
+
+    async def list_credits(self, user_id: uuid.UUID) -> list[Credit]: ...
+
+    async def list_credit_payments(
+        self, user_id: uuid.UUID
+    ) -> list[CreditPayment]: ...
+
+    async def list_payees(self, user_id: uuid.UUID) -> list[Payee]: ...
+
+    async def list_goals(self, user_id: uuid.UUID) -> list[CategoryGoal]: ...
+
+    async def list_reconciliations(
+        self, user_id: uuid.UUID
+    ) -> list[Reconciliation]: ...
 
 
 class SqlExportRepository:
@@ -120,5 +138,47 @@ class SqlExportRepository:
             select(RecurringExpense)
             .where(RecurringExpense.user_id == user_id)
             .order_by(RecurringExpense.name)
+        )
+        return list(result.scalars().all())
+
+    async def list_credits(self, user_id: uuid.UUID) -> list[Credit]:
+        result = await self._session.execute(
+            select(Credit)
+            .where(Credit.user_id == user_id)
+            .order_by(Credit.created_at)
+        )
+        return list(result.scalars().all())
+
+    async def list_credit_payments(
+        self, user_id: uuid.UUID
+    ) -> list[CreditPayment]:
+        result = await self._session.execute(
+            select(CreditPayment)
+            .where(CreditPayment.user_id == user_id)
+            .order_by(CreditPayment.date, CreditPayment.id)
+        )
+        return list(result.scalars().all())
+
+    async def list_payees(self, user_id: uuid.UUID) -> list[Payee]:
+        result = await self._session.execute(
+            select(Payee)
+            .where(Payee.user_id == user_id)
+            .order_by(Payee.name_key)
+        )
+        return list(result.scalars().all())
+
+    async def list_goals(self, user_id: uuid.UUID) -> list[CategoryGoal]:
+        result = await self._session.execute(
+            select(CategoryGoal).where(CategoryGoal.user_id == user_id)
+        )
+        return list(result.scalars().all())
+
+    async def list_reconciliations(
+        self, user_id: uuid.UUID
+    ) -> list[Reconciliation]:
+        result = await self._session.execute(
+            select(Reconciliation)
+            .where(Reconciliation.user_id == user_id)
+            .order_by(Reconciliation.date)
         )
         return list(result.scalars().all())

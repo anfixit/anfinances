@@ -70,6 +70,24 @@ class FakeExportRepo:
     async def list_recurring(self, user_id):
         return self.recurring
 
+    # Сущности версии 2 бэкапа. Эти тесты про формат выгрузки, поэтому
+    # списки пустые; с наполнением бэкап проверяется в
+    # test_backup_roundtrip на настоящей базе.
+    async def list_credits(self, user_id):
+        return []
+
+    async def list_credit_payments(self, user_id):
+        return []
+
+    async def list_payees(self, user_id):
+        return []
+
+    async def list_goals(self, user_id):
+        return []
+
+    async def list_reconciliations(self, user_id):
+        return []
+
 
 def _user():
     return SimpleNamespace(
@@ -133,6 +151,13 @@ def _tx(account_id, category_id, *, kind, amount, when=NOW):
         comment="кофе",
         created_at=NOW,
         updated_at=NOW,
+        payee_id=None,
+        payee_name_snapshot=None,
+        category_name_snapshot=None,
+        subcategory_name_snapshot=None,
+        account_name_snapshot=None,
+        to_account_name_snapshot=None,
+        reconciled_at=None,
     )
 
 
@@ -157,7 +182,8 @@ async def test_build_backup_structure() -> None:
         )
     ]
     bundle = await svc.build_backup(USER)
-    assert bundle.version == 1
+    # Версия 2: в бэкап вошли кредиты, получатели, цели и сверки.
+    assert bundle.version == 2
     assert bundle.user.email == "a@b.com"
     assert len(bundle.accounts) == 1
     assert len(bundle.transactions) == 1
@@ -193,6 +219,7 @@ async def test_transactions_csv_human_readable() -> None:
         "Дата",
         "Счёт",
         "Категория",
+        "Получатель",
         "Тип",
         "Обязательность",
         "Сумма",
@@ -202,8 +229,8 @@ async def test_transactions_csv_human_readable() -> None:
     ]
     assert rows[1][1] == "Карта"  # имя счёта, не UUID
     assert rows[1][2] == "Еда"  # имя категории
-    assert rows[1][3] == "Расход"  # тип по-русски
-    assert rows[1][5] == "-300"  # знак сохранён
+    assert rows[1][4] == "Расход"  # тип по-русски
+    assert rows[1][6] == "-300"  # знак сохранён
 
 
 async def test_csv_respects_date_filter() -> None:
@@ -231,7 +258,7 @@ async def test_csv_respects_date_filter() -> None:
     )
     rows = list(csv.reader(io.StringIO(content.lstrip("\ufeff"))))
     assert len(rows) == 2  # заголовок + 1 (мартовская)
-    assert rows[1][5] == "-200"
+    assert rows[1][6] == "-200"
 
 
 async def test_transfer_leg_has_blank_category() -> None:
@@ -243,7 +270,7 @@ async def test_transfer_leg_has_blank_category() -> None:
     content = await svc.transactions_csv(USER, None, None)
     rows = list(csv.reader(io.StringIO(content.lstrip("\ufeff"))))
     assert rows[1][2] == ""  # категория пустая
-    assert rows[1][3] == "Перевод"
+    assert rows[1][4] == "Перевод"
 
 
 async def test_transactions_xlsx_loads() -> None:
@@ -264,4 +291,4 @@ async def test_transactions_xlsx_loads() -> None:
     assert header[0] == "Дата"
     row = [c.value for c in sheet[2]]
     assert row[1] == "Карта"
-    assert row[5] == -300.0  # сумма числом
+    assert row[6] == -300.0  # сумма числом

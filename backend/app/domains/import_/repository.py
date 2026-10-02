@@ -14,7 +14,11 @@ from app.domains.accounts.models import Account
 from app.domains.auth.models import User
 from app.domains.budgets.models import Budget
 from app.domains.categories.models import Category
+from app.domains.credits.models import Credit, CreditPayment
 from app.domains.currencies.models import Currency, UserCurrency
+from app.domains.goals.models import CategoryGoal
+from app.domains.payees.models import Payee
+from app.domains.reconciliation.models import Reconciliation
 from app.domains.recurring.models import RecurringExpense
 from app.domains.transactions.models import Transaction, Transfer
 
@@ -22,7 +26,20 @@ __all__ = ["ImportRepository", "SqlImportRepository"]
 
 # Наличие любой из этих сущностей = аккаунт «не пустой».
 # Категории и валюты юзера — конфиг (есть дефолты), не считаются.
-_DATA_MODELS = (Account, Transaction, Transfer, Budget, RecurringExpense)
+# Цели — считаются: clear_config удаляет категории, а цели держатся
+# на них каскадом и молча исчезли бы вместе с ними.
+_DATA_MODELS = (
+    Account,
+    Transaction,
+    Transfer,
+    Budget,
+    RecurringExpense,
+    Credit,
+    CreditPayment,
+    Payee,
+    CategoryGoal,
+    Reconciliation,
+)
 
 
 class ImportRepository(Protocol):

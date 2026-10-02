@@ -20,12 +20,20 @@ from app.domains.export.schemas import (
     ExportBudget,
     ExportBundle,
     ExportCategory,
+    ExportCredit,
+    ExportCreditPayment,
+    ExportGoal,
+    ExportPayee,
+    ExportReconciliation,
     ExportRecurring,
     ExportTransaction,
     ExportTransfer,
     ExportUser,
     ExportUserCurrency,
 )
+
+# Текущая версия формата бэкапа: что в ней появилось — в ExportBundle.
+BACKUP_VERSION = 2
 
 __all__ = ["ExportService"]
 
@@ -47,6 +55,7 @@ _COLUMNS = (
     ("date", "Дата"),
     ("account", "Счёт"),
     ("category", "Категория"),
+    ("payee", "Получатель"),
     ("kind", "Тип"),
     ("required", "Обязательность"),
     ("amount", "Сумма"),
@@ -71,8 +80,13 @@ class ExportService:
         transactions = await self._repo.list_transactions(user_id, None, None)
         budgets = await self._repo.list_budgets(user_id)
         recurring = await self._repo.list_recurring(user_id)
+        credits = await self._repo.list_credits(user_id)
+        payments = await self._repo.list_credit_payments(user_id)
+        payees = await self._repo.list_payees(user_id)
+        goals = await self._repo.list_goals(user_id)
+        reconciliations = await self._repo.list_reconciliations(user_id)
         return ExportBundle(
-            version=1,
+            version=BACKUP_VERSION,
             exported_at=datetime.now(UTC),
             user=ExportUser.model_validate(user),
             currencies=[
@@ -86,6 +100,15 @@ class ExportService:
             ],
             budgets=[ExportBudget.model_validate(b) for b in budgets],
             recurring=[ExportRecurring.model_validate(r) for r in recurring],
+            credits=[ExportCredit.model_validate(c) for c in credits],
+            credit_payments=[
+                ExportCreditPayment.model_validate(p) for p in payments
+            ],
+            payees=[ExportPayee.model_validate(p) for p in payees],
+            goals=[ExportGoal.model_validate(g) for g in goals],
+            reconciliations=[
+                ExportReconciliation.model_validate(r) for r in reconciliations
+            ],
         )
 
     async def build_backup_json(self, user_id: uuid.UUID) -> str:
@@ -133,7 +156,17 @@ class ExportService:
         accounts = await self._repo.list_accounts(user_id)
         categories = await self._repo.list_categories(user_id)
         account_names = {a.id: a.name for a in accounts}
-        category_names = {c.id: c.name for c in categories}
+        # Полный путь «Еда → Продукты», а не одна подкатегория: иначе
+        # «Обслуживание» из «Дома» и из «Банка» в таблице не различить.
+        by_id = {c.id: c for c in categories}
+        category_paths = {
+            c.id: (
+                f"{by_id[c.parent_id].name} → {c.name}"
+                if c.parent_id is not None and c.parent_id in by_id
+                else c.name
+            )
+            for c in categories
+        }
         transactions = await self._repo.list_transactions(
             user_id, date_from, date_to
         )
@@ -141,12 +174,13 @@ class ExportService:
         for tx in transactions:
             category = ""
             if tx.category_id is not None:
-                category = category_names.get(tx.category_id, "")
+                category = category_paths.get(tx.category_id, "")
             records.append(
                 {
                     "date": tx.date.strftime("%Y-%m-%d"),
                     "account": account_names.get(tx.account_id, ""),
                     "category": category,
+                    "payee": tx.payee_name_snapshot or "",
                     "kind": _KIND_RU.get(tx.kind, str(tx.kind)),
                     "required": (
                         _REQUIRED_RU.get(tx.required, "")
