@@ -114,6 +114,21 @@ async def test_uses_opus_with_adaptive_thinking() -> None:
     await runner.run("кофе 300", [], [], "Europe/Moscow")
     assert messages.kwargs["model"] == "claude-opus-5-5"
     assert messages.kwargs["thinking"] == {"type": "adaptive"}
+    # Простая фраза — низкое усилие: на среднем бот казался зависшим.
+    assert messages.kwargs["output_config"] == {"effort": "low"}
+
+
+async def test_documents_get_medium_effort() -> None:
+    """Выписку разбирать вдумчиво: ошибка в строке дороже секунд."""
+    runner, messages, _ = _pair()
+    await runner.run("разбери", [], [], "Europe/Moscow", pdfs=["JVBERi0="])
+    assert messages.kwargs["output_config"] == {"effort": "medium"}
+
+
+async def test_pasted_statement_text_gets_medium_effort() -> None:
+    runner, messages, _ = _pair()
+    statement = "\n".join(f"2026-09-{d:02d};-300;Кофе" for d in range(1, 29))
+    await runner.run(statement * 5, [], [], "Europe/Moscow")
     assert messages.kwargs["output_config"] == {"effort": "medium"}
 
 

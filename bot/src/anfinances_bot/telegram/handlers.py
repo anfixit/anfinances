@@ -8,7 +8,10 @@
 не к чему привязать, а кнопки под карточкой некуда возвращать.
 """
 
+import asyncio
 import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
@@ -51,6 +54,8 @@ MODEL_DOWN = (
 SPEECH_DOWN = "Не смогла разобрать голосовое. Напиши, пожалуйста, текстом."
 FIX_PROMPT = "Что исправить? Напиши, например: «это был транспорт»."
 DOC_UNREADABLE = "Не смогла прочитать файл."
+# Телеграм держит «печатает…» около пяти секунд.
+_TYPING_EVERY = 4.0
 
 
 @dataclass
@@ -237,7 +242,8 @@ async def _run(
     следующем сообщении.
     """
     try:
-        reply = await deps.resolve(prompt, session.history, images, pdfs)
+        async with _typing(message):
+            reply = await deps.resolve(prompt, session.history, images, pdfs)
     except AnfinancesUnavailableError:
         logger.warning("anfinances недоступен", exc_info=True)
         await _say(message, SITE_DOWN)
@@ -270,6 +276,38 @@ async def _run(
         return
 
     await _say(message, reply.text or "Не поняла, повтори иначе.")
+
+
+@asynccontextmanager
+async def _typing(message: Any) -> AsyncIterator[None]:
+    """Показывать «печатает…», пока агент думает.
+
+    Ответ собирается за несколько заходов в модель, и всё это время
+    чат молчал — казалось, что бот завис. Телеграм гасит статус через
+    пять секунд, поэтому повторяем его, пока не придёт ответ.
+    """
+    bot = getattr(message, "bot", None)
+    chat = getattr(message, "chat", None)
+    if bot is None or chat is None:
+        yield
+        return
+
+    async def keep_typing() -> None:
+        while True:
+            try:
+                await bot.send_chat_action(chat.id, "typing")
+            except Exception:
+                # Статус — украшение: из-за него ответ теряться не должен.
+                logger.debug("Не удалось показать «печатает»", exc_info=True)
+            await asyncio.sleep(_TYPING_EVERY)
+
+    task = asyncio.create_task(keep_typing())
+    try:
+        yield
+    finally:
+        task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
 
 
 async def _say(message: Any, text: str, markup: Any = None) -> None:

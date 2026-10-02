@@ -6,6 +6,7 @@
 """
 
 import logging
+import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, Protocol
@@ -221,12 +222,13 @@ class AgentRunner:
                 max_tokens=MAX_TOKENS,
                 max_iterations=MAX_ITERATIONS,
                 thinking={"type": "adaptive"},
-                output_config={"effort": "medium"},
+                output_config={"effort": _effort_for(text, images, pdfs)},
                 system=system,
                 tools=self._toolbox.tools,
                 messages=messages,
             )
             spend = _Spend()
+            started = time.monotonic()
             final: Any = None
             # Обходим заходы по одному, а не ждём until_done(): иначе
             # расход виден только по последнему ответу.
@@ -240,8 +242,9 @@ class AgentRunner:
             raise AgentUnavailableError(str(exc), _reason_for(exc)) from exc
 
         logger.info(
-            "Прогон агента: заходов %d, вход %d, из кэша %d, в кэш %d, "
-            "выход %d, примерно $%.4f",
+            "Прогон агента: %.1f с, заходов %d, вход %d, из кэша %d, "
+            "в кэш %d, выход %d, примерно $%.4f",
+            time.monotonic() - started,
             spend.turns,
             spend.input_tokens,
             spend.cache_read,
@@ -254,6 +257,27 @@ class AgentRunner:
             created_transaction_id=self._toolbox.last_created_id,
             pending_accounts=list(self._toolbox.pending_accounts),
         )
+
+
+# Сколько знаков вопроса — уже не фраза, а вставленная выписка.
+_LONG_QUESTION = 2000
+
+
+def _effort_for(
+    text: str,
+    images: list[tuple[str, str]] | None,
+    pdfs: list[str] | None,
+) -> str:
+    """Насколько глубоко думать над этим сообщением.
+
+    На среднем усилии модель подолгу думала и над «кофе 300», и бот
+    казался зависшим. Простой фразе хватает низкого. Среднее — для выписок,
+    скриншотов и PDF: там десятки строк, и ошибка в разборе дороже
+    лишних секунд.
+    """
+    if images or pdfs or len(text) > _LONG_QUESTION:
+        return "medium"
+    return "low"
 
 
 def _now_line(timezone_name: str, now: datetime | None) -> str:

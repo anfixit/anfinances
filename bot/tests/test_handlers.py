@@ -1,5 +1,6 @@
 """Обработчики: карточка, кнопки, отказы, продолжение разговора."""
 
+import asyncio
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -378,3 +379,50 @@ async def test_history_keeps_a_real_conversation() -> None:
     kept = [h["content"] for h in session.history]
     assert "сообщение 5" in kept
     assert len(session.history) <= Session.MAX_HISTORY
+
+
+@dataclass
+class _Chat:
+    id: int = 42
+
+
+class _Bot:
+    def __init__(self) -> None:
+        self.actions: list[tuple[int, str]] = []
+
+    async def send_chat_action(self, chat_id: int, action: str) -> None:
+        self.actions.append((chat_id, action))
+
+
+@dataclass
+class _LiveMessage(_Message):
+    bot: _Bot = field(default_factory=_Bot)
+    chat: _Chat = field(default_factory=_Chat)
+
+
+async def test_typing_is_shown_while_the_agent_thinks() -> None:
+    """Пока агент думает, чат не должен молчать — иначе кажется, что
+    бот завис."""
+    message = _LiveMessage("кофе 300")
+    seen_typing: list[bool] = []
+
+    class _Slow(_Deps):
+        async def resolve(self, *args: Any, **kwargs: Any) -> AgentReply:
+            await asyncio.sleep(0)
+            seen_typing.append(bool(message.bot.actions))
+            return await super().resolve(*args, **kwargs)
+
+    await handle_user_text(message, _Slow(AgentReply(text="ок")), Session())
+    assert seen_typing == [True]
+    assert message.bot.actions[0] == (42, "typing")
+    assert message.sent[0].text == "ок"
+
+
+async def test_failing_typing_status_does_not_lose_the_answer() -> None:
+    class _BrokenBot(_Bot):
+        async def send_chat_action(self, chat_id: int, action: str) -> None:
+            raise RuntimeError("telegram недоступен")
+
+    message = _LiveMessage("кофе 300", bot=_BrokenBot())
+    await handle_user_text(message, _Deps(AgentReply(text="ок")), Session())
+    assert message.sent[0].text == "ок"
