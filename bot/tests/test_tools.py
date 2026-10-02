@@ -1245,3 +1245,21 @@ async def test_payee_can_be_marked_varied() -> None:
     assert (method, path) == ("PATCH", "/payees/p-7")
     assert kwargs["json"] == {"varied_categories": True}
     assert "не буду" in result
+
+
+async def test_expense_without_currency_goes_to_the_home_default() -> None:
+    """«Кофе 300» записывается сразу, без кнопок выбора счёта."""
+    client = _FakeClient()
+    box = ToolBox(
+        client,
+        default_accounts={"RUB": "Сбер"},
+        timezone="Europe/Moscow",
+        home_currency="RUB",
+    )
+    result = await box.create_expense(
+        amount="300", category_path="Еда → Кофейни"
+    )
+    post = next(c for c in client.calls if c[0] == "POST")
+    assert post[2]["json"]["account_id"] == "a-2"
+    assert box.pending_accounts == []
+    assert "Записано" in result

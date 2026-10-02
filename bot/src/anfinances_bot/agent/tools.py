@@ -110,9 +110,11 @@ class ToolBox:
         client: _Client,
         default_accounts: dict[str, str],
         timezone: str,
+        home_currency: str | None = None,
     ) -> None:
         self._client = client
         self._default_accounts = default_accounts
+        self._home_currency = home_currency
         self._tz = ZoneInfo(timezone)
         self.pending_imports: dict[str, PendingImport] = {}
         # Нужны хендлеру, чтобы показать карточку и кнопки выбора.
@@ -1721,6 +1723,7 @@ class ToolBox:
             currency_code=currency_code,
             history_account_id=None,
             default_names=self._default_accounts,
+            home_currency=self._home_currency,
         )
         if resolution.account is None:
             self.pending_accounts = resolution.candidates

@@ -125,6 +125,7 @@ async def main() -> None:
         client,
         default_accounts=settings.bot_default_accounts,
         timezone=profile.timezone,
+        home_currency=profile.default_currency,
     )
     runner = AgentRunner(
         AsyncAnthropic(api_key=settings.anthropic_api_key.get_secret_value()),

@@ -149,3 +149,36 @@ def test_empty_account_list_gives_no_candidates() -> None:
     result = _resolve(currency="RUB", accounts=[])
     assert result.account is None  # type: ignore[attr-defined]
     assert result.candidates == []  # type: ignore[attr-defined]
+
+
+def test_no_currency_means_the_home_currency() -> None:
+    """«Кофе 300» — рубли. Раньше фраза без валюты упиралась в кнопки
+    со всеми одиннадцатью счетами."""
+    result = resolve_account(
+        ALL,
+        named=None,
+        currency_code=None,
+        history_account_id=None,
+        default_names=DEFAULTS,
+        home_currency="RUB",
+    )
+    assert result.account == ALFA
+
+
+def test_named_currency_beats_the_home_one() -> None:
+    result = resolve_account(
+        ALL,
+        named=None,
+        currency_code="UZS",
+        history_account_id=None,
+        default_names=DEFAULTS,
+        home_currency="RUB",
+    )
+    assert result.account == UZCARD
+
+
+def test_without_home_currency_buttons_cover_every_account() -> None:
+    """Профиля нет — гадать не о чем, спрашиваем по всем счетам."""
+    result = _resolve()
+    assert result.account is None  # type: ignore[attr-defined]
+    assert result.candidates == ALL  # type: ignore[attr-defined]
