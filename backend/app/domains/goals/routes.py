@@ -41,8 +41,17 @@ async def list_goals(
 ) -> ApiResponse[list[GoalRead]]:
     """Цели вместе с расчётом взноса на указанный месяц."""
     views = await budgets.list_budgets(user.id, month, user.timezone)
+    budgeted = {view.category_id for view in views}
+    unbudgeted = [
+        category_id
+        for category_id in await service.category_ids(user.id)
+        if category_id not in budgeted
+    ]
+    carried = await budgets.envelope_without_plan(
+        user.id, month, unbudgeted, user.timezone
+    )
     year, mon = (int(part) for part in month.split("-"))
-    rows = await service.progress(user.id, date(year, mon, 1), views)
+    rows = await service.progress(user.id, date(year, mon, 1), views, carried)
     return ApiResponse(
         data=[
             GoalRead(

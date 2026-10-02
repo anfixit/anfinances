@@ -407,3 +407,28 @@ async def test_other_user_budget_not_visible() -> None:
     budget.user_id = uuid.uuid4()  # чужой
     svc = _service(repo, [cat])
     assert await svc.list_budgets(USER, "2026-01") == []
+
+
+async def test_envelope_without_plan_keeps_what_was_saved() -> None:
+    """Бюджет на сентябрь ещё не завели — копилка от этого не пустеет:
+    два месяца по 10 000, потрачено 3 000 до и 1 000 в сентябре."""
+    repo = FakeBudgetRepo()
+    cat = _category()
+    _budget(repo, cat.id, "2026-07", "10000", rollover=True)
+    _budget(repo, cat.id, "2026-08", "10000", rollover=True)
+    repo.txs.append(_spend(cat.id, "2026-08", "3000"))
+    repo.txs.append(_spend(cat.id, "2026-09", "1000"))
+    svc = _service(repo, [cat])
+    saved = await svc.envelope_without_plan(USER, "2026-09", [cat.id])
+    assert saved == {cat.id: Decimal("16000")}
+
+
+async def test_envelope_without_plan_counts_child_spending() -> None:
+    repo = FakeBudgetRepo()
+    parent = _category()
+    child = _category(parent_id=parent.id)
+    _budget(repo, parent.id, "2026-08", "5000", rollover=True)
+    repo.txs.append(_spend(child.id, "2026-08", "2000"))
+    svc = _service(repo, [parent, child])
+    saved = await svc.envelope_without_plan(USER, "2026-09", [parent.id])
+    assert saved[parent.id] == Decimal("3000")

@@ -224,3 +224,26 @@ def test_monthly_goal_refuses_a_date() -> None:
             amount=Decimal("100"),
             target_date=date(2026, 12, 1),
         )
+
+
+async def test_saved_money_counts_before_the_month_is_budgeted() -> None:
+    """Первое число, бюджет на месяц ещё не заведён — а в копилке уже
+    40 000. Цель не должна требовать взнос, как будто там ноль."""
+    service = _service([_goal(GoalKind.BY_DATE, "60000", date(2026, 12, 1))])
+    rows = await service.progress(
+        USER, MONTH, [], carried={CATEGORY: Decimal("40000")}
+    )
+    assert rows[0].accumulated == Decimal("40000")
+    assert rows[0].need_this_month == Decimal("4000")
+
+
+async def test_budget_line_wins_over_carried() -> None:
+    """Есть строка бюджета — считаем по ней, она точнее."""
+    service = _service([_goal(GoalKind.BY_DATE, "60000", date(2026, 12, 1))])
+    rows = await service.progress(
+        USER,
+        MONTH,
+        [_budget(rollover_amount="30000")],
+        carried={CATEGORY: Decimal("99999")},
+    )
+    assert rows[0].accumulated == Decimal("30000")

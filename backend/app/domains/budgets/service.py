@@ -60,6 +60,46 @@ class BudgetService:
             timezone_name,
         )
 
+    async def envelope_without_plan(
+        self,
+        user_id: uuid.UUID,
+        month: str,
+        category_ids: list[uuid.UUID],
+        timezone_name: str = DEFAULT_TIMEZONE,
+    ) -> dict[uuid.UUID, Decimal]:
+        """Сколько лежит в конверте, если на этот месяц плана ещё нет.
+
+        Цели к дате нужно накопленное. Бюджет на новый месяц заводят
+        не первого числа, и без строки бюджета цель считала бы, что в
+        копилке ноль, — и требовала бы взнос заново, как с нуля. Тут
+        та же формула, что у переноса остатка: все прошлые планы плюс
+        всё потраченное, включая этот месяц.
+        """
+        if not category_ids:
+            return {}
+        month_date = _month_to_date(month)
+        start, end = month_bounds_utc(month_date, timezone_name)
+        scopes = _build_category_scopes(
+            await self._categories.list_active(user_id)
+        )
+        planned = await self._repo.planned_before(user_id, month_date)
+        spent_before = await self._repo.spent_before(user_id, start)
+        spent_month = await self._repo.spent_by_category(user_id, start, end)
+        result: dict[uuid.UUID, Decimal] = {}
+        for category_id in category_ids:
+            scope = scopes.get(category_id, frozenset({category_id}))
+            spent = sum(
+                (
+                    spent_before.get(c, Decimal(0))
+                    + spent_month.get(c, Decimal(0))
+                    for c in scope
+                ),
+                start=Decimal(0),
+            )
+            # Траты отрицательные — сумма и есть остаток в конверте.
+            result[category_id] = planned.get(category_id, Decimal(0)) + spent
+        return result
+
     async def move_planned(
         self,
         user_id: uuid.UUID,

@@ -12,6 +12,7 @@
 """
 
 import uuid
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date
 from decimal import ROUND_CEILING, Decimal
@@ -90,22 +91,42 @@ class GoalService:
             raise NotFoundError("Цели по этой категории нет.")
         await self._repo.delete(goal)
 
+    async def category_ids(self, user_id: uuid.UUID) -> list[uuid.UUID]:
+        """Категории, на которые поставлены цели."""
+        return [
+            goal.category_id for goal in await self._repo.list_all(user_id)
+        ]
+
     async def progress(
         self,
         user_id: uuid.UUID,
         month: date,
         budgets: list[BudgetRead],
+        carried: Mapping[uuid.UUID, Decimal] | None = None,
     ) -> list[GoalProgress]:
-        """Расчёт по всем целям на указанный месяц."""
+        """Расчёт по всем целям на указанный месяц.
+
+        ``carried`` — остаток в конверте для категорий, у которых на
+        этот месяц ещё нет строки бюджета.
+        """
         by_category = {b.category_id: b for b in budgets}
+        saved = carried or {}
         return [
-            _progress(goal, month, by_category.get(goal.category_id))
+            _progress(
+                goal,
+                month,
+                by_category.get(goal.category_id),
+                saved.get(goal.category_id, Decimal(0)),
+            )
             for goal in await self._repo.list_all(user_id)
         ]
 
 
 def _progress(
-    goal: CategoryGoal, month: date, budget: BudgetRead | None
+    goal: CategoryGoal,
+    month: date,
+    budget: BudgetRead | None,
+    carried: Decimal,
 ) -> GoalProgress:
     planned = budget.planned if budget is not None else Decimal(0)
 
@@ -126,7 +147,9 @@ def _progress(
 
     # Цель к дате. Накоплено — то, что лежит в конверте без плана
     # текущего месяца: план мы как раз и собираемся назначить.
-    accumulated = Decimal(0)
+    # Без строки бюджета на месяц копилка никуда не делась: её
+    # остаток посчитан отдельно и пришёл в carried.
+    accumulated = carried
     if budget is not None:
         accumulated = budget.rollover_amount - budget.spent
 
