@@ -1,5 +1,6 @@
 """Агентный цикл: параметры запроса и обработка отказов."""
 
+import logging
 from typing import Any
 
 import pytest
@@ -14,10 +15,19 @@ class _Block:
         self.text = text
 
 
+class _Usage:
+    def __init__(self) -> None:
+        self.input_tokens = 100
+        self.output_tokens = 20
+        self.cache_read_input_tokens = 900
+        self.cache_creation_input_tokens = 0
+
+
 class _Message:
     def __init__(self, text: str) -> None:
         self.content = [_Block(text)]
         self.stop_reason = "end_turn"
+        self.usage = _Usage()
 
 
 class _FakeToolBox:
@@ -32,13 +42,21 @@ class _FakeToolBox:
 
 
 class _FakeToolRunner:
-    """Изображает вызов инструмента внутри until_done()."""
+    """Изображает два захода агента: вызов инструмента и ответ."""
 
     def __init__(self, box: _FakeToolBox, created_id: str | None) -> None:
         self._box = box
         self._created_id = created_id
+        self._left = 0
 
-    async def until_done(self) -> _Message:
+    def __aiter__(self) -> "_FakeToolRunner":
+        self._left = 2
+        return self
+
+    async def __anext__(self) -> _Message:
+        if self._left == 0:
+            raise StopAsyncIteration
+        self._left -= 1
         if self._created_id is not None:
             self._box.last_created_id = self._created_id
         return _Message("Записала: Еда → Кофейни, 300 ₽")
@@ -94,7 +112,7 @@ def _text_of(message: dict[str, Any]) -> str:
 async def test_uses_opus_with_adaptive_thinking() -> None:
     runner, messages, _ = _pair()
     await runner.run("кофе 300", [], [], "Europe/Moscow")
-    assert messages.kwargs["model"] == "claude-opus-5"
+    assert messages.kwargs["model"] == "claude-opus-5-5"
     assert messages.kwargs["thinking"] == {"type": "adaptive"}
     assert messages.kwargs["output_config"] == {"effort": "medium"}
 
@@ -262,12 +280,33 @@ async def test_attachment_message_is_cached() -> None:
     assert last["cache_control"] == {"type": "ephemeral", "ttl": "5m"}
 
 
-async def test_plain_question_is_not_cached() -> None:
-    """Короткую фразу кэшировать дороже, чем переслать."""
+async def test_plain_question_is_cached_too() -> None:
+    """За короткой фразой стоят сорок прошлых сообщений.
+
+    Их пересылают заново на каждом заходе агента, и платить за них
+    по полной цене дороже, чем один раз записать в кэш.
+    """
     runner, messages, _ = _pair()
     await runner.run("сколько осталось", [], [], "Europe/Moscow")
     last = messages.kwargs["messages"][-1]["content"][-1]
-    assert "cache_control" not in last
+    assert last["cache_control"] == {"type": "ephemeral", "ttl": "5m"}
+
+
+async def test_spend_is_counted_across_all_turns(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Счёт складывается из всех заходов, а не из последнего ответа.
+
+    Последний ответ самый дешёвый: в нём нет ни инструментов, ни
+    выписки. Судить по нему — значит не видеть расхода вовсе.
+    """
+    runner, _, _ = _pair()
+    with caplog.at_level(logging.INFO, logger="anfinances_bot.agent"):
+        await runner.run("кофе 300", [], [], "Europe/Moscow")
+
+    line = "\n".join(record.getMessage() for record in caplog.records)
+    assert "заходов 2" in line
+    assert "из кэша 1800" in line
 
 
 async def test_each_run_arms_the_pending_import() -> None:

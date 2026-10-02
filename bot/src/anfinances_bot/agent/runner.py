@@ -22,10 +22,59 @@ __all__ = [
     "AgentUnavailableError",
 ]
 
-MODEL = "claude-opus-5"
+MODEL = "claude-opus-5-5"
 MAX_TOKENS = 8000
 # Одна фраза редко требует больше: запись, пара чтений, ответ.
 MAX_ITERATIONS = 12
+
+# Цены за миллион токенов на день перехода на opus-5-5. Нужны только
+# для строки в логе: настоящий счёт — в консоли, здесь важно видеть,
+# какая из четырёх статей растёт.
+_PER_MTOK = {
+    "input": 4.0,
+    "output": 20.0,
+    "cache_read": 0.20,
+    # Запись в кэш на пять минут стоит 1.25 от входа.
+    "cache_write": 5.0,
+}
+
+
+@dataclass
+class _Spend:
+    """Расход одного прогона агента — по всем заходам в модель.
+
+    Агент ходит в модель несколько раз на одну фразу, и счёт
+    складывается из всех заходов. По последнему ответу судить нельзя:
+    он самый дешёвый, а платим мы за предыдущие.
+    """
+
+    turns: int = 0
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cache_read: int = 0
+    cache_write: int = 0
+
+    def add(self, usage: Any) -> None:
+        self.turns += 1
+        if usage is None:
+            return
+        self.input_tokens += getattr(usage, "input_tokens", 0) or 0
+        self.output_tokens += getattr(usage, "output_tokens", 0) or 0
+        self.cache_read += (
+            getattr(usage, "cache_read_input_tokens", 0) or 0
+        )
+        self.cache_write += (
+            getattr(usage, "cache_creation_input_tokens", 0) or 0
+        )
+
+    @property
+    def dollars(self) -> float:
+        return (
+            self.input_tokens * _PER_MTOK["input"]
+            + self.output_tokens * _PER_MTOK["output"]
+            + self.cache_read * _PER_MTOK["cache_read"]
+            + self.cache_write * _PER_MTOK["cache_write"]
+        ) / 1_000_000
 
 _WEEKDAYS = (
     "понедельник",
@@ -156,14 +205,14 @@ class AgentRunner:
         question: dict[str, Any] = {
             "type": "text",
             "text": f"{_now_line(timezone_name, now)}\n\n{text}",
+            # Точка кэша после вопроса — а значит, и после всей
+            # переписки. Агент ходит в модель несколько раз на одну
+            # фразу и каждый раз пересылает заново и сорок прошлых
+            # сообщений, и выписку на сотню тысяч токенов; со второго
+            # захода всё это читается вдесятеро дешевле. Пяти минут
+            # хватает: заходы идут секунда за секундой.
+            "cache_control": {"type": "ephemeral", "ttl": "5m"},
         }
-        if images or pdfs:
-            # Агент ходит в модель несколько раз на одну фразу, и
-            # каждый раз пересылает всю переписку — вместе с выпиской
-            # на сотню тысяч токенов. С кэшем повторные шаги читают
-            # её вдесятеро дешевле. Пяти минут хватает: шаги идут
-            # секунда за секундой.
-            question["cache_control"] = {"type": "ephemeral", "ttl": "5m"}
         content.append(question)
         messages.append({"role": "user", "content": content})
 
@@ -178,11 +227,29 @@ class AgentRunner:
                 tools=self._toolbox.tools,
                 messages=messages,
             )
-            final = await runner.until_done()
+            spend = _Spend()
+            final: Any = None
+            # Обходим заходы по одному, а не ждём until_done(): иначе
+            # расход виден только по последнему ответу.
+            async for message in runner:
+                final = message
+                spend.add(getattr(message, "usage", None))
+            if final is None:
+                raise RuntimeError("агент не вернул ни одного сообщения")
         except Exception as exc:
             logger.error("Agent run failed", exc_info=True)
             raise AgentUnavailableError(str(exc), _reason_for(exc)) from exc
 
+        logger.info(
+            "Прогон агента: заходов %d, вход %d, из кэша %d, в кэш %d, "
+            "выход %d, примерно $%.4f",
+            spend.turns,
+            spend.input_tokens,
+            spend.cache_read,
+            spend.cache_write,
+            spend.output_tokens,
+            spend.dollars,
+        )
         return AgentReply(
             text=_text_of(final),
             created_transaction_id=self._toolbox.last_created_id,
