@@ -60,9 +60,7 @@ class _Spend:
             return
         self.input_tokens += getattr(usage, "input_tokens", 0) or 0
         self.output_tokens += getattr(usage, "output_tokens", 0) or 0
-        self.cache_read += (
-            getattr(usage, "cache_read_input_tokens", 0) or 0
-        )
+        self.cache_read += getattr(usage, "cache_read_input_tokens", 0) or 0
         self.cache_write += (
             getattr(usage, "cache_creation_input_tokens", 0) or 0
         )
@@ -75,6 +73,7 @@ class _Spend:
             + self.cache_read * _PER_MTOK["cache_read"]
             + self.cache_write * _PER_MTOK["cache_write"]
         ) / 1_000_000
+
 
 _WEEKDAYS = (
     "понедельник",
