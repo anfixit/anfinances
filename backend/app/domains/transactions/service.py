@@ -74,6 +74,32 @@ def _signed(amount: Decimal, kind: TransactionKind) -> Decimal:
     return amount
 
 
+_INFLOW = frozenset(
+    {TransactionKind.INCOME, TransactionKind.REFUND, TransactionKind.LOAN}
+)
+
+
+def _check_same_direction(amount: Decimal, new_kind: TransactionKind) -> None:
+    """Переразметка не должна менять направление денег.
+
+    Пришедшее может стать доходом, возвратом, кредитом или
+    корректировкой; ушедшее — расходом или корректировкой. Иначе это
+    уже другая операция. Раньше сервис просто ставил знак по новому
+    типу, и корректировка на −9 000, переключённая в доход,
+    становилась +9 000: остаток уезжал на 18 000, сверка ломалась
+    молча.
+    """
+    if new_kind == TransactionKind.ADJUSTMENT:
+        return
+    if (amount > 0) != (new_kind in _INFLOW):
+        direction = "пришедшие" if amount > 0 else "ушедшие"
+        raise ValidationFailedError(
+            f"Это {direction} деньги, а новый тип — про обратное "
+            "направление. Это уже другая операция: удалите эту и "
+            "запишите новую."
+        )
+
+
 async def _category_snapshot(
     categories: CategoryRepository,
     user_id: uuid.UUID,
@@ -211,19 +237,12 @@ class TransactionService:
         else:
             payee = None
 
-        # Смена типа — переразметка, а не новая операция: модуль суммы
-        # и дата остаются, по новому типу меняются знак и категория.
+        # Смена типа — переразметка, а не новая операция: сумма, её знак
+        # и дата остаются, по новому типу меняется только категория.
         new_kind = fields.pop("kind", None)
         if new_kind is not None and new_kind != tx.kind:
-            direction = -1 if tx.amount < 0 else 1
-            magnitude = abs(tx.amount)
+            _check_same_direction(tx.amount, new_kind)
             tx.kind = new_kind
-            tx.amount = (
-                magnitude * direction
-                if new_kind == TransactionKind.ADJUSTMENT
-                else _signed(magnitude, new_kind)
-            )
-            tx.amount_rub = tx.amount * tx.exchange_rate
             if new_kind != TransactionKind.EXPENSE:
                 # Обязательность — свойство траты.
                 tx.required = None

@@ -267,6 +267,55 @@ async def test_income_relabelled_as_refund_needs_an_expense_category(
     assert tx.category_id == pharmacy
 
 
+async def test_negative_adjustment_cannot_become_income(
+    db_session: AsyncSession, ledger: dict[str, uuid.UUID]
+) -> None:
+    """Ровно та ошибка: −9 000 становились +9 000, остаток уезжал на
+    18 000, а сверка ломалась молча."""
+    tx = await _create(db_session, ledger, TransactionKind.ADJUSTMENT, "-9000")
+    with pytest.raises(ValidationFailedError, match="другая операция"):
+        await _tx(db_session).update_transaction(
+            tx.id,
+            ledger["user"],
+            TransactionUpdate(kind=TransactionKind.INCOME),
+        )
+    assert tx.amount == Decimal("-9000")
+    assert tx.kind == TransactionKind.ADJUSTMENT
+
+
+async def test_expense_cannot_become_income(
+    db_session: AsyncSession, ledger: dict[str, uuid.UUID]
+) -> None:
+    food = await _category(db_session, ledger, "Продукты")
+    tx = await _create(
+        db_session, ledger, TransactionKind.EXPENSE, "300", food
+    )
+    with pytest.raises(ValidationFailedError, match="другая операция"):
+        await _tx(db_session).update_transaction(
+            tx.id,
+            ledger["user"],
+            TransactionUpdate(kind=TransactionKind.REFUND),
+        )
+    assert tx.amount == Decimal("-300")
+
+
+async def test_negative_adjustment_can_become_an_expense(
+    db_session: AsyncSession, ledger: dict[str, uuid.UUID]
+) -> None:
+    """Корректировку в минус можно признать тратой — деньги так и
+    ушли, знак не меняется."""
+    food = await _category(db_session, ledger, "Продукты")
+    tx = await _create(db_session, ledger, TransactionKind.ADJUSTMENT, "-200")
+    tx = await _tx(db_session).update_transaction(
+        tx.id,
+        ledger["user"],
+        TransactionUpdate(kind=TransactionKind.EXPENSE, category_id=food),
+    )
+    assert tx.kind == TransactionKind.EXPENSE
+    assert tx.amount == Decimal("-200")
+    assert tx.amount_rub == Decimal("-200")
+
+
 async def test_expense_relabelled_as_adjustment_stays_negative(
     db_session: AsyncSession, ledger: dict[str, uuid.UUID]
 ) -> None:

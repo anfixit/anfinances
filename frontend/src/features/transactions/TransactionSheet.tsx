@@ -217,7 +217,11 @@ export function TransactionSheet({
     mode === "adjustment" || transaction?.kind === "adjustment"
       ? ["income", "refund", "loan", "adjustment"]
       : ["income", "refund", "loan"]
-  const changeInflow = (next: InflowKind) => {
+  // Корректировка в минус — ушедшие деньги: её можно признать
+  // тратой, но не доходом — иначе остаток уедет на двойную сумму.
+  const outflowAdjustment =
+    transaction?.kind === "adjustment" && transaction.amount.startsWith("-")
+  const changeInflow = (next: Mode) => {
     // Доход и возврат берут категории из разных деревьев, а у
     // кредита и корректировки их нет — прежний выбор не годится.
     if (next !== mode) {
@@ -358,7 +362,33 @@ export function TransactionSheet({
         </div>
       )}
 
-      {isInflow && (
+      {outflowAdjustment && (
+        <>
+          <div className="segmented" role="group" aria-label="Что ушло">
+            <button
+              type="button"
+              aria-pressed={mode === "expense"}
+              onClick={() => changeInflow("expense")}
+            >
+              Расход
+            </button>
+            <button
+              type="button"
+              aria-pressed={mode === "adjustment"}
+              onClick={() => changeInflow("adjustment")}
+            >
+              {INFLOW_LABELS.adjustment}
+            </button>
+          </div>
+          <p className="form-note">
+            {mode === "expense"
+              ? "Деньги ушли на покупку — попадут в траты категории."
+              : INFLOW_HINTS.adjustment}
+          </p>
+        </>
+      )}
+
+      {isInflow && !outflowAdjustment && (
         <>
           <div className="segmented" role="group" aria-label="Что пришло">
             {inflowOptions.map((kind) => (
