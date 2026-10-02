@@ -52,6 +52,13 @@ class _Deps:
         self.seen: list[tuple[str, list[dict[str, Any]]]] = []
         self.images: list[tuple[str, str]] | None = None
         self.pdfs: list[str] | None = None
+        self.deleted: list[str] = []
+        self.delete_error: Exception | None = None
+
+    async def delete_transaction(self, transaction_id: str) -> None:
+        if self.delete_error is not None:
+            raise self.delete_error
+        self.deleted.append(transaction_id)
 
     async def resolve(
         self,
@@ -155,12 +162,36 @@ async def test_failed_turn_is_not_remembered() -> None:
 
 
 async def test_delete_button_removes_transaction() -> None:
+    """Кнопка удаляет сама: модель ради этого не нужна."""
     callback = _Callback("del:tx-1", _Message(""))
-    deps = _Deps(AgentReply(text="Операция удалена."))
+    deps = _Deps(AgentReply(text="неважно"))
+    session = Session()
+    await handle_callback(callback, deps, session)
+    assert deps.deleted == ["tx-1"]
+    assert deps.seen == [], "агент не вызывался"
+    assert "удалила" in callback.message.sent[0].text.casefold()
+    assert "tx-1" in session.history[0]["content"]
+
+
+async def test_refused_delete_falls_back_to_the_agent() -> None:
+    """Под карточкой бывает платёж по кредиту — его удаляет агент."""
+    callback = _Callback("del:pay-1", _Message(""))
+    deps = _Deps(AgentReply(text="Платёж удалён."))
+    deps.delete_error = AnfinancesError("Транзакция не найдена.")
     await handle_callback(callback, deps, Session())
     text, _ = deps.seen[0]
-    assert "tx-1" in text
+    assert "pay-1" in text
     assert "удали" in text.casefold()
+    assert callback.message.sent[0].text == "Платёж удалён."
+
+
+async def test_delete_when_site_is_down_says_so() -> None:
+    callback = _Callback("del:tx-1", _Message(""))
+    deps = _Deps(AgentReply(text="неважно"))
+    deps.delete_error = AnfinancesUnavailableError("нет сети")
+    await handle_callback(callback, deps, Session())
+    assert deps.seen == []
+    assert "недоступен" in callback.message.sent[0].text
 
 
 async def test_fix_button_asks_what_to_change() -> None:

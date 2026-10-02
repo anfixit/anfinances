@@ -82,6 +82,9 @@ class Deps:
             pdfs=pdfs,
         )
 
+    async def delete_transaction(self, transaction_id: str) -> None:
+        await self.client.request("DELETE", f"/transactions/{transaction_id}")
+
 
 async def _check_default_accounts(
     client: AnfinancesClient, defaults: dict[str, str]

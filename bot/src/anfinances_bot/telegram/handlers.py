@@ -54,6 +54,7 @@ MODEL_DOWN = (
 SPEECH_DOWN = "Не смогла разобрать голосовое. Напиши, пожалуйста, текстом."
 FIX_PROMPT = "Что исправить? Напиши, например: «это был транспорт»."
 DOC_UNREADABLE = "Не смогла прочитать файл."
+DELETED = "Удалила операцию."
 # Телеграм держит «печатает…» около пяти секунд.
 _TYPING_EVERY = 4.0
 
@@ -86,6 +87,8 @@ class _Deps(Protocol):
         images: list[tuple[str, str]] | None = None,
         pdfs: list[str] | None = None,
     ) -> AgentReply: ...
+
+    async def delete_transaction(self, transaction_id: str) -> None: ...
 
 
 async def handle_user_text(
@@ -124,12 +127,7 @@ async def handle_callback(
         return
 
     if action == "del":
-        await _run(
-            callback.message,
-            deps,
-            session,
-            f"Удали операцию с id {value}.",
-        )
+        await _delete(callback.message, deps, session, value)
         return
 
     if action == "acc":
@@ -219,6 +217,35 @@ async def handle_user_attachments(
         images=[a.image for a in items if a.image is not None],
         pdfs=[a.pdf for a in items if a.pdf is not None],
     )
+
+
+async def _delete(
+    message: Any, deps: _Deps, session: Session, transaction_id: str
+) -> None:
+    """Удалить операцию по кнопке под карточкой.
+
+    Напрямую, без модели: что удалять, кнопка уже знает, и гонять
+    ради этого агента — десяток секунд и лишние деньги. Если сайт
+    отказал — под карточкой бывает и платёж по кредиту, который
+    удаляется иначе, — тогда уже агент разберётся по-старому.
+    """
+    try:
+        await deps.delete_transaction(transaction_id)
+    except AnfinancesUnavailableError:
+        logger.warning("anfinances недоступен", exc_info=True)
+        await _say(message, SITE_DOWN)
+        return
+    except AnfinancesError:
+        logger.info("Прямое удаление не прошло, отдаю агенту", exc_info=True)
+        await _run(
+            message, deps, session, f"Удали операцию с id {transaction_id}."
+        )
+        return
+    # В историю — чтобы на «верни как было» агент знал, о чём речь.
+    session.remember(
+        f"[нажала «Удалить» под операцией {transaction_id}]", DELETED
+    )
+    await _say(message, DELETED)
 
 
 def _texts_of(items: list[Any]) -> str:
