@@ -82,8 +82,19 @@ class ReconciliationService:
         data: ReconcileRequest,
         now: datetime | None = None,
     ) -> Reconciliation:
+        await self._repo.lock_account(account_id, user_id)
         result = await self.preview(account_id, user_id, data)
 
+        if (
+            data.adjust
+            and data.expected_difference is not None
+            and data.expected_difference != result.difference
+        ):
+            raise ValidationFailedError(
+                f"Пока вы смотрели, остаток изменился: расхождение теперь "
+                f"{result.difference}, а не {data.expected_difference}. "
+                f"Проверьте ещё раз."
+            )
         if result.difference != 0 and not data.adjust:
             raise ValidationFailedError(
                 f"Расхождение {result.difference}. Найдите пропавшую или "
@@ -93,6 +104,7 @@ class ReconciliationService:
 
         adjustment_id: uuid.UUID | None = None
         if result.difference != 0:
+            await self._refuse_backdated(account_id, user_id, data.date)
             adjustment_id = await self._adjust(
                 account_id, user_id, data, result.difference
             )
@@ -109,6 +121,28 @@ class ReconciliationService:
                 adjustment_transaction_id=adjustment_id,
             )
         )
+
+    async def _refuse_backdated(
+        self, account_id: uuid.UUID, user_id: uuid.UUID, moment: datetime
+    ) -> None:
+        """Корректировка не может лечь раньше последней сверки.
+
+        Иначе она сдвинет остаток и на дату той сверки: сошедшийся
+        когда-то счёт молча перестанет сходиться, а отметки на
+        операциях продолжат говорить, что всё проверено.
+        """
+        latest = (await self._repo.latest_per_account(user_id)).get(account_id)
+        if latest is None:
+            return
+        if latest.tzinfo is None:
+            # SQLite в тестах отдаёт время без зоны; храним мы UTC.
+            latest = latest.replace(tzinfo=UTC)
+        if moment < latest:
+            raise ValidationFailedError(
+                f"Счёт уже сверен по {latest:%d.%m.%Y}. Корректировка "
+                f"задним числом сломает ту сверку — сверьте на дату не "
+                f"раньше или найдите расхождение в операциях."
+            )
 
     async def _adjust(
         self,

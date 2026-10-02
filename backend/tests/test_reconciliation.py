@@ -25,6 +25,7 @@ from app.domains.reconciliation.schemas import ReconcileRequest
 from app.domains.reconciliation.service import ReconciliationService
 from app.domains.transactions.models import Transaction
 from app.domains.transactions.repository import SqlTransactionRepository
+from app.domains.transactions.schemas import TransactionUpdate
 from app.domains.transactions.service import TransactionService
 
 EARLY = datetime(2026, 8, 5, 12, 0, tzinfo=UTC)
@@ -37,19 +38,22 @@ class _Currencies:
         return Decimal(1)
 
 
-def _service(db_session: AsyncSession) -> ReconciliationService:
-    transactions = TransactionService(
+def _transactions(db_session: AsyncSession) -> TransactionService:
+    return TransactionService(
         SqlTransactionRepository(db_session),
         SqlAccountRepository(db_session),
         SqlCategoryRepository(db_session),
         _Currencies(),  # type: ignore[arg-type]
         PayeeService(SqlPayeeRepository(db_session)),
     )
+
+
+def _service(db_session: AsyncSession) -> ReconciliationService:
     return ReconciliationService(
         SqlReconciliationRepository(db_session),
         SqlAccountRepository(db_session),
         SqlCategoryRepository(db_session),
-        transactions,
+        _transactions(db_session),
     )
 
 
@@ -192,6 +196,121 @@ async def test_second_reconciliation_counts_only_new_operations(
         ledger["rub"], ledger["user"], _request("-350", AFTER)
     )
     assert result.unreconciled_count == 1
+
+
+async def test_repeated_adjustment_click_does_not_adjust_twice(
+    db_session: AsyncSession, ledger: dict[str, uuid.UUID]
+) -> None:
+    """Второй клик «Закрыть корректировкой» видит уже нулевую разницу
+    и отказывается, вместо того чтобы закрыть её ещё раз."""
+    service = _service(db_session)
+    await _spend(db_session, ledger, Decimal("300"), EARLY)
+    request = _request(
+        "-500", LATE, adjust=True, expected_difference=Decimal("-200")
+    )
+
+    await service.reconcile(ledger["rub"], ledger["user"], request)
+    with pytest.raises(ValidationFailedError, match="изменился"):
+        await service.reconcile(ledger["rub"], ledger["user"], request)
+
+    result = await service.preview(
+        ledger["rub"], ledger["user"], _request("-500", LATE)
+    )
+    assert result.difference == Decimal(0)
+
+
+async def test_adjustment_refused_when_balance_moved_since_preview(
+    db_session: AsyncSession, ledger: dict[str, uuid.UUID]
+) -> None:
+    """Между проверкой и подтверждением добавилась операция — закрывать
+    показанную разницу уже нельзя."""
+    service = _service(db_session)
+    await _spend(db_session, ledger, Decimal("300"), EARLY)
+    await _spend(db_session, ledger, Decimal("50"), EARLY)
+
+    with pytest.raises(ValidationFailedError, match="-150"):
+        await service.reconcile(
+            ledger["rub"],
+            ledger["user"],
+            _request(
+                "-500", LATE, adjust=True, expected_difference=Decimal("-200")
+            ),
+        )
+
+
+async def test_adjustment_before_last_reconciliation_is_refused(
+    db_session: AsyncSession, ledger: dict[str, uuid.UUID]
+) -> None:
+    """Корректировка задним числом сдвинула бы остаток и в прошлой
+    сверке, которая уже сошлась."""
+    service = _service(db_session)
+    await _spend(db_session, ledger, Decimal("300"), EARLY)
+    await service.reconcile(
+        ledger["rub"], ledger["user"], _request("-300", LATE)
+    )
+
+    with pytest.raises(ValidationFailedError, match="уже сверен"):
+        await service.reconcile(
+            ledger["rub"],
+            ledger["user"],
+            _request("-400", EARLY, adjust=True),
+        )
+
+
+async def test_zero_difference_reconciliation_may_be_backdated(
+    db_session: AsyncSession, ledger: dict[str, uuid.UUID]
+) -> None:
+    """Без корректировки остаток не двигается — сверить прошлую выписку
+    после свежей можно."""
+    service = _service(db_session)
+    await _spend(db_session, ledger, Decimal("300"), EARLY)
+    await service.reconcile(
+        ledger["rub"], ledger["user"], _request("-300", LATE)
+    )
+    row = await service.reconcile(
+        ledger["rub"], ledger["user"], _request("-300", EARLY)
+    )
+    assert row.adjustment_transaction_id is None
+
+
+async def test_editing_amount_clears_the_reconciled_mark(
+    db_session: AsyncSession, ledger: dict[str, uuid.UUID]
+) -> None:
+    """Сверенная операция с новой суммой — уже не та, что сходилась."""
+    service = _service(db_session)
+    tx = await _spend(db_session, ledger, Decimal("300"), EARLY)
+    await service.reconcile(
+        ledger["rub"], ledger["user"], _request("-300", LATE)
+    )
+    await db_session.refresh(tx)
+    assert tx.reconciled_at is not None
+
+    transactions = _transactions(db_session)
+    await transactions.update_transaction(
+        tx.id, ledger["user"], TransactionUpdate(comment="кофе")
+    )
+    assert tx.reconciled_at is not None, "комментарий остаток не трогает"
+
+    await transactions.update_transaction(
+        tx.id, ledger["user"], TransactionUpdate(amount=Decimal("350"))
+    )
+    assert tx.reconciled_at is None
+
+
+async def test_moving_to_another_account_clears_the_reconciled_mark(
+    db_session: AsyncSession, ledger: dict[str, uuid.UUID]
+) -> None:
+    service = _service(db_session)
+    tx = await _spend(db_session, ledger, Decimal("300"), EARLY)
+    await service.reconcile(
+        ledger["rub"], ledger["user"], _request("-300", LATE)
+    )
+    await db_session.refresh(tx)
+
+    await _transactions(db_session).update_transaction(
+        tx.id, ledger["user"], TransactionUpdate(account_id=ledger["uzs"])
+    )
+    assert tx.reconciled_at is None
 
 
 async def test_initial_balance_is_part_of_the_computed_balance(

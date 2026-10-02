@@ -8,6 +8,7 @@ from typing import Protocol
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.domains.accounts.models import Account
 from app.domains.reconciliation.models import Reconciliation
 from app.domains.transactions.models import Transaction
 
@@ -15,6 +16,10 @@ __all__ = ["ReconciliationRepository", "SqlReconciliationRepository"]
 
 
 class ReconciliationRepository(Protocol):
+    async def lock_account(
+        self, account_id: uuid.UUID, user_id: uuid.UUID
+    ) -> None: ...
+
     async def balance_at(
         self, account_id: uuid.UUID, user_id: uuid.UUID, moment: datetime
     ) -> Decimal: ...
@@ -45,6 +50,22 @@ class ReconciliationRepository(Protocol):
 class SqlReconciliationRepository:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
+
+    async def lock_account(
+        self, account_id: uuid.UUID, user_id: uuid.UUID
+    ) -> None:
+        """Держать строку счёта до конца транзакции.
+
+        Две сверки одного счёта разом — двойной клик, два вкладки —
+        иначе обе увидят одно и то же расхождение и обе его закроют:
+        корректировка запишется дважды. С блокировкой вторая ждёт
+        первую и видит уже сошедшийся остаток.
+        """
+        await self._session.execute(
+            select(Account.id)
+            .where(Account.id == account_id, Account.user_id == user_id)
+            .with_for_update()
+        )
 
     async def balance_at(
         self, account_id: uuid.UUID, user_id: uuid.UUID, moment: datetime

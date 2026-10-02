@@ -64,9 +64,21 @@ export function ReconcileSheet({
           statement_balance: balance.trim(),
           date: endOfDay(date),
           adjust,
+          // Закрываем ровно ту разницу, что показали: если остаток
+          // успел измениться или это повторный клик, сервер откажет.
+          ...(adjust && seen !== null
+            ? { expected_difference: seen.difference }
+            : {}),
         },
       },
-      { onSuccess: onDone, onError },
+      {
+        onSuccess: onDone,
+        onError: (e: unknown) => {
+          // Показанная разница могла устареть — пусть проверят заново.
+          setSeen(null)
+          onError(e)
+        },
+      },
     )
   }
 

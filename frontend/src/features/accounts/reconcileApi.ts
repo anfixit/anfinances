@@ -5,6 +5,7 @@ export interface ReconcileInput {
   statement_balance: string
   date: string
   adjust?: boolean
+  expected_difference?: string
 }
 
 export interface ReconciliationPreview {

@@ -79,6 +79,23 @@ _INFLOW = frozenset(
 )
 
 
+def _balance_mark(tx: Transaction) -> tuple[object, ...]:
+    """То, от чего зависит остаток счёта на дату сверки."""
+    return (tx.account_id, tx.amount, tx.date)
+
+
+def _unreconcile_if_moved(tx: Transaction, before: tuple[object, ...]) -> None:
+    """Снять отметку сверки, если правка сдвинула остаток.
+
+    Сверенная операция, перенесённая на другой счёт, другую дату или
+    с другой суммой, уже не та, что сходилась с банком. Отметка на ней
+    врала бы, что всё проверено, — пусть лучше попадёт в следующую
+    сверку. Комментарий и категорию править можно без последствий.
+    """
+    if _balance_mark(tx) != before:
+        tx.reconciled_at = None
+
+
 def _check_same_direction(amount: Decimal, new_kind: TransactionKind) -> None:
     """Переразметка не должна менять направление денег.
 
@@ -220,6 +237,7 @@ class TransactionService:
             )
 
         fields = data.model_dump(exclude_unset=True)
+        before = _balance_mark(tx)
 
         # Получателя достаём до общего цикла: в модели он лежит
         # идентификатором, а приходит именем.
@@ -301,6 +319,8 @@ class TransactionService:
             else:
                 tx.amount = _signed(fields["amount"], tx.kind)
             tx.amount_rub = tx.amount * tx.exchange_rate
+
+        _unreconcile_if_moved(tx, before)
 
         # Правка категории — тоже повод запомнить её за получателем:
         # именно так исправление одной ошибки чинит все следующие.
@@ -488,6 +508,7 @@ class TransferService:
     ) -> tuple[Transfer, list[Transaction]]:
         transfer, legs = await self.get_transfer(transfer_id, user_id)
         src_leg, dst_leg, fee_leg = self._split_legs(legs)
+        before = {leg.id: _balance_mark(leg) for leg in legs}
 
         src = await self._accounts.get(data.from_account_id, user_id)
         if src is None:
@@ -531,6 +552,9 @@ class TransferService:
         dst_leg.date = data.date
         dst_leg.comment = data.comment
 
+        _unreconcile_if_moved(src_leg, before[src_leg.id])
+        _unreconcile_if_moved(dst_leg, before[dst_leg.id])
+
         if data.fee_amount is None:
             if fee_leg is not None:
                 await self._repo.delete(fee_leg)
@@ -569,6 +593,7 @@ class TransferService:
             fee_leg.exchange_rate = src_rate
             fee_leg.category_id = data.fee_category_id
             fee_leg.date = data.date
+            _unreconcile_if_moved(fee_leg, before[fee_leg.id])
 
         return transfer, [src_leg, dst_leg, fee_leg]
 
