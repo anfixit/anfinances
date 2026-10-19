@@ -47,6 +47,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger("anfinances_bot")
 
+# Один заход в модель. Восьми тысяч токенов ответа хватает с запасом.
+ANTHROPIC_TIMEOUT = 180.0
+
 
 class Deps:
     """То, что нужно обработчику: агент плюс свежие справочники."""
@@ -136,7 +139,14 @@ async def main() -> None:
         home_currency=profile.default_currency,
     )
     runner = AgentRunner(
-        AsyncAnthropic(api_key=settings.anthropic_api_key.get_secret_value()),
+        AsyncAnthropic(
+            api_key=settings.anthropic_api_key.get_secret_value(),
+            # По умолчанию SDK ждёт ответа десять минут и дважды
+            # повторяет — полчаса на один заход. Бот всё это время
+            # молчал, а сообщения копились в очереди за ним.
+            timeout=ANTHROPIC_TIMEOUT,
+            max_retries=1,
+        ),
         toolbox,
     )
     deps = Deps(client, runner, profile)

@@ -4,6 +4,8 @@ import asyncio
 from dataclasses import dataclass, field
 from typing import Any
 
+import pytest
+
 from anfinances_bot.agent.runner import AgentReply, AgentUnavailableError
 from anfinances_bot.anfinances.client import (
     AnfinancesError,
@@ -12,6 +14,7 @@ from anfinances_bot.anfinances.client import (
 from anfinances_bot.anfinances.schemas import AccountRead
 from anfinances_bot.documents import Attachment, DocumentUnreadableError
 from anfinances_bot.speech import SpeechUnavailableError
+from anfinances_bot.telegram import handlers
 from anfinances_bot.telegram.handlers import (
     Session,
     handle_callback,
@@ -486,3 +489,46 @@ async def test_second_message_waits_for_the_first_answer() -> None:
     assert texts == ["кофе 300", "а на сбере?"]
     _, history_of_second = deps.seen[1]
     assert history_of_second[0]["content"] == "кофе 300"
+
+
+async def test_hung_run_is_cut_off_and_reported(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Зависший разбор держал очередь, и бот молчал на «ау, бот»."""
+    monkeypatch.setattr(handlers, "RUN_LIMIT", 0.01)
+
+    class _Hung(_Deps):
+        async def resolve(self, *args: Any, **kwargs: Any) -> Any:
+            await asyncio.sleep(60)
+
+    session = Session()
+    message = _Message("выписка")
+    await handle_user_text(message, _Hung(AgentReply(text="")), session)
+    assert "слишком долго" in message.sent[0].text.casefold()
+    assert not session.lock.locked(), "очередь освободилась"
+
+
+async def test_queued_message_is_acknowledged_at_once() -> None:
+    """Пока разбирается выписка, «ты внёс?» не должно висеть молча."""
+    session = Session()
+    release = asyncio.Event()
+
+    class _Slow(_Deps):
+        async def resolve(self, text: str, history: Any, *a: Any) -> Any:
+            if text == "выписка":
+                await release.wait()
+            return await super().resolve(text, history, *a)
+
+    deps = _Slow(AgentReply(text="ок"))
+    first = asyncio.create_task(
+        handle_user_text(_Message("выписка"), deps, session)
+    )
+    await asyncio.sleep(0)
+    second_message = _Message("ты внёс расходы?")
+    second = asyncio.create_task(
+        handle_user_text(second_message, deps, session)
+    )
+    await asyncio.sleep(0)
+    assert "разбираю предыдущее" in second_message.sent[0].text
+    release.set()
+    await asyncio.gather(first, second)

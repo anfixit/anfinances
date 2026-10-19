@@ -55,6 +55,15 @@ SPEECH_DOWN = "Не смогла разобрать голосовое. Напи
 FIX_PROMPT = "Что исправить? Напиши, например: «это был транспорт»."
 DOC_UNREADABLE = "Не смогла прочитать файл."
 DELETED = "Удалила операцию."
+QUEUED = "Ещё разбираю предыдущее — отвечу на это следом."
+TOO_LONG = (
+    "Слишком долго разбирала и остановилась. Часть операций могла "
+    "успеть записаться — спроси «что записано сегодня» или проверь на "
+    "сайте, прежде чем присылать заново."
+)
+# Предел на весь ответ: выписка на сотню строк укладывается в пару
+# минут, а дольше пяти — это уже зависание, а не работа.
+RUN_LIMIT = 300.0
 # Телеграм держит «печатает…» около пяти секунд.
 _TYPING_EVERY = 4.0
 
@@ -272,6 +281,9 @@ async def _run(
     на десятки тысяч знаков иначе уезжала бы в модель на каждом
     следующем сообщении.
     """
+    if session.lock.locked():
+        # Иначе второе сообщение молча ждёт, и кажется, что бот умер.
+        await _say(message, QUEUED)
     async with session.lock:
         await _run_locked(
             message, deps, session, prompt, remember_as, images, pdfs
@@ -289,7 +301,16 @@ async def _run_locked(
 ) -> None:
     try:
         async with _typing(message):
-            reply = await deps.resolve(prompt, session.history, images, pdfs)
+            reply = await asyncio.wait_for(
+                deps.resolve(prompt, session.history, images, pdfs),
+                RUN_LIMIT,
+            )
+    except TimeoutError:
+        # Без предела зависший разбор держал очередь, и бот молчал на
+        # всё, что приходило следом.
+        logger.error("Прогон агента не уложился в %s с", RUN_LIMIT)
+        await _say(message, TOO_LONG)
+        return
     except AnfinancesUnavailableError:
         logger.warning("anfinances недоступен", exc_info=True)
         await _say(message, SITE_DOWN)
