@@ -27,8 +27,44 @@ const KIND_TABS: { value: TransactionKind | "all"; label: string }[] = [
   { value: "all", label: "Все" },
   { value: "expense", label: "Расходы" },
   { value: "income", label: "Доходы" },
+  { value: "refund", label: "Возвраты" },
   { value: "transfer", label: "Переводы" },
 ]
+
+// Перевод, корректировка и полученный кредит — не трата и не доход:
+// красным и зелёным они притворялись бы тем, чем не являются.
+function amountTone(t: Transaction): "income" | "expense" | "transfer" {
+  if (t.kind === "transfer" || t.kind === "adjustment" || t.kind === "loan") {
+    return "transfer"
+  }
+  return Number(t.amount) >= 0 ? "income" : "expense"
+}
+
+// Вторая нога перевода, если она тоже в списке.
+function incomingLeg(
+  t: Transaction,
+  rows: readonly Transaction[],
+): Transaction | undefined {
+  return rows.find(
+    (row) =>
+      row.transfer_id === t.transfer_id &&
+      row.kind === "transfer" &&
+      Number(row.amount) > 0,
+  )
+}
+
+function hasOutgoingLeg(t: Transaction, rows: readonly Transaction[]): boolean {
+  return rows.some(
+    (row) =>
+      row.transfer_id === t.transfer_id &&
+      row.kind === "transfer" &&
+      Number(row.amount) < 0,
+  )
+}
+
+function stripMinus(value: string): string {
+  return value.startsWith("-") ? value.slice(1) : value
+}
 
 const DELETED_ACCOUNT_LABEL = "Удалённый счёт"
 const UNCATEGORIZED_LABEL = "Без категории"
@@ -242,6 +278,17 @@ export function TransactionsPage() {
   }
 
   const rows = list.data?.pages.flatMap((p) => p.items) ?? []
+  // Перевод — одна строка, а не две: входящую ногу прячем, если в
+  // списке есть исходящая. Без фильтра по счёту обе ноги рядом, и
+  // «−16 000» с «+16 000» выглядели как две разные операции.
+  const shown = rows.filter(
+    (t) =>
+      !(
+        t.kind === "transfer" &&
+        Number(t.amount) > 0 &&
+        hasOutgoingLeg(t, rows)
+      ),
+  )
 
   // Категории фильтра: родители верхнего уровня с вложенными
   // подкатегориями. Сам родитель тоже выбираем (его прямые операции).
@@ -345,14 +392,25 @@ export function TransactionsPage() {
       {list.isSuccess && rows.length === 0 && <p>Операций пока нет.</p>}
 
       <ul className="tx-list">
-        {rows.map((t) => {
-          const isIncome = Number(t.amount) >= 0
+        {shown.map((t) => {
           const label = transactionCategoryLabel(t, catById)
           const account = accountLine(t, rows, accById)
-          const editableTransferId =
+          const incoming =
             t.kind === "transfer" && Number(t.amount) < 0
-              ? t.transfer_id
-              : null
+              ? incomingLeg(t, rows)
+              : undefined
+          // Свёрнутый перевод — сумма без знака, а при обмене валют
+          // видны обе: сколько ушло и сколько пришло.
+          const amountText =
+            incoming === undefined
+              ? formatMoney(t.amount, t.currency_code)
+              : incoming.currency_code === t.currency_code
+                ? formatMoney(stripMinus(t.amount), t.currency_code)
+                : `${formatMoney(stripMinus(t.amount), t.currency_code)} → ${formatMoney(incoming.amount, incoming.currency_code)}`
+          // Править перевод можно с любой ноги: с фильтром по счёту-
+          // получателю исходящей в списке нет.
+          const editableTransferId =
+            t.kind === "transfer" ? t.transfer_id : null
           const editableTransaction =
             !t.transfer_id && t.kind !== "credit_payment"
           return (
@@ -367,9 +425,7 @@ export function TransactionsPage() {
                 )}
                 {t.comment && <span className="tx-comment">{t.comment}</span>}
               </div>
-              <span className={`amount ${isIncome ? "income" : "expense"}`}>
-                {formatMoney(t.amount, t.currency_code)}
-              </span>
+              <span className={`amount ${amountTone(t)}`}>{amountText}</span>
               <div className="tx-actions">
                 {editableTransaction && (
                   <>

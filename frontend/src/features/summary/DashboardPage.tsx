@@ -1,4 +1,5 @@
 import { useState } from "react"
+import { Link } from "react-router-dom"
 import {
   Bar,
   BarChart,
@@ -197,8 +198,13 @@ export function DashboardPage() {
                   : "capital-value num"
               }
             >
+              {/* «Не хватает −6 517 ₽» — двойное отрицание: в
+                  подписи уже сказано, что это нехватка. */}
               {allowance.data.is_short
-                ? formatMoney(allowance.data.safe_to_spend_rub, "RUB")
+                ? formatMoney(
+                    allowance.data.safe_to_spend_rub.replace(/^-/, ""),
+                    "RUB",
+                  )
                 : formatMoney(allowance.data.per_day_rub, "RUB")}
             </span>
             <p className="allowance-note">
@@ -233,27 +239,43 @@ export function DashboardPage() {
           </div>
 
           <div className="card allowance">
-            <span className="capital-label">
-              {allowance.data.is_overplanned
-                ? "Распланировано больше, чем есть"
-                : "Не распределено"}
-            </span>
-            <span
-              className={
-                allowance.data.is_overplanned
-                  ? "capital-value num expense"
-                  : "capital-value num"
-              }
-            >
-              {formatMoney(allowance.data.unallocated_rub, "RUB")}
-            </span>
-            <p className="allowance-note">
-              В планах на месяц ещё не истрачено{" "}
-              <span className="num">
-                {formatMoney(allowance.data.planned_remaining_rub, "RUB")}
-              </span>
-              .
-            </p>
+            {/* Пока планов на месяц нет, «не распределено» в точности
+                равно «свободно» слева — та же цифра в третий раз на
+                экране ничего не добавляла. Говорим, что делать. */}
+            {budgetsQ.data?.length === 0 ? (
+              <>
+                <span className="capital-label">Планов на месяц нет</span>
+                <p className="allowance-note">
+                  Деньги ещё не разложены по категориям.{" "}
+                  <Link to="/budgets">Задать лимиты на «Бюджете»</Link> —
+                  первое правило: у каждого рубля своя работа.
+                </p>
+              </>
+            ) : (
+              <>
+                <span className="capital-label">
+                  {allowance.data.is_overplanned
+                    ? "Распланировано больше, чем есть"
+                    : "Не распределено"}
+                </span>
+                <span
+                  className={
+                    allowance.data.is_overplanned
+                      ? "capital-value num expense"
+                      : "capital-value num"
+                  }
+                >
+                  {formatMoney(allowance.data.unallocated_rub, "RUB")}
+                </span>
+                <p className="allowance-note">
+                  В планах на месяц ещё не истрачено{" "}
+                  <span className="num">
+                    {formatMoney(allowance.data.planned_remaining_rub, "RUB")}
+                  </span>
+                  .
+                </p>
+              </>
+            )}
             {age.data && (
               <p
                 className={

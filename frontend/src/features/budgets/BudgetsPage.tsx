@@ -46,6 +46,15 @@ function rub(value: number): string {
   return formatMoney(String(value), "RUB")
 }
 
+// «9 147 ₽ / 0 ₽» читалось как угодно. Подписываем, что есть что, а
+// трату без лимита называем прямо.
+function figures(spent: number, available: number): string {
+  if (available <= 0 && spent > 0) {
+    return `потрачено ${rub(spent)} · без лимита`
+  }
+  return `потрачено ${rub(spent)} из ${rub(available)}`
+}
+
 interface SheetState {
   categoryId: string
   categoryName: string
@@ -254,7 +263,7 @@ export function BudgetsPage() {
               setExpanded((current) => (current === cat.id ? null : cat.id))
             }}
           >
-            {rub(spent)} / {rub(available)}
+            {figures(spent, available)}
           </button>
         </div>
         <div className="bar">
@@ -476,7 +485,9 @@ export function BudgetsPage() {
                 (total, child) => total + spentOf(child),
                 0,
               )
-          const over = avail > 0 && spentTotal > avail
+          // Трата без лимита — тоже перерасход: денег под неё не
+          // выделяли. Раньше такая строка горела зелёной полосой.
+          const over = spentTotal > avail
           const pct =
             avail > 0
               ? Math.min(100, (spentTotal / avail) * 100)
@@ -495,8 +506,10 @@ export function BudgetsPage() {
               >
                 <span className="group-caret">{isOpen ? "▾" : "▸"}</span>
                 <span className="group-name">{parent.name}</span>
-                <span className="num group-figures">
-                  {rub(spentTotal)} / {rub(avail)}
+                <span
+                  className={`num group-figures${over ? " expense" : ""}`}
+                >
+                  {figures(spentTotal, avail)}
                 </span>
               </button>
               <div className="bar group-bar">
