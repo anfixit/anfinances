@@ -144,7 +144,10 @@ async def test_history_carries_the_previous_turn() -> None:
     await handle_user_text(_Message("а на сбере"), deps, session)
 
     _, history = deps.seen[1]
-    assert history[0] == {"role": "user", "content": "сколько на альфе"}
+    assert history[0] == {
+        "role": "user",
+        "content": [{"type": "text", "text": "сколько на альфе"}],
+    }
     assert history[1] == {"role": "assistant", "content": "145,34 ₽"}
 
 
@@ -173,7 +176,7 @@ async def test_delete_button_removes_transaction() -> None:
     assert deps.deleted == ["tx-1"]
     assert deps.seen == [], "агент не вызывался"
     assert "удалила" in callback.message.sent[0].text.casefold()
-    assert "tx-1" in session.history[0]["content"]
+    assert "tx-1" in session.questions()[0]
 
 
 async def test_refused_delete_falls_back_to_the_agent() -> None:
@@ -398,7 +401,7 @@ async def test_caption_is_remembered_but_body_is_not() -> None:
         _PhotoMessage("", caption=note), deps, session, _reader
     )
 
-    remembered = session.history[0]["content"]
+    remembered = session.questions()[0]
     assert note in remembered
     assert "строка;строка;" not in remembered
 
@@ -410,7 +413,7 @@ async def test_history_keeps_a_real_conversation() -> None:
     for i in range(15):
         await handle_user_text(_Message(f"сообщение {i}"), deps, session)
 
-    kept = [h["content"] for h in session.history]
+    kept = session.questions()
     assert "сообщение 5" in kept
     assert len(session.history) <= Session.MAX_HISTORY
 
@@ -488,7 +491,9 @@ async def test_second_message_waits_for_the_first_answer() -> None:
     texts = [text for text, _ in deps.seen]
     assert texts == ["кофе 300", "а на сбере?"]
     _, history_of_second = deps.seen[1]
-    assert history_of_second[0]["content"] == "кофе 300"
+    assert history_of_second[0]["content"] == [
+        {"type": "text", "text": "кофе 300"}
+    ]
 
 
 async def test_hung_run_is_cut_off_and_reported(
@@ -543,3 +548,31 @@ async def test_spend_notice_follows_the_answer() -> None:
         "Записала",
         "Расход — $8.10 из $10.",
     ]
+
+
+async def test_question_is_remembered_exactly_as_sent() -> None:
+    """В модель ушло «Сейчас: …» плюс фраза — так её и храним, иначе
+    следующий запрос расходится с кэшем уже на этом месте."""
+    session = Session()
+    sent = "Сейчас: 2026-10-20 12:00, вторник.\n\nкофе 300"
+    deps = _Deps(AgentReply(text="Записала", sent_question=sent))
+    await handle_user_text(_Message("кофе 300"), deps, session)
+    assert session.questions() == [sent]
+
+
+def test_history_is_trimmed_rarely_and_by_half() -> None:
+    """По два сообщения на шаге — начало переписки сдвигалось каждый
+    раз, и кэш промахивался на каждом сообщении."""
+    session = Session()
+    for i in range(Session.MAX_HISTORY // 2):
+        session.remember(f"вопрос {i}", "ок")
+    assert len(session.history) == Session.MAX_HISTORY
+    start = session.history[0]
+
+    session.remember("ещё вопрос", "ок")
+    assert len(session.history) == Session.MAX_HISTORY // 2
+    trimmed_start = session.history[0]
+    assert trimmed_start != start
+
+    session.remember("и ещё", "ок")
+    assert session.history[0] == trimmed_start, "начало не сдвинулось"

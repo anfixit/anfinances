@@ -86,10 +86,26 @@ class Session:
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
     def remember(self, question: str, answer: str) -> None:
-        self.history.append({"role": "user", "content": question})
+        # Блоком, как вопрос уходит в модель: кэш сверяет переписку
+        # побайтно, и строка вместо блока могла бы его разминуть.
+        self.history.append(
+            {"role": "user", "content": [{"type": "text", "text": question}]}
+        )
         self.history.append({"role": "assistant", "content": answer})
-        # Держим окно коротким: длинная история дороже, чем полезнее.
-        del self.history[: -self.MAX_HISTORY]
+        # Подрезаем редко и сразу наполовину. Срезая по два сообщения
+        # на каждом шаге, мы сдвигали начало переписки, и кэш
+        # промахивался каждый раз, как только окно заполнялось.
+        if len(self.history) > self.MAX_HISTORY:
+            del self.history[: -(self.MAX_HISTORY // 2)]
+
+    def questions(self) -> list[str]:
+        """Тексты её реплик в истории — для проверок и отладки."""
+        return [
+            block["text"]
+            for item in self.history
+            if item["role"] == "user"
+            for block in item["content"]
+        ]
 
 
 class _Deps(Protocol):
@@ -323,7 +339,9 @@ async def _run_locked(
         await _say(message, f"Не получилось: {exc}")
         return
 
-    session.remember(remember_as or prompt, reply.text)
+    # Документы в историю не кладём — только подпись к ним. Обычную
+    # фразу кладём ровно такой, какой она ушла в модель.
+    session.remember(remember_as or reply.sent_question or prompt, reply.text)
 
     if reply.created_transaction_id is not None:
         await _say(

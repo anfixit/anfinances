@@ -167,6 +167,10 @@ class AgentReply:
     model: str = ""
     # Предупреждение о расходе, если ответ перешёл порог лимита.
     notice: str | None = None
+    # Вопрос ровно в том виде, в каком ушёл в модель, — со строкой
+    # «Сейчас: …». В историю надо класть его, а не исходную фразу:
+    # иначе следующий запрос расходится с кэшем уже на этом месте.
+    sent_question: str = ""
 
 
 class _ToolBox(Protocol):
@@ -232,9 +236,10 @@ class AgentRunner:
             }
             for data in pdfs or []
         )
+        sent_question = f"{_now_line(timezone_name, now)}\n\n{text}"
         question: dict[str, Any] = {
             "type": "text",
-            "text": f"{_now_line(timezone_name, now)}\n\n{text}",
+            "text": sent_question,
             # Точка кэша после вопроса — а значит, и после всей
             # переписки. Агент ходит в модель несколько раз на одну
             # фразу и каждый раз пересылает заново и сорок прошлых
@@ -290,6 +295,7 @@ class AgentRunner:
             pending_accounts=list(self._toolbox.pending_accounts),
             cost=spend.dollars,
             model=model,
+            sent_question=sent_question,
         )
 
 
