@@ -62,8 +62,13 @@ def should_remind(
 def should_hold_meeting(
     now: datetime, day: int, last_meeting_at: datetime | None
 ) -> bool:
-    """Бюджетное совещание — раз в месяц, в назначенный день."""
-    if now.day != day:
+    """Бюджетное совещание — раз в месяц, начиная с назначенного дня.
+
+    Не строго в этот день: если бот весь день лежал — сервер упал,
+    деплой не прошёл, — совещание пропадало до следующего месяца.
+    Теперь оно проходит, как только бот снова на связи.
+    """
+    if now.day < day:
         return False
     if last_meeting_at is None:
         return True

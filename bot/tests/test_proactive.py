@@ -81,11 +81,20 @@ def test_meeting_on_configured_day_once() -> None:
     assert should_hold_meeting(now, day=1, last_meeting_at=now) is False
 
 
-def test_no_meeting_on_other_days() -> None:
+def test_no_meeting_before_the_day() -> None:
     assert (
-        should_hold_meeting(_at(12, day=2), day=1, last_meeting_at=None)
+        should_hold_meeting(_at(12, day=9), day=10, last_meeting_at=None)
         is False
     )
+
+
+def test_missed_meeting_is_held_once_the_bot_is_back() -> None:
+    """Бот лежал весь день совещания — оно не должно пропасть на месяц."""
+    previous = datetime(2026, 7, 15, 12, tzinfo=MSK)
+    late = _at(12, day=19)
+    assert should_hold_meeting(late, day=15, last_meeting_at=previous) is True
+    # А после того как прошло — до следующего месяца тишина.
+    assert should_hold_meeting(late, day=15, last_meeting_at=late) is False
 
 
 def test_meeting_next_month_allowed() -> None:
