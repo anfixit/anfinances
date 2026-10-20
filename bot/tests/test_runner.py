@@ -5,6 +5,7 @@ from typing import Any
 
 import pytest
 
+from anfinances_bot.agent import runner as runner_module
 from anfinances_bot.agent.runner import AgentRunner, AgentUnavailableError
 from anfinances_bot.anfinances.schemas import AccountRead
 
@@ -109,27 +110,49 @@ def _text_of(message: dict[str, Any]) -> str:
     )
 
 
-async def test_uses_opus_with_adaptive_thinking() -> None:
+async def test_simple_phrase_goes_to_sonnet_on_low_effort() -> None:
+    """«Кофе 300» не нужен Opus: Sonnet вдвое дешевле и быстрее."""
     runner, messages, _ = _pair()
     await runner.run("кофе 300", [], [], "Europe/Moscow")
-    assert messages.kwargs["model"] == "claude-opus-5-5"
+    assert messages.kwargs["model"] == "claude-sonnet-5-5"
     assert messages.kwargs["thinking"] == {"type": "adaptive"}
-    # Простая фраза — низкое усилие: на среднем бот казался зависшим.
     assert messages.kwargs["output_config"] == {"effort": "low"}
 
 
-async def test_documents_get_medium_effort() -> None:
+async def test_documents_go_to_opus_on_medium_effort() -> None:
     """Выписку разбирать вдумчиво: ошибка в строке дороже секунд."""
     runner, messages, _ = _pair()
     await runner.run("разбери", [], [], "Europe/Moscow", pdfs=["JVBERi0="])
+    assert messages.kwargs["model"] == "claude-opus-5-5"
     assert messages.kwargs["output_config"] == {"effort": "medium"}
 
 
-async def test_pasted_statement_text_gets_medium_effort() -> None:
+async def test_pasted_statement_text_goes_to_opus() -> None:
     runner, messages, _ = _pair()
     statement = "\n".join(f"2026-09-{d:02d};-300;Кофе" for d in range(1, 29))
     await runner.run(statement * 5, [], [], "Europe/Moscow")
+    assert messages.kwargs["model"] == "claude-opus-5-5"
     assert messages.kwargs["output_config"] == {"effort": "medium"}
+
+
+def test_hour_long_cache_write_is_priced_as_such() -> None:
+    """Часовая запись в кэш вдвое дороже входа, а не в 1.25 раза."""
+
+    class _Split:
+        ephemeral_1h_input_tokens = 1_000_000
+
+    class _Written:
+        input_tokens = 0
+        output_tokens = 0
+        cache_read_input_tokens = 0
+        cache_creation_input_tokens = 1_000_000
+        cache_creation = _Split()
+
+    spend = runner_module._Spend("claude-opus-5-5")
+    spend.add(_Written())
+    assert spend.write_1h == 1_000_000
+    assert spend.write_5m == 0
+    assert spend.dollars == pytest.approx(8.0)
 
 
 async def test_returns_text_and_created_id() -> None:

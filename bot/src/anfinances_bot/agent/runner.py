@@ -23,20 +23,33 @@ __all__ = [
     "AgentUnavailableError",
 ]
 
-MODEL = "claude-opus-5-5"
+# Простая фраза — Sonnet: вдвое дешевле Opus на входе и выходе, а
+# «кофе 300» большего не требует. Выписки, скриншоты и PDF — Opus:
+# там десятки строк, и ошибка в разборе дороже разницы в цене.
+MODEL_SIMPLE = "claude-sonnet-5-5"
+MODEL_DEEP = "claude-opus-5-5"
 MAX_TOKENS = 8000
 # Одна фраза редко требует больше: запись, пара чтений, ответ.
 MAX_ITERATIONS = 12
 
-# Цены за миллион токенов на день перехода на opus-5-5. Нужны только
-# для строки в логе: настоящий счёт — в консоли, здесь важно видеть,
-# какая из четырёх статей растёт.
+# Цены за миллион токенов. Нужны только для строки в логе: настоящий
+# счёт — в консоли, здесь важно видеть, какая статья растёт. Запись в
+# кэш на час вдвое дороже входа, на пять минут — в 1.25 раза.
 _PER_MTOK = {
-    "input": 4.0,
-    "output": 20.0,
-    "cache_read": 0.20,
-    # Запись в кэш на пять минут стоит 1.25 от входа.
-    "cache_write": 5.0,
+    MODEL_SIMPLE: {
+        "input": 2.0,
+        "output": 10.0,
+        "cache_read": 0.20,
+        "write_5m": 2.5,
+        "write_1h": 4.0,
+    },
+    MODEL_DEEP: {
+        "input": 4.0,
+        "output": 20.0,
+        "cache_read": 0.20,
+        "write_5m": 5.0,
+        "write_1h": 8.0,
+    },
 }
 
 
@@ -49,11 +62,13 @@ class _Spend:
     он самый дешёвый, а платим мы за предыдущие.
     """
 
+    model: str
     turns: int = 0
     input_tokens: int = 0
     output_tokens: int = 0
     cache_read: int = 0
-    cache_write: int = 0
+    write_5m: int = 0
+    write_1h: int = 0
 
     def add(self, usage: Any) -> None:
         self.turns += 1
@@ -62,17 +77,27 @@ class _Spend:
         self.input_tokens += getattr(usage, "input_tokens", 0) or 0
         self.output_tokens += getattr(usage, "output_tokens", 0) or 0
         self.cache_read += getattr(usage, "cache_read_input_tokens", 0) or 0
-        self.cache_write += (
-            getattr(usage, "cache_creation_input_tokens", 0) or 0
-        )
+        written = getattr(usage, "cache_creation_input_tokens", 0) or 0
+        split = getattr(usage, "cache_creation", None)
+        hour = getattr(split, "ephemeral_1h_input_tokens", 0) or 0
+        # Часовая запись вдвое дороже входа, и раньше она считалась по
+        # пятиминутной цене — расход в логе выходил заниженным.
+        self.write_1h += hour
+        self.write_5m += max(written - hour, 0)
+
+    @property
+    def cache_write(self) -> int:
+        return self.write_5m + self.write_1h
 
     @property
     def dollars(self) -> float:
+        price = _PER_MTOK[self.model]
         return (
-            self.input_tokens * _PER_MTOK["input"]
-            + self.output_tokens * _PER_MTOK["output"]
-            + self.cache_read * _PER_MTOK["cache_read"]
-            + self.cache_write * _PER_MTOK["cache_write"]
+            self.input_tokens * price["input"]
+            + self.output_tokens * price["output"]
+            + self.cache_read * price["cache_read"]
+            + self.write_5m * price["write_5m"]
+            + self.write_1h * price["write_1h"]
         ) / 1_000_000
 
 
@@ -216,18 +241,19 @@ class AgentRunner:
         content.append(question)
         messages.append({"role": "user", "content": content})
 
+        model, effort = _plan_for(text, images, pdfs)
         try:
             runner = self._anthropic.beta.messages.tool_runner(
-                model=MODEL,
+                model=model,
                 max_tokens=MAX_TOKENS,
                 max_iterations=MAX_ITERATIONS,
                 thinking={"type": "adaptive"},
-                output_config={"effort": _effort_for(text, images, pdfs)},
+                output_config={"effort": effort},
                 system=system,
                 tools=self._toolbox.tools,
                 messages=messages,
             )
-            spend = _Spend()
+            spend = _Spend(model)
             started = time.monotonic()
             final: Any = None
             # Обходим заходы по одному, а не ждём until_done(): иначе
@@ -242,8 +268,9 @@ class AgentRunner:
             raise AgentUnavailableError(str(exc), _reason_for(exc)) from exc
 
         logger.info(
-            "Прогон агента: %.1f с, заходов %d, вход %d, из кэша %d, "
+            "Прогон агента (%s): %.1f с, заходов %d, вход %d, из кэша %d, "
             "в кэш %d, выход %d, примерно $%.4f",
+            model,
             time.monotonic() - started,
             spend.turns,
             spend.input_tokens,
@@ -263,21 +290,23 @@ class AgentRunner:
 _LONG_QUESTION = 2000
 
 
-def _effort_for(
+def _plan_for(
     text: str,
     images: list[tuple[str, str]] | None,
     pdfs: list[str] | None,
-) -> str:
-    """Насколько глубоко думать над этим сообщением.
+) -> tuple[str, str]:
+    """Какой моделью и насколько глубоко разбирать это сообщение.
 
-    На среднем усилии модель подолгу думала и над «кофе 300», и бот
-    казался зависшим. Простой фразе хватает низкого. Среднее — для выписок,
-    скриншотов и PDF: там десятки строк, и ошибка в разборе дороже
-    лишних секунд.
+    Простая фраза — Sonnet на низком усилии: быстро и вдвое дешевле.
+    Выписки, скриншоты, PDF и вставленный длинный текст — Opus на
+    среднем: там десятки строк, и ошибка в разборе дороже.
+
+    У каждой модели усилие одно и то же всегда: смена усилия между
+    запросами сбрасывает кэш, и префикс переписывался бы заново.
     """
     if images or pdfs or len(text) > _LONG_QUESTION:
-        return "medium"
-    return "low"
+        return MODEL_DEEP, "medium"
+    return MODEL_SIMPLE, "low"
 
 
 def _now_line(timezone_name: str, now: datetime | None) -> str:
