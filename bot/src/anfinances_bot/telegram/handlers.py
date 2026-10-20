@@ -331,18 +331,20 @@ async def _run_locked(
             reply.text,
             transaction_card(reply.created_transaction_id),
         )
-        return
-
-    if reply.pending_accounts:
+    elif reply.pending_accounts:
         session.pending_accounts = list(reply.pending_accounts)
         await _say(
             message,
             reply.text or "С какого счёта?",
             account_choice(reply.pending_accounts),
         )
-        return
+    else:
+        await _say(message, reply.text or "Не поняла, повтори иначе.")
 
-    await _say(message, reply.text or "Не поняла, повтори иначе.")
+    # Предупреждение о расходе — отдельным сообщением после ответа:
+    # внутри ответа его легко пролистать.
+    if reply.notice:
+        await _say(message, reply.notice)
 
 
 @asynccontextmanager

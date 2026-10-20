@@ -162,6 +162,11 @@ class AgentReply:
     text: str
     created_transaction_id: str | None = None
     pending_accounts: list[AccountRead] = field(default_factory=list)
+    # Оценка стоимости ответа и модель — для учёта расхода за месяц.
+    cost: float = 0.0
+    model: str = ""
+    # Предупреждение о расходе, если ответ перешёл порог лимита.
+    notice: str | None = None
 
 
 class _ToolBox(Protocol):
@@ -283,6 +288,8 @@ class AgentRunner:
             text=_text_of(final),
             created_transaction_id=self._toolbox.last_created_id,
             pending_accounts=list(self._toolbox.pending_accounts),
+            cost=spend.dollars,
+            model=model,
         )
 
 

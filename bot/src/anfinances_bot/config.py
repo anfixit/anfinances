@@ -47,6 +47,9 @@ class BotSettings(BaseSettings):
     bot_quiet_hours: Annotated[tuple[int, int], NoDecode] = (23, 9)
     # 29–31 есть не в каждом месяце: совещание бы пропускалось.
     bot_budget_meeting_day: int = Field(default=15, ge=1, le=28)
+    # Лимит расхода на модель в месяц, долларов. На 80% и 100% бот
+    # предупреждает сам; /расход показывает, сколько набежало.
+    bot_monthly_limit_usd: float = Field(default=10.0, gt=0)
 
     @field_validator("telegram_allowed_user_ids", mode="before")
     @classmethod

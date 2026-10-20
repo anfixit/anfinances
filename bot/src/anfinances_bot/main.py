@@ -30,6 +30,7 @@ from anfinances_bot.documents import (
 )
 from anfinances_bot.proactive_loop import run_proactive_loop
 from anfinances_bot.speech import SpeechUnavailableError, transcribe
+from anfinances_bot.spend import SpendLog
 from anfinances_bot.state import BotState
 from anfinances_bot.telegram.access import AllowlistMiddleware
 from anfinances_bot.telegram.albums import AlbumBuffer
@@ -59,10 +60,12 @@ class Deps:
         client: AnfinancesClient,
         runner: AgentRunner,
         profile: UserProfile,
+        spend: SpendLog,
     ) -> None:
         self.client = client
         self._runner = runner
         self._profile = profile
+        self.spend = spend
         # Набор инструментов один на всех: в нём лежат id созданной
         # операции и кнопки выбора счёта. Два прогона разом — фраза и
         # напоминание о встрече — перепутали бы, к чему что относится.
@@ -80,7 +83,7 @@ class Deps:
         async with self._lock:
             accounts = await self.client.accounts()
             categories = await self.client.categories()
-            return await self._runner.run(
+            reply = await self._runner.run(
                 text,
                 accounts,
                 categories,
@@ -89,6 +92,8 @@ class Deps:
                 images=images,
                 pdfs=pdfs,
             )
+        reply.notice = self.spend.add(reply.cost, reply.model)
+        return reply
 
     async def delete_transaction(self, transaction_id: str) -> None:
         await self.client.request("DELETE", f"/transactions/{transaction_id}")
@@ -149,7 +154,11 @@ async def main() -> None:
         ),
         toolbox,
     )
-    deps = Deps(client, runner, profile)
+    spend = SpendLog(
+        Path(settings.bot_state_path).with_name("spend.json"),
+        settings.bot_monthly_limit_usd,
+    )
+    deps = Deps(client, runner, profile, spend)
     speech = AsyncOpenAI(api_key=settings.openai_api_key.get_secret_value())
 
     # Разметку модели переводим в HTML сами; без parse_mode телеграм
@@ -183,6 +192,13 @@ async def main() -> None:
             path = Path(folder) / "voice.ogg"
             await bot.download(message.voice, destination=path)
             return await transcribe(speech, path, settings.speech_model)
+
+    # Раньше общего текстового: иначе «/расход» ушёл бы в модель и
+    # сам стоил бы денег. Кириллических команд телеграм не знает,
+    # поэтому ловим текст целиком; /spend — латинский двойник.
+    @dispatcher.message(F.text.in_({"/расход", "/spend"}))
+    async def _on_spend(message: Message) -> None:
+        await message.answer(spend.report())
 
     @dispatcher.message(F.text)
     async def _on_text(message: Message) -> None:

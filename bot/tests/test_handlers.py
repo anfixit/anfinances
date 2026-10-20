@@ -532,3 +532,14 @@ async def test_queued_message_is_acknowledged_at_once() -> None:
     assert "разбираю предыдущее" in second_message.sent[0].text
     release.set()
     await asyncio.gather(first, second)
+
+
+async def test_spend_notice_follows_the_answer() -> None:
+    """Предупреждение о лимите — отдельным сообщением после ответа."""
+    message = _Message("кофе 300")
+    reply = AgentReply(text="Записала", notice="Расход — $8.10 из $10.")
+    await handle_user_text(message, _Deps(reply), Session())
+    assert [s.text for s in message.sent] == [
+        "Записала",
+        "Расход — $8.10 из $10.",
+    ]
