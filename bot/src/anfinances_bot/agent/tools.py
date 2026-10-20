@@ -28,6 +28,7 @@ from zoneinfo import ZoneInfo
 from anthropic import beta_async_tool
 from pydantic import BaseModel
 
+from anfinances_bot.agent.prompt import YNAB_REFERENCE
 from anfinances_bot.anfinances.schemas import AccountRead, CategoryRead
 from anfinances_bot.resolve.accounts import resolve_account
 from anfinances_bot.resolve.categories import (
@@ -176,8 +177,14 @@ class ToolBox:
                 self.get_credit_projection,
                 self.get_money_age,
                 self.list_credit_payments,
+                self.get_method_reference,
             )
         ]
+        # Схемы уходят в модель с каждым сообщением. Пустые подписи и
+        # громоздкая запись необязательных полей — треть их объёма, а
+        # проверку аргументов SDK делает по сигнатуре, не по схеме.
+        for tool in self.tools:
+            tool.input_schema = compact_schema(tool.input_schema)
 
     # --- запись ---------------------------------------------------
 
@@ -1691,6 +1698,17 @@ class ToolBox:
             )
         )
 
+    async def get_method_reference(self) -> str:
+        """Справочник по методу ВНБ: как раскладывать деньги по
+        конвертам, истинные расходы, перенос лимитов, возраст денег —
+        и какими инструментами это делать.
+
+        Открывай, прежде чем советовать или планировать бюджет:
+        «как распределить зарплату», «на что копить», «что урезать».
+        Для записи трат и простых вопросов не нужен.
+        """
+        return YNAB_REFERENCE
+
     async def get_money_age(self) -> str:
         """Покрыты ли траты этого месяца доходом прошлого."""
         return str(await self._client.request("GET", "/summary/money-age"))
@@ -1774,6 +1792,49 @@ class ToolBox:
         if parsed.tzinfo is None:
             parsed = parsed.replace(tzinfo=self._tz)
         return parsed.astimezone(UTC).isoformat()
+
+
+def compact_schema(schema: Any) -> Any:
+    """Ужать JSON-схему инструмента, не меняя её смысла.
+
+    Убирает служебные ``title`` и пишет необязательное поле как
+    ``{"type": "string"}`` вместо ``anyOf`` со ``string`` и ``null``
+    и ``"default": null``: модель и так не передаёт поле, которого
+    нет в ``required``.
+    """
+    return _compact(schema, in_properties=False)
+
+
+def _compact(node: Any, *, in_properties: bool) -> Any:
+    if isinstance(node, list):
+        return [_compact(item, in_properties=False) for item in node]
+    if not isinstance(node, dict):
+        return node
+    if in_properties:
+        # Ключи здесь — имена параметров: параметр по имени «title»
+        # трогать нельзя, сжимаем только их схемы.
+        return {
+            name: _compact(value, in_properties=False)
+            for name, value in node.items()
+        }
+    out = {
+        key: _compact(value, in_properties=key in ("properties", "$defs"))
+        for key, value in node.items()
+        if key != "title"
+    }
+    variants = out.get("anyOf")
+    null = {"type": "null"}
+    if (
+        isinstance(variants, list)
+        and len(variants) == 2
+        and null in variants
+        and "default" in out
+        and out["default"] is None
+    ):
+        kept = next(v for v in variants if v != null)
+        rest = {k: v for k, v in out.items() if k not in ("anyOf", "default")}
+        out = {**kept, **rest}
+    return out
 
 
 def _unknown_category(path: str, paths: list[Any]) -> str:

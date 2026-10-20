@@ -1,11 +1,12 @@
 """Инструменты агента: запись и чтение через API anfinances."""
 
+import json
 from decimal import Decimal
 from typing import Any
 
 import pytest
 
-from anfinances_bot.agent.tools import ToolBox
+from anfinances_bot.agent.tools import ToolBox, compact_schema
 from anfinances_bot.anfinances.schemas import AccountRead, CategoryRead
 
 DEFAULTS = {"RUB": "Альфа", "UZS": "Наличные сумы"}
@@ -502,6 +503,7 @@ async def test_toolbox_exposes_all_tools() -> None:
         "get_credit_projection",
         "get_money_age",
         "list_credit_payments",
+        "get_method_reference",
     }
 
 
@@ -1263,3 +1265,58 @@ async def test_expense_without_currency_goes_to_the_home_default() -> None:
     assert post[2]["json"]["account_id"] == "a-2"
     assert box.pending_accounts == []
     assert "Записано" in result
+
+
+def test_tool_schemas_are_compact() -> None:
+    """Схемы едут в модель с каждым сообщением: без пустых подписей и
+    без anyOf с null для необязательных полей."""
+    box, _ = _toolbox()
+    expense = next(t for t in box.tools if t.name == "create_expense")
+    schema = expense.to_dict()["input_schema"]
+    text = json.dumps(schema, ensure_ascii=False)
+    assert '"title"' not in text
+    assert "anyOf" not in text
+    assert schema["properties"]["account_name"] == {"type": "string"}
+    assert set(schema["required"]) == {"amount", "category_path"}
+
+
+def test_compact_schema_keeps_a_parameter_named_title() -> None:
+    """Ключ «title» внутри properties — имя параметра, а не подпись."""
+    schema = {
+        "type": "object",
+        "title": "Args",
+        "properties": {
+            "title": {"type": "string", "title": "Title"},
+            "note": {
+                "anyOf": [{"type": "string"}, {"type": "null"}],
+                "default": None,
+                "title": "Note",
+            },
+        },
+        "required": ["title"],
+    }
+    assert compact_schema(schema) == {
+        "type": "object",
+        "properties": {
+            "title": {"type": "string"},
+            "note": {"type": "string"},
+        },
+        "required": ["title"],
+    }
+
+
+def test_compact_schema_keeps_nested_rows_valid() -> None:
+    """У выписки строки описаны в $defs — их тоже ужимаем, не теряя."""
+    box, _ = _toolbox()
+    preview = next(t for t in box.tools if t.name == "preview_statement")
+    schema = preview.to_dict()["input_schema"]
+    row = next(iter(schema["$defs"].values()))
+    assert set(row["required"]) >= {"date", "amount", "kind"}
+    assert row["properties"]["payee"] == {"type": "string"}
+
+
+async def test_method_reference_is_available_on_demand() -> None:
+    box, client = _toolbox()
+    text = await box.get_method_reference()
+    assert "Дайте деньгам созреть" in text
+    assert client.calls == []

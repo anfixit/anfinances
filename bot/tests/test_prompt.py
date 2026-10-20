@@ -83,12 +83,13 @@ def test_reference_covers_all_four_rules() -> None:
         assert rule in lowered
 
 
-def test_reference_is_in_the_cached_prefix() -> None:
-    """Справочник статичен — он обязан попадать под кэш."""
+def test_reference_is_opened_on_demand_not_sent_every_time() -> None:
+    """Справочник нужен для советов, а не для «кофе 300»: в префиксе
+    он ехал бы с каждым сообщением. Инструкция говорит, где его взять."""
     blocks = build_system_blocks(ACCOUNTS, CATEGORIES, "Europe/Moscow")
     joined = "\n".join(str(b["text"]) for b in blocks)
-    assert "Дайте деньгам созреть" in joined
-    assert blocks[-1]["cache_control"] == {"type": "ephemeral", "ttl": "1h"}
+    assert "Дайте деньгам созреть" not in joined
+    assert "get_method_reference" in SYSTEM_PROMPT
 
 
 def test_reference_maps_rules_onto_tools() -> None:
