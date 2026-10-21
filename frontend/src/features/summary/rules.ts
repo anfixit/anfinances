@@ -46,26 +46,67 @@ export interface Rule {
 export interface OverspentCategory {
   categoryId: string
   over: number
+  /** Потрачено там, где лимита нет вовсе. */
+  unbudgeted: boolean
 }
 
-/** Категории, где потрачено больше запланированного. */
+export interface SpendingItem {
+  category_id: string | null
+  amount_rub: string
+}
+
+/** Категории в минусе: потрачено больше лимита — или без лимита.
+ *
+ * Перерасход — это минус в остатке, а не в «доступно». По «доступно»
+ * ловился только минус, перенесённый с прошлых месяцев, а обычное
+ * «лимит 5 000, потрачено 7 000» правило не видело.
+ *
+ * Трата без лимита — тоже минус: денег под неё не выделяли. Но трата
+ * в подкатегории покрыта лимитом родителя, если он есть: родительский
+ * лимит — общий конверт на всю ветку.
+ */
 export function overspentCategories(
   budgets: readonly Budget[],
+  spending: readonly SpendingItem[] = [],
+  parentOf: ReadonlyMap<string, string | null> = new Map(),
 ): OverspentCategory[] {
-  return budgets
-    .map((b) => ({ categoryId: b.category_id, over: -Number(b.available) }))
+  const budgeted = new Set(budgets.map((b) => b.category_id))
+  const result: OverspentCategory[] = budgets
+    .map((b) => ({
+      categoryId: b.category_id,
+      over: -Number(b.remaining),
+      unbudgeted: false,
+    }))
     .filter((c) => c.over > 0)
-    .sort((a, b) => b.over - a.over)
+
+  for (const item of spending) {
+    const spent = Number(item.amount_rub)
+    const id = item.category_id
+    if (id === null || spent <= 0 || budgeted.has(id)) {
+      continue
+    }
+    const parent = parentOf.get(id) ?? null
+    if (parent !== null && budgeted.has(parent)) {
+      continue
+    }
+    result.push({ categoryId: id, over: spent, unbudgeted: true })
+  }
+  return result.sort((a, b) => b.over - a.over)
 }
 
 export function buildRules(
   allowance: DailyAllowance | undefined,
   age: MoneyAge | undefined,
   budgets: readonly Budget[] | undefined,
+  spending: readonly SpendingItem[] = [],
+  parentOf: ReadonlyMap<string, string | null> = new Map(),
 ): Rule[] {
   const unallocated = allowance ? Number(allowance.unallocated_rub) : null
   const obligations = allowance ? Number(allowance.obligations_rub) : null
-  const over = budgets ? overspentCategories(budgets) : undefined
+  const over = budgets
+    ? overspentCategories(budgets, spending, parentOf)
+    : undefined
+  const withoutLimit = over?.filter((c) => c.unbudgeted).length ?? 0
   const overTotal = over ? sumMoney(over.map((c) => String(c.over))) : null
 
   return [
@@ -111,7 +152,11 @@ export function buildRules(
         budgets === undefined
           ? LOADING
           : overTotal !== null && overTotal > 0
-            ? `Категорий с перерасходом: ${String(over?.length ?? 0)}. Покройте их из других — это нормальная часть метода.`
+            ? `Категорий в минусе: ${String(over?.length ?? 0)}${
+                withoutLimit > 0
+                  ? `, из них без лимита: ${String(withoutLimit)}`
+                  : ""
+              }. Покройте из других или задайте лимит — это нормальная часть метода.`
             : "Ни одна категория не в минусе.",
     },
     {

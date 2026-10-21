@@ -136,8 +136,22 @@ export function DashboardPage() {
       ]
     : []
 
-  const rules = buildRules(allowance.data, age.data, budgetsQ.data)
-  const overspent = overspentCategories(budgetsQ.data ?? [])
+  const parentOf = new Map(
+    (categoriesQ.data ?? []).map((c) => [c.id, c.parent_id]),
+  )
+  const spending = cats.data?.items ?? []
+  const rules = buildRules(
+    allowance.data,
+    age.data,
+    budgetsQ.data,
+    spending,
+    parentOf,
+  )
+  const overspent = overspentCategories(
+    budgetsQ.data ?? [],
+    spending,
+    parentOf,
+  )
 
   const catRows = (cats.data?.items ?? [])
     .map((i) => ({
@@ -340,7 +354,12 @@ export function DashboardPage() {
             <tbody>
               {overspent.map((c) => (
                 <tr key={c.categoryId}>
-                  <td>{catName(c.categoryId)}</td>
+                  <td>
+                    {catName(c.categoryId)}
+                    {c.unbudgeted && (
+                      <span className="acc-meta"> · без лимита</span>
+                    )}
+                  </td>
                   <td className="num expense">
                     −{formatMoney(String(c.over), "RUB")}
                   </td>
@@ -350,7 +369,7 @@ export function DashboardPage() {
           </table>
           <p className="allowance-note">
             Покройте их из категорий с запасом — кнопка «Покрыть» в
-            бюджете.
+            бюджете, а где лимита нет — задайте его.
           </p>
         </div>
       )}
