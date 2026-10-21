@@ -47,6 +47,10 @@ def run_migrations_offline() -> None:
         dialect_opts={"paramstyle": "named"},
         compare_type=True,
         compare_server_default=True,
+        # Своя транзакция на каждую миграцию: значение enum, добавленное
+        # одной миграцией, PostgreSQL не даёт использовать до коммита,
+        # и на чистой базе e25 и e27 в одной транзакции падали бы.
+        transaction_per_migration=True,
     )
     with context.begin_transaction():
         context.run_migrations()
@@ -58,6 +62,10 @@ def do_run_migrations(connection: Connection) -> None:
         target_metadata=target_metadata,
         compare_type=True,
         compare_server_default=True,
+        # Своя транзакция на каждую миграцию: значение enum, добавленное
+        # одной миграцией, PostgreSQL не даёт использовать до коммита,
+        # и на чистой базе e25 и e27 в одной транзакции падали бы.
+        transaction_per_migration=True,
     )
     with context.begin_transaction():
         context.run_migrations()
