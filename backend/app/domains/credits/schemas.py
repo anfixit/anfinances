@@ -3,11 +3,18 @@
 import uuid
 from datetime import date, datetime
 from decimal import Decimal
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.domains.credits.payoff import PayoffStrategy
+
 __all__ = [
     "CreditCreate",
+    "PayoffBaselineRead",
+    "PayoffCreditRead",
+    "PayoffPlanRead",
+    "PayoffSkippedRead",
     "CreditProjectionRead",
     "ScheduledPaymentRead",
     "CreditPaymentCreate",
@@ -127,3 +134,57 @@ class CreditProjectionRead(BaseModel):
     last_payment_amount: Decimal | None
     total_interest_remaining: Decimal
     next_payment: ScheduledPaymentRead | None
+
+
+class PayoffCreditRead(BaseModel):
+    """Кредит в очереди плана: когда закроется и сколько переплатим."""
+
+    credit_id: uuid.UUID
+    name: str
+    currency_code: str
+    payoff_date: date
+    interest_paid: Decimal  # в рублях
+
+
+class PayoffBaselineRead(BaseModel):
+    """Без доплат: каждый кредит по своему графику."""
+
+    months_to_debt_free: int
+    debt_free_date: date | None
+    total_interest: Decimal
+
+
+class PayoffSkippedRead(BaseModel):
+    """Кредит, который в план не вошёл, и почему.
+
+    ``missing_terms`` — нет ставки, платежа, дня платежа или даты,
+    от которой считать проценты. ``missing_rate`` — нет курса
+    валюты кредита. ``never_amortizes`` — платёж не покрывает
+    проценты, долг сам по себе не гасится никогда.
+    """
+
+    credit_id: uuid.UUID
+    name: str
+    reason: Literal["missing_terms", "missing_rate", "never_amortizes"]
+    message: str
+
+
+class PayoffPlanRead(BaseModel):
+    """План погашения всех кредитов сразу.
+
+    Все суммы — в рублях по текущему курсу. ``order`` — очередь
+    стратегии: кого гасить досрочно первым. ``baseline`` — без
+    доплат и перетока, для сравнения: ``interest_saved`` и
+    ``months_saved`` — выигрыш плана против него.
+    """
+
+    strategy: PayoffStrategy
+    extra_monthly: Decimal
+    months_to_debt_free: int
+    debt_free_date: date | None
+    total_interest: Decimal
+    order: list[PayoffCreditRead]
+    baseline: PayoffBaselineRead
+    interest_saved: Decimal
+    months_saved: int
+    skipped: list[PayoffSkippedRead]

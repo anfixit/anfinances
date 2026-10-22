@@ -1,9 +1,10 @@
 """Доступ к БД для домена credits."""
 
 import uuid
+from datetime import datetime
 from typing import Protocol
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domains.credits.models import Credit, CreditPayment
@@ -33,6 +34,10 @@ class CreditRepository(Protocol):
     async def list_payments(
         self, credit_id: uuid.UUID, user_id: uuid.UUID
     ) -> list[CreditPayment]: ...
+
+    async def last_payment_dates(
+        self, user_id: uuid.UUID
+    ) -> dict[uuid.UUID, datetime]: ...
 
     async def add(self, credit: Credit) -> Credit: ...
 
@@ -116,6 +121,21 @@ class SqlCreditRepository:
             .order_by(CreditPayment.date.desc(), CreditPayment.id.desc())
         )
         return list(result.scalars().all())
+
+    async def last_payment_dates(
+        self, user_id: uuid.UUID
+    ) -> dict[uuid.UUID, datetime]:
+        """Дата последнего платежа по каждому кредиту одним запросом.
+
+        План погашения считает проценты от неё по всем кредитам
+        сразу — без запроса на каждый кредит.
+        """
+        result = await self._session.execute(
+            select(CreditPayment.credit_id, func.max(CreditPayment.date))
+            .where(CreditPayment.user_id == user_id)
+            .group_by(CreditPayment.credit_id)
+        )
+        return {row[0]: row[1] for row in result.all()}
 
     async def add(self, credit: Credit) -> Credit:
         self._session.add(credit)

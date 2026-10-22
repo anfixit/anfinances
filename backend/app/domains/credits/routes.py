@@ -1,14 +1,16 @@
 """HTTP-роуты домена credits."""
 
 import uuid
+from decimal import Decimal
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, status
 
 from app.core.dependencies import CurrentUser, DbSession, SettingsDep
 from app.core.schemas import ApiResponse
 from app.domains.accounts.repository import SqlAccountRepository
 from app.domains.categories.repository import SqlCategoryRepository
+from app.domains.credits.payoff import PayoffStrategy
 from app.domains.credits.repository import (
     CreditRepository,
     SqlCreditRepository,
@@ -20,6 +22,7 @@ from app.domains.credits.schemas import (
     CreditProjectionRead,
     CreditRead,
     CreditUpdate,
+    PayoffPlanRead,
 )
 from app.domains.credits.service import CreditService
 from app.domains.currencies.providers.er_api import ErApiRatesProvider
@@ -80,6 +83,25 @@ async def create_credit(
     credit = await service.create_credit(user.id, data)
     await db.commit()
     return ApiResponse(data=CreditRead.model_validate(credit))
+
+
+# Объявлен до /{credit_id}: иначе «payoff-plan» разбирался бы как
+# идентификатор кредита и падал на валидации UUID.
+@router.get("/payoff-plan", response_model=ApiResponse[PayoffPlanRead])
+async def payoff_plan(
+    user: CurrentUser,
+    service: ServiceDep,
+    strategy: PayoffStrategy = PayoffStrategy.AVALANCHE,
+    extra_monthly: Annotated[Decimal, Query(ge=0)] = Decimal(0),
+) -> ApiResponse[PayoffPlanRead]:
+    """Когда закроются все кредиты по стратегии и сколько это сэкономит.
+
+    ``extra_monthly`` — доплата сверх обязательных платежей в рублях.
+    """
+    result = await service.payoff_plan(
+        user.id, strategy, extra_monthly, user.timezone
+    )
+    return ApiResponse(data=result)
 
 
 @router.get(

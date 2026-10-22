@@ -7,8 +7,11 @@
 """
 
 import uuid
-from decimal import Decimal
+from datetime import UTC, datetime
+from decimal import ROUND_HALF_UP, Decimal
+from zoneinfo import ZoneInfo
 
+from app.core.datetime import DEFAULT_TIMEZONE
 from app.core.enums import CategoryKind, TransactionKind
 from app.core.exceptions import (
     AlreadyExistsError,
@@ -20,8 +23,16 @@ from app.domains.accounts.repository import AccountRepository
 from app.domains.categories.models import Category
 from app.domains.categories.repository import CategoryRepository
 from app.domains.credits.models import Credit, CreditPayment
+from app.domains.credits.payoff import (
+    PayoffDebt,
+    PayoffStrategy,
+    baseline_payoff,
+    effective_since,
+    simulate_payoff,
+)
 from app.domains.credits.projection import (
     CreditProjection,
+    NeverAmortizesError,
     project_credit,
 )
 from app.domains.credits.repository import CreditRepository
@@ -29,12 +40,18 @@ from app.domains.credits.schemas import (
     CreditCreate,
     CreditPaymentCreate,
     CreditUpdate,
+    PayoffBaselineRead,
+    PayoffCreditRead,
+    PayoffPlanRead,
+    PayoffSkippedRead,
 )
 from app.domains.currencies.service import CurrencyService
 from app.domains.transactions.models import Transaction
 from app.domains.transactions.repository import TransactionRepository
 
 __all__ = ["CreditService"]
+
+_CENTS = Decimal("0.01")
 
 
 class CreditService:
@@ -97,6 +114,133 @@ class CreditService:
             monthly_payment=credit.monthly_payment,
             payment_day=credit.payment_day,
             since=since,
+        )
+
+    async def payoff_plan(
+        self,
+        user_id: uuid.UUID,
+        strategy: PayoffStrategy,
+        extra_monthly: Decimal,
+        timezone_name: str = DEFAULT_TIMEZONE,
+        now: datetime | None = None,
+    ) -> PayoffPlanRead:
+        """План погашения всех активных кредитов и выигрыш от него.
+
+        Суммы сводятся в рубли по текущему курсу: доплата задаётся в
+        рублях, а снежному кому нужно сравнивать остатки кредитов в
+        разных валютах. Курс на годы вперёд никто не знает — для
+        валютного кредита это оценка, для рублёвого — точный расчёт.
+
+        Кредит, который посчитать нельзя, не роняет план и не
+        зацикливает его, а попадает в ``skipped`` с причиной: ассистент
+        должен сказать владельцу, что именно поправить.
+        """
+        if self._currencies is None:
+            raise RuntimeError("CurrencyService is required for payoff.")
+        currencies = self._currencies
+        moment = (now or datetime.now(UTC)).astimezone(ZoneInfo(timezone_name))
+        today = moment.date()
+        last_paid = await self._repo.last_payment_dates(user_id)
+
+        debts: list[PayoffDebt] = []
+        currency_of: dict[uuid.UUID, str] = {}
+        skipped: list[PayoffSkippedRead] = []
+        for credit in await self._repo.list_active(user_id):
+            if credit.principal_balance <= 0:
+                continue
+            # Отсчёт процентов — как у графика одного кредита: от
+            # последнего платежа, а без платежей — от даты выдачи.
+            paid_at = last_paid.get(credit.id)
+            since = (
+                paid_at.date() if paid_at is not None else credit.start_date
+            )
+            if (
+                credit.annual_rate is None
+                or credit.monthly_payment is None
+                or credit.payment_day is None
+                or since is None
+            ):
+                skipped.append(
+                    PayoffSkippedRead(
+                        credit_id=credit.id,
+                        name=credit.name,
+                        reason="missing_terms",
+                        message=(
+                            "Для плана нужны ставка, ежемесячный платёж, "
+                            "день платежа и дата выдачи или хотя бы один "
+                            "платёж."
+                        ),
+                    )
+                )
+                continue
+            try:
+                rate = await currencies.rate_to_rub(credit.currency_code)
+            except NotFoundError as exc:
+                skipped.append(
+                    PayoffSkippedRead(
+                        credit_id=credit.id,
+                        name=credit.name,
+                        reason="missing_rate",
+                        message=exc.message,
+                    )
+                )
+                continue
+
+            debt = PayoffDebt(
+                key=credit.id,
+                name=credit.name,
+                balance=_to_rub(credit.principal_balance, rate),
+                annual_rate=credit.annual_rate,
+                monthly_payment=_to_rub(credit.monthly_payment, rate),
+                payment_day=credit.payment_day,
+                since=effective_since(since, credit.payment_day, today),
+            )
+            # Не гасящийся кредит исключаем из обоих расчётов: иначе
+            # и план, и база были бы бесконечными, а сравнение —
+            # бессмысленным.
+            try:
+                baseline_payoff([debt], today)
+            except NeverAmortizesError as exc:
+                skipped.append(
+                    PayoffSkippedRead(
+                        credit_id=credit.id,
+                        name=credit.name,
+                        reason="never_amortizes",
+                        message=str(exc),
+                    )
+                )
+                continue
+            debts.append(debt)
+            currency_of[credit.id] = credit.currency_code
+
+        plan = simulate_payoff(debts, strategy, extra_monthly, today)
+        baseline = baseline_payoff(debts, today)
+        return PayoffPlanRead(
+            strategy=strategy,
+            extra_monthly=extra_monthly,
+            months_to_debt_free=plan.months_to_debt_free,
+            debt_free_date=plan.debt_free_date,
+            total_interest=plan.total_interest,
+            order=[
+                PayoffCreditRead(
+                    credit_id=item.key,
+                    name=item.name,
+                    currency_code=currency_of[item.key],
+                    payoff_date=item.payoff_date,
+                    interest_paid=item.interest_paid,
+                )
+                for item in plan.debts
+            ],
+            baseline=PayoffBaselineRead(
+                months_to_debt_free=baseline.months_to_debt_free,
+                debt_free_date=baseline.debt_free_date,
+                total_interest=baseline.total_interest,
+            ),
+            interest_saved=baseline.total_interest - plan.total_interest,
+            months_saved=(
+                baseline.months_to_debt_free - plan.months_to_debt_free
+            ),
+            skipped=skipped,
         )
 
     async def get_credit(
@@ -430,3 +574,14 @@ class CreditService:
         if self._currencies is None:
             raise RuntimeError("CurrencyService is required for payments.")
         return self._categories, self._transactions, self._currencies
+
+
+def _to_rub(amount: Decimal, rate: Decimal) -> Decimal:
+    """Сумма в рублях; рублёвую не трогаем, чтобы не терять копейки.
+
+    Для рублёвого кредита план обязан совпасть с его графиком до
+    копейки, поэтому курс 1 не повод округлять остаток.
+    """
+    if rate == 1:
+        return amount
+    return (amount * rate).quantize(_CENTS, ROUND_HALF_UP)
