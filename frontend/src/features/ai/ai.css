@@ -1,0 +1,90 @@
+/* ИИ-интеграции и страница согласия OAuth. Подключается в main.tsx. */
+
+.ai-list {
+  list-style: none;
+  margin: 8px 0 16px;
+  padding: 0;
+}
+
+.ai-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 0;
+  border-top: 1px solid var(--outline-variant);
+}
+
+.ai-list li:first-child .ai-row {
+  border-top: none;
+}
+
+.ai-row-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.ai-row-main strong {
+  overflow-wrap: anywhere;
+}
+
+.ai-meta {
+  color: var(--on-surface-variant);
+  font-size: 0.9rem;
+}
+
+.ai-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.ai-token {
+  margin-top: 12px;
+}
+
+.ai-token-once {
+  padding: 16px;
+  margin-bottom: 16px;
+  border-radius: var(--shape-s);
+  background: var(--surface-container-high);
+}
+
+.ai-token-once p {
+  margin: 0 0 8px;
+}
+
+.ai-code,
+.ai-token-value {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 0.85em;
+  background: var(--surface-container-high);
+  padding: 1px 6px;
+  border-radius: var(--shape-xs);
+  overflow-wrap: anywhere;
+}
+
+.ai-token-value {
+  display: block;
+  padding: 10px 12px;
+  background: var(--surface-container-lowest);
+  user-select: all;
+}
+
+.oauth-card h1 {
+  overflow-wrap: anywhere;
+}
+
+.oauth-scope {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.oauth-scope input {
+  width: 18px;
+  height: 18px;
+}

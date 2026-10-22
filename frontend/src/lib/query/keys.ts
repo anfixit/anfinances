@@ -4,6 +4,9 @@ export const queryKeys = {
   health: ["health"] as const,
   config: ["config"] as const,
   me: ["me"] as const,
+  aiConnections: ["ai", "connections"] as const,
+  aiAuthorizeCheck: (params: Readonly<Record<string, unknown>>) =>
+    ["ai", "authorize-check", params] as const,
   accounts: ["accounts"] as const,
   categories: ["categories"] as const,
   goals: (month: string) => ["goals", month] as const,
