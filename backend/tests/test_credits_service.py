@@ -386,3 +386,19 @@ async def test_create_payment_validates_expense_category() -> None:
     )
 
     assert payment.interest_category_id == category.id
+
+
+async def test_projection_of_a_non_amortizing_credit_is_explained() -> None:
+    """Платёж меньше процентов — это условия кредита, а не сбой
+    сервера: раньше наружу уходил 500 без объяснения."""
+    service, _ = _service()
+    credit = await service.create_credit(
+        USER,
+        _create(
+            principal_initial=Decimal("1000000"),
+            annual_rate=Decimal("30"),
+            monthly_payment=Decimal("1000"),
+        ),
+    )
+    with pytest.raises(ValidationFailedError, match="процент"):
+        await service.projection(credit.id, USER)

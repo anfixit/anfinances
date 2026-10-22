@@ -108,13 +108,19 @@ class CreditService:
                 "не от чего считать проценты."
             )
 
-        return project_credit(
-            balance=credit.principal_balance,
-            annual_rate=credit.annual_rate,
-            monthly_payment=credit.monthly_payment,
-            payment_day=credit.payment_day,
-            since=since,
-        )
+        try:
+            return project_credit(
+                balance=credit.principal_balance,
+                annual_rate=credit.annual_rate,
+                monthly_payment=credit.monthly_payment,
+                payment_day=credit.payment_day,
+                since=since,
+            )
+        except NeverAmortizesError as exc:
+            # Это не сбой сервера, а условия кредита: платёж меньше
+            # процентов. Раньше ошибка уходила наружу как 500, и
+            # вместо объяснения было «что-то сломалось».
+            raise ValidationFailedError(str(exc)) from exc
 
     async def payoff_plan(
         self,
