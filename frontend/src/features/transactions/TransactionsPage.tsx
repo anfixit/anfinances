@@ -4,6 +4,7 @@ import { Sheet } from "@/components/Sheet"
 import { useConfirm } from "@/components/confirm-context"
 import { useAccounts } from "@/features/accounts/hooks"
 import type { Account } from "@/features/accounts/types"
+import { exportTransactionsCsv } from "@/features/backup/backupApi"
 import { useCategories } from "@/features/categories/hooks"
 import { categoryPath, CATEGORY_PATH_SEP } from "@/features/categories/path"
 import type { Category } from "@/features/categories/types"
@@ -190,6 +191,27 @@ export function TransactionsPage() {
   const accById = new Map((accountsQ.data ?? []).map((a) => [a.id, a]))
   const catById = new Map((categoriesQ.data ?? []).map((c) => [c.id, c]))
 
+  // Выгрузка прямо отсюда: раньше за CSV надо было идти в Настройки.
+  // Сервер режет выгрузку только по датам, поэтому подпись говорит,
+  // что именно уйдёт в файл.
+  const [exporting, setExporting] = useState(false)
+  const [exportError, setExportError] = useState<string | null>(null)
+  const exportRange =
+    filters.date_from || filters.date_to
+      ? "все операции за выбранные даты"
+      : "все операции за всё время"
+  const downloadCsv = async () => {
+    setExporting(true)
+    setExportError(null)
+    try {
+      await exportTransactionsCsv(filters.date_from ?? "", filters.date_to ?? "")
+    } catch {
+      setExportError("Не получилось выгрузить. Попробуйте ещё раз.")
+    } finally {
+      setExporting(false)
+    }
+  }
+
   const setKind = (value: TransactionKind | "all") => {
     setKindTab(value)
     setFilters((f) => {
@@ -325,6 +347,18 @@ export function TransactionsPage() {
             <span className="filters-count">{activeFilters}</span>
           )}
         </button>
+        <button
+          type="button"
+          className="link filters-toggle"
+          title={`В файл попадут ${exportRange}; счёт, категория и тип не учитываются.`}
+          disabled={exporting}
+          onClick={() => {
+            void downloadCsv()
+          }}
+        >
+          {exporting ? "Выгружаю…" : "Скачать CSV"}
+        </button>
+        {exportError !== null && <p className="error">{exportError}</p>}
 
         <div className="filters-row" hidden={!filtersOpen}>
           <label className="field">
