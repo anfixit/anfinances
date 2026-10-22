@@ -171,12 +171,20 @@ class TokenGate:
         return str(resource).rstrip("/") == self._expected_resource
 
 
+# Какие права просить при входе. Клиент запрашивает ровно то, что
+# названо в заголовке: с одним finance.read ChatGPT попросил только
+# чтение, и галочки «Записывать» на экране согласия просто не было.
+# Просим оба — а что выдать, решает человек: запись там выключена
+# по умолчанию.
+LOGIN_SCOPES = f"{READ_SCOPE} {WRITE_SCOPE}"
+
+
 def challenge(
     settings: McpSettings,
     *,
     error: str | None = None,
     description: str | None = None,
-    scope: str = READ_SCOPE,
+    scope: str = LOGIN_SCOPES,
 ) -> str:
     """Значение ``WWW-Authenticate`` по RFC 6750 и RFC 9728.
 
@@ -253,6 +261,7 @@ class BearerGuard:
                     self._settings,
                     error="insufficient_scope",
                     description="finance.read is required",
+                    scope=READ_SCOPE,
                 ),
                 "У токена нет права читать финансы.",
             )

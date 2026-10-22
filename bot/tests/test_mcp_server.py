@@ -254,8 +254,11 @@ async def test_no_token_gets_401_with_resource_metadata(
     response = await _rpc(mcp, None, "tools/list")
 
     assert response.status_code == 401
+    # Просим оба права: иначе ChatGPT запросит только чтение, и
+    # человеку на экране согласия нечего будет включить.
     assert response.headers["www-authenticate"] == (
-        f'Bearer resource_metadata="{METADATA_URL}", scope="finance.read"'
+        f'Bearer resource_metadata="{METADATA_URL}", '
+        'scope="finance.read finance.write"'
     )
     # Без токена в сайт не ходим вовсе.
     assert backend.requests == []
@@ -270,7 +273,7 @@ async def test_unknown_token_gets_invalid_token(
     header = response.headers["www-authenticate"]
     assert header.startswith('Bearer error="invalid_token"')
     assert f'resource_metadata="{METADATA_URL}"' in header
-    assert 'scope="finance.read"' in header
+    assert 'scope="finance.read finance.write"' in header
 
 
 async def test_backend_outage_is_503_not_401(
