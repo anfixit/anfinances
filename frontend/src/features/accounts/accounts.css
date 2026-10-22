@@ -187,3 +187,12 @@
   font-size: 0.85rem;
   opacity: 0.75;
 }
+
+/* Архив — под основным списком, приглушённо: это не рабочие счета. */
+.acc-archive {
+  margin-top: 8px;
+}
+
+.acc-card--archived {
+  opacity: 0.75;
+}

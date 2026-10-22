@@ -16,7 +16,7 @@ __all__ = ["AccountRepository", "SqlAccountRepository"]
 
 class AccountRepository(Protocol):
     async def list_active_with_balances(
-        self, user_id: uuid.UUID
+        self, user_id: uuid.UUID, include_archived: bool = False
     ) -> list[tuple[Account, Decimal, bool]]: ...
 
     async def get(
@@ -45,8 +45,16 @@ class SqlAccountRepository:
         self._session = session
 
     async def list_active_with_balances(
-        self, user_id: uuid.UUID
+        self, user_id: uuid.UUID, include_archived: bool = False
     ) -> list[tuple[Account, Decimal, bool]]:
+        """Счета с остатками; архивные — только по явной просьбе.
+
+        Без них архив было не открыть: ни сайту, чтобы показать
+        «Вернуть», ни боту, чтобы найти счёт по имени.
+        """
+        conditions = [Account.user_id == user_id]
+        if not include_archived:
+            conditions.append(Account.is_archived.is_(False))
         transaction_total = func.coalesce(
             func.sum(Transaction.amount),
             Decimal("0"),
@@ -59,10 +67,7 @@ class SqlAccountRepository:
                 (Transaction.account_id == Account.id)
                 & (Transaction.user_id == user_id),
             )
-            .where(
-                Account.user_id == user_id,
-                Account.is_archived.is_(False),
-            )
+            .where(*conditions)
             .group_by(Account.id)
             .order_by(Account.sort_order, Account.name)
         )

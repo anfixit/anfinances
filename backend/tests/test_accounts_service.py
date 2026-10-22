@@ -27,7 +27,7 @@ class FakeRepo:
         self.currencies = {"RUB", "USD"}
         self.transaction_totals: dict[uuid.UUID, Decimal] = {}
 
-    async def list_active_with_balances(self, user_id):
+    async def list_active_with_balances(self, user_id, include_archived=False):
         return [
             (
                 a,
@@ -35,7 +35,7 @@ class FakeRepo:
                 a.id in self.transaction_totals,
             )
             for a in self.items.values()
-            if a.user_id == user_id and not a.is_archived
+            if a.user_id == user_id and (include_archived or not a.is_archived)
         ]
 
     async def get(self, account_id, user_id):
@@ -205,3 +205,18 @@ async def test_update_other_fields_with_transactions_allowed() -> None:
     )
 
     assert updated.name == "Основная карта"
+
+
+async def test_archived_accounts_are_listed_only_on_request(
+    service: AccountService,
+) -> None:
+    """Без этого архив было не открыть — ни сайту, ни боту."""
+    kept = await service.create_account(USER, _create(name="Альфа"))
+    old = await service.create_account(USER, _create(name="Старая карта"))
+    await service.archive_account(old.id, USER, force=True)
+
+    active = await service.list_accounts(USER)
+    assert [r.account.id for r in active] == [kept.id]
+
+    everything = await service.list_accounts(USER, include_archived=True)
+    assert {r.account.id for r in everything} == {kept.id, old.id}

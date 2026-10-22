@@ -38,8 +38,12 @@ class AccountService:
     def __init__(self, repo: AccountRepository) -> None:
         self._repo = repo
 
-    async def list_accounts(self, user_id: uuid.UUID) -> list[AccountResult]:
-        rows = await self._repo.list_active_with_balances(user_id)
+    async def list_accounts(
+        self, user_id: uuid.UUID, include_archived: bool = False
+    ) -> list[AccountResult]:
+        rows = await self._repo.list_active_with_balances(
+            user_id, include_archived
+        )
         return [
             AccountResult(
                 account=account,

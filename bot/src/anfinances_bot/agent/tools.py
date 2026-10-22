@@ -1222,7 +1222,14 @@ class ToolBox:
 
     async def restore_account(self, name: str) -> str:
         """Вернуть счёт из архива в активные."""
-        rows = await self._client.request("GET", "/accounts") or []
+        # Обычный список архивных не отдаёт — без флага бот искал
+        # счёт там, где его заведомо нет, и никогда не находил.
+        rows = (
+            await self._client.request(
+                "GET", "/accounts", params={"include_archived": "true"}
+            )
+            or []
+        )
         archived = [
             r
             for r in rows

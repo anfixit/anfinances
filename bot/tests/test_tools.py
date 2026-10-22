@@ -75,7 +75,11 @@ class _FakeClient:
         if method == "GET" and path == "/budgets":
             return list(self.budgets)
         if method == "GET" and path == "/accounts":
-            return list(self.account_rows)
+            # Как настоящий API: архивные — только по явной просьбе.
+            params = kwargs.get("params") or {}
+            if params.get("include_archived") == "true":
+                return list(self.account_rows)
+            return [r for r in self.account_rows if not r.get("is_archived")]
         if method == "GET" and path == "/payees":
             return list(self.payees)
         if method == "GET" and path == "/goals":

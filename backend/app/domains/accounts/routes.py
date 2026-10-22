@@ -3,7 +3,7 @@
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, status
 
 from app.core.dependencies import CurrentUser, DbSession
 from app.core.schemas import ApiResponse
@@ -36,9 +36,11 @@ ServiceDep = Annotated[AccountService, Depends(get_account_service)]
 
 @router.get("", response_model=ApiResponse[list[AccountRead]])
 async def list_accounts(
-    user: CurrentUser, service: ServiceDep
+    user: CurrentUser,
+    service: ServiceDep,
+    include_archived: Annotated[bool, Query()] = False,
 ) -> ApiResponse[list[AccountRead]]:
-    items = await service.list_accounts(user.id)
+    items = await service.list_accounts(user.id, include_archived)
     return ApiResponse(
         data=[
             AccountRead.from_account(

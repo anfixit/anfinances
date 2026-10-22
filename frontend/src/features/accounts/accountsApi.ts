@@ -28,6 +28,16 @@ export async function listAccounts(): Promise<Account[]> {
   return unwrap(await api.get<ApiResponse<Account[]>>("/accounts"))
 }
 
+/** Архивные счета: обычный список их не отдаёт. */
+export async function listArchivedAccounts(): Promise<Account[]> {
+  const all = unwrap(
+    await api.get<ApiResponse<Account[]>>("/accounts", {
+      params: { include_archived: true },
+    }),
+  )
+  return all.filter((a) => a.is_archived)
+}
+
 export async function createAccount(
   input: AccountCreateInput,
 ): Promise<Account> {

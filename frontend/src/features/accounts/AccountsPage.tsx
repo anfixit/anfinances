@@ -3,7 +3,9 @@ import { useState } from "react"
 import {
   useAccounts,
   useArchiveAccount,
+  useArchivedAccounts,
   useReorderAccounts,
+  useRestoreAccount,
 } from "@/features/accounts/hooks"
 import { AccountForm } from "@/features/accounts/AccountForm"
 import { ReconcileSheet } from "@/features/accounts/ReconcileSheet"
@@ -11,6 +13,7 @@ import { TYPE_LABELS } from "@/features/accounts/types"
 import type { Account } from "@/features/accounts/types"
 import { Sheet } from "@/components/Sheet"
 import { useConfirm } from "@/components/confirm-context"
+import { AppError } from "@/lib/api/errors"
 import { formatMoney } from "@/lib/money"
 import { useDashboard } from "@/features/summary/hooks"
 
@@ -22,6 +25,24 @@ export function AccountsPage() {
   const [sheetOpen, setSheetOpen] = useState(false)
   const [reconciling, setReconciling] = useState<Account | null>(null)
   const [editing, setEditing] = useState<Account | null>(null)
+  // Архив раньше был дорогой в один конец: «вернуть счёт можно в
+  // любой момент», но вернуть было негде.
+  const [archiveOpen, setArchiveOpen] = useState(false)
+  const archived = useArchivedAccounts(archiveOpen)
+  const restore = useRestoreAccount()
+  const [restoreError, setRestoreError] = useState<string | null>(null)
+  const bringBack = (account: Account) => {
+    setRestoreError(null)
+    restore.mutate(account.id, {
+      onError: (err) => {
+        setRestoreError(
+          err instanceof AppError
+            ? err.message
+            : `Не получилось вернуть «${account.name}».`,
+        )
+      },
+    })
+  }
 
   const openCreate = () => {
     setEditing(null)
@@ -204,6 +225,57 @@ export function AccountsPage() {
           </li>
         ))}
       </ul>
+
+      <button
+        type="button"
+        className="link"
+        aria-expanded={archiveOpen}
+        onClick={() => {
+          setArchiveOpen((v) => !v)
+        }}
+      >
+        {archiveOpen ? "Скрыть архив" : "Архив счетов"}
+      </button>
+      {archiveOpen && (
+        <div className="acc-archive">
+          {archived.isPending && <p>Загрузка…</p>}
+          {archived.isSuccess && archived.data.length === 0 && (
+            <p className="hint">В архиве пусто.</p>
+          )}
+          {restoreError !== null && <p className="error">{restoreError}</p>}
+          <ul className="acc-cards">
+            {(archived.data ?? []).map((a) => (
+              <li key={a.id} className="acc-card acc-card--archived">
+                <span
+                  className="color-dot"
+                  style={{ background: a.color ?? "var(--outline)" }}
+                />
+                <div className="acc-info">
+                  <span className="acc-title">{a.name}</span>
+                  <span className="acc-meta">
+                    {TYPE_LABELS[a.type]} · {a.currency_code} · в архиве
+                  </span>
+                </div>
+                <span className="num acc-balance">
+                  {formatMoney(a.current_balance, a.currency_code)}
+                </span>
+                <span className="acc-actions">
+                  <button
+                    type="button"
+                    className="link"
+                    disabled={restore.isPending}
+                    onClick={() => {
+                      bringBack(a)
+                    }}
+                  >
+                    Вернуть
+                  </button>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       <Sheet
         open={reconciling !== null}

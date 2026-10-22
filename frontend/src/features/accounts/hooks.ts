@@ -4,6 +4,7 @@ import {
   archiveAccount,
   createAccount,
   listAccounts,
+  listArchivedAccounts,
   restoreAccount,
   updateAccount,
 } from "@/features/accounts/accountsApi"
@@ -15,6 +16,16 @@ import { queryKeys } from "@/lib/query/keys"
 
 export function useAccounts() {
   return useQuery({ queryKey: queryKeys.accounts, queryFn: listAccounts })
+}
+
+// Ключ — под общим «accounts»: архивация и возврат инвалидируют его
+// префиксом, и оба списка обновляются вместе.
+export function useArchivedAccounts(enabled: boolean) {
+  return useQuery({
+    queryKey: [...queryKeys.accounts, "archived"],
+    queryFn: listArchivedAccounts,
+    enabled,
+  })
 }
 
 export function useCreateAccount() {
