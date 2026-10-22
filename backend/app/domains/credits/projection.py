@@ -24,13 +24,16 @@ from decimal import ROUND_HALF_UP, Decimal
 __all__ = [
     "CreditProjection",
     "NeverAmortizesError",
+    "MAX_PAYMENTS",
     "ScheduledPayment",
+    "accrued_interest",
+    "next_due",
     "project_credit",
 ]
 
 _CENTS = Decimal("0.01")
 _DAYS_IN_YEAR = Decimal(365)
-_MAX_PAYMENTS = 600  # 50 лет — дальше считать бессмысленно
+MAX_PAYMENTS = 600  # 50 лет — дальше считать бессмысленно
 
 
 class NeverAmortizesError(ValueError):
@@ -77,7 +80,6 @@ def project_credit(
             next_payment=None,
         )
 
-    rate = annual_rate / Decimal(100)
     remaining = balance
     previous = since
     interest_total = Decimal(0)
@@ -87,17 +89,14 @@ def project_credit(
     count = 0
 
     while remaining > 0:
-        if count >= _MAX_PAYMENTS:
+        if count >= MAX_PAYMENTS:
             raise NeverAmortizesError(
                 "Платёж не гасит долг за разумный срок: проверьте "
                 "сумму платежа и ставку."
             )
 
-        due = _next_due(previous, payment_day)
-        days = Decimal((due - previous).days)
-        interest = (remaining * rate * days / _DAYS_IN_YEAR).quantize(
-            _CENTS, ROUND_HALF_UP
-        )
+        due = next_due(previous, payment_day)
+        interest = accrued_interest(remaining, annual_rate, previous, due)
 
         if remaining + interest <= monthly_payment:
             # Последний платёж: остаток долга плюс проценты за период.
@@ -144,7 +143,23 @@ def project_credit(
     )
 
 
-def _next_due(after: date, payment_day: int) -> date:
+def accrued_interest(
+    balance: Decimal, annual_rate: Decimal, start: date, end: date
+) -> Decimal:
+    """Проценты за период по фактическим дням, до копейки.
+
+    Единая формула для графика одного кредита и плана погашения
+    всех сразу: иначе сравнение стратегий разошлось бы с графиком
+    банка уже на первом платеже.
+    """
+    rate = annual_rate / Decimal(100)
+    days = Decimal((end - start).days)
+    return (balance * rate * days / _DAYS_IN_YEAR).quantize(
+        _CENTS, ROUND_HALF_UP
+    )
+
+
+def next_due(after: date, payment_day: int) -> date:
     """Следующая дата платежа строго после ``after``.
 
     День платежа обрезается до длины месяца: 31-е в феврале — это
