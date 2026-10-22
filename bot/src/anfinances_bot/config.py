@@ -10,7 +10,7 @@ from typing import Annotated
 from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
-__all__ = ["BotSettings", "get_bot_settings"]
+__all__ = ["BotSettings", "get_bot_settings", "parse_default_accounts"]
 
 
 class BotSettings(BaseSettings):
@@ -72,20 +72,7 @@ class BotSettings(BaseSettings):
     @classmethod
     def _parse_default_accounts(cls, value: object) -> object:
         """Принять "RUB=Альфа,UZS=Uzcard Капитал"."""
-        if not isinstance(value, str):
-            return value
-        parsed: dict[str, str] = {}
-        for chunk in value.split(","):
-            if not chunk.strip():
-                continue
-            if "=" not in chunk:
-                raise ValueError(
-                    "BOT_DEFAULT_ACCOUNTS должен быть вида "
-                    "RUB=Альфа,UZS=Uzcard Капитал."
-                )
-            code, name = chunk.split("=", 1)
-            parsed[code.strip().upper()] = name.strip()
-        return parsed
+        return parse_default_accounts(value)
 
     @field_validator("bot_default_accounts")
     @classmethod
@@ -109,6 +96,28 @@ class BotSettings(BaseSettings):
         if not (0 <= start <= 23 and 0 <= end <= 23):
             raise ValueError("Часы тишины должны быть в диапазоне 0..23.")
         return (start, end)
+
+
+def parse_default_accounts(value: object) -> object:
+    """Разобрать "RUB=Альфа,UZS=Uzcard Капитал" в словарь.
+
+    Вынесено из настроек бота: тот же формат читает и MCP-сервер, и
+    два разборщика одной строки рано или поздно разошлись бы.
+    """
+    if not isinstance(value, str):
+        return value
+    parsed: dict[str, str] = {}
+    for chunk in value.split(","):
+        if not chunk.strip():
+            continue
+        if "=" not in chunk:
+            raise ValueError(
+                "BOT_DEFAULT_ACCOUNTS должен быть вида "
+                "RUB=Альфа,UZS=Uzcard Капитал."
+            )
+        code, name = chunk.split("=", 1)
+        parsed[code.strip().upper()] = name.strip()
+    return parsed
 
 
 @lru_cache
