@@ -8,6 +8,7 @@ from functools import lru_cache
 from typing import Literal, Self
 
 from pydantic import (
+    BaseModel,
     Field,
     PostgresDsn,
     SecretStr,
@@ -16,6 +17,15 @@ from pydantic import (
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 AuthMode = Literal["single_user", "multi_user_no_verify", "multi_user"]
+
+
+class PredefinedAiClient(BaseModel):
+    """OAuth-клиент, заведённый в настройках, а не через регистрацию."""
+
+    client_id: str = Field(min_length=1)
+    name: str = Field(min_length=1)
+    redirect_uris: list[str] = Field(min_length=1)
+
 
 # Значения-заглушки из .env.example: в проде их быть не должно.
 # Это эталоны для сравнения, а не секреты — отсюда noqa на S105.
@@ -106,6 +116,49 @@ class Settings(BaseSettings):
     # 0 выключает периодическое обновление; обновление на старте
     # приложения при этом остаётся.
     exchange_rate_refresh_interval_hours: int = Field(default=6, ge=0)
+
+    # ── ИИ-интеграции (MCP + OAuth 2.1) ──
+    # Публичный адрес сайта: он же issuer OAuth и основа всех ссылок
+    # в метаданных. Бэкенд за прокси сам его не узнает.
+    public_origin: str = "https://anfinances.ru"
+    # Адрес MCP-сервера (resource по RFC 8707). Пусто — берётся
+    # {PUBLIC_ORIGIN}/mcp.
+    mcp_resource: str = ""
+    # С каких хостов принимаем client_id-URL (CIMD). Документ клиента
+    # скачивается с этого адреса, поэтому список — защита от SSRF.
+    ai_client_hosts: list[str] = Field(
+        default_factory=lambda: [
+            "claude.ai",
+            "claude.com",
+            "anthropic.com",
+            "chatgpt.com",
+            "openai.com",
+        ]
+    )
+    # Куда динамически зарегистрированный клиент может просить код.
+    # localhost и 127.0.0.1 по http разрешены всегда (Claude Code).
+    ai_redirect_hosts: list[str] = Field(
+        default_factory=lambda: ["claude.ai", "claude.com", "chatgpt.com"]
+    )
+    # Заранее известные клиенты: JSON-список
+    # [{"client_id": ..., "name": ..., "redirect_uris": [...]}].
+    ai_predefined_clients: list[PredefinedAiClient] = Field(
+        default_factory=list
+    )
+    # Сколько запросов в минуту на одно подключение; 0 — без лимита.
+    ai_rate_limit_per_minute: int = Field(default=120, ge=0)
+    rate_limit_ai_register: str = "20/hour"
+    ai_client_metadata_timeout_seconds: float = 5.0
+
+    @property
+    def oauth_issuer(self) -> str:
+        """Issuer OAuth: публичный адрес без завершающего слэша."""
+        return self.public_origin.rstrip("/")
+
+    @property
+    def ai_resource(self) -> str:
+        """Адрес MCP-ресурса, на который выдаются OAuth-токены."""
+        return self.mcp_resource.rstrip("/") or f"{self.oauth_issuer}/mcp"
 
     @model_validator(mode="after")
     def _enforce_production_safety(self) -> Self:

@@ -10,16 +10,18 @@ import logging
 from contextlib import asynccontextmanager
 from typing import Any
 
-from fastapi import APIRouter, FastAPI, status
+from fastapi import APIRouter, Depends, FastAPI, status
 from sqlalchemy import text
 
 from app.config import get_settings
-from app.core.dependencies import DbSession
+from app.core.dependencies import DbSession, ai_token_guard
 from app.core.exceptions import register_exception_handlers
 from app.core.middleware import register_middleware
 from app.core.rate_limit import limiter
 from app.database import create_db_engine, create_sessionmaker
 from app.domains.accounts.routes import router as accounts_router
+from app.domains.ai.routes import router as ai_router
+from app.domains.ai.routes import well_known_router
 from app.domains.auth.bootstrap import bootstrap_single_user
 from app.domains.auth.routes import router as auth_router
 from app.domains.budgets.routes import router as budgets_router
@@ -217,6 +219,10 @@ def create_app() -> FastAPI:
         version="0.1.0",
         description="Личный финансовый трекер. См. ARCHITECTURE.md.",
         lifespan=lifespan,
+        # Токену ИИ-интеграции закрыто то, что не зависит от его прав
+        # (вход, импорт, удаление…), — на всех роутах сразу, включая
+        # те, что не спрашивают get_current_user.
+        dependencies=[Depends(ai_token_guard)],
         docs_url="/docs" if settings.environment != "production" else None,
         redoc_url="/redoc" if settings.environment != "production" else None,
         openapi_url=(
@@ -254,6 +260,9 @@ def create_app() -> FastAPI:
     app.include_router(export_router, prefix=prefix)
     app.include_router(goals_router, prefix=prefix)
     app.include_router(import_router, prefix=prefix)
+    app.include_router(ai_router, prefix=prefix)
+    # Метаданные OAuth обязаны жить в корне сайта (RFC 8414).
+    app.include_router(well_known_router)
 
     return app
 

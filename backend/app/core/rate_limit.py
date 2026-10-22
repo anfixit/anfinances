@@ -14,7 +14,7 @@ from slowapi.util import get_remote_address
 
 from app.config import get_settings
 
-__all__ = ["limiter", "login_limit", "register_limit"]
+__all__ = ["ai_register_limit", "limiter", "login_limit", "register_limit"]
 
 limiter = Limiter(key_func=get_remote_address)
 
@@ -25,3 +25,9 @@ def login_limit() -> str:
 
 def register_limit() -> str:
     return get_settings().rate_limit_register
+
+
+def ai_register_limit() -> str:
+    # Динамическая регистрация OAuth-клиентов открыта без входа —
+    # лимит не даёт засыпать таблицу клиентов.
+    return get_settings().rate_limit_ai_register
