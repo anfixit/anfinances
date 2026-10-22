@@ -14,6 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import Settings
 
 logger = logging.getLogger("anfinances.request")
+audit_logger = logging.getLogger("anfinances.ai_audit")
 
 # Security-заголовки уровня приложения. HSTS сознательно НЕ ставим
 # здесь — им владеет TLS-терминатор (nginx), иначе на http-dev был бы
@@ -59,6 +60,19 @@ def register_middleware(app: FastAPI, settings: Settings) -> None:
             duration_ms,
             request_id,
         )
+        # Аудит запросов ИИ-интеграций: какое подключение что делало.
+        # Без query string, тела и сумм — в логе не должно оседать
+        # содержимое финансов. Флаги ставят зависимости авторизации;
+        # подключение неизвестно, если токен не прошёл проверку.
+        if getattr(request.state, "ai_request", False):
+            connection = getattr(request.state, "ai_connection_id", None)
+            audit_logger.info(
+                "ai_access connection=%s %s %s %d",
+                connection or "-",
+                request.method,
+                request.url.path,
+                response.status_code,
+            )
         response.headers["X-Request-ID"] = request_id
         for header, value in _SECURITY_HEADERS.items():
             response.headers.setdefault(header, value)

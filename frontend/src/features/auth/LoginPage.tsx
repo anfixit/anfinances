@@ -1,15 +1,22 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
-import { Navigate } from "react-router-dom";
+import { Navigate, useLocation } from "react-router-dom";
 
 import { loginSchema } from "@/auth/schemas";
 import type { LoginInput } from "@/auth/schemas";
 import { useAuth } from "@/auth/useAuth";
+import { safeReturnPath } from "@/features/ai/scopes";
 import { AppError } from "@/lib/api/errors";
 
 export function LoginPage() {
   const { status, login } = useAuth();
+  // Откуда прислали на вход (например, со страницы согласия OAuth) —
+  // туда и вернуть. Только свои пути, иначе это открытый редирект.
+  const location = useLocation();
+  const from = safeReturnPath(
+    (location.state as { from?: unknown } | null)?.from,
+  );
   const [formError, setFormError] = useState<string | null>(null);
   const {
     register,
@@ -18,7 +25,7 @@ export function LoginPage() {
   } = useForm<LoginInput>({ resolver: zodResolver(loginSchema) });
 
   if (status === "authenticated") {
-    return <Navigate to="/" replace />;
+    return <Navigate to={from} replace />;
   }
 
   const submit = handleSubmit(async (data) => {

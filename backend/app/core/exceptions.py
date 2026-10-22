@@ -74,6 +74,12 @@ class AlreadyExistsError(AppException):
     message = "Resource already exists"
 
 
+class RateLimitedError(AppException):
+    code = "RATE_LIMITED"
+    status_code = status.HTTP_429_TOO_MANY_REQUESTS
+    message = "Слишком много запросов. Попробуйте позже."
+
+
 def _error_response(
     code: str,
     message: str,
