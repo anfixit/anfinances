@@ -65,6 +65,14 @@ async def test_whoami_for_personal_token() -> None:
         assert data["name"] == "Тест"
         assert data["resource"] == RESOURCE
         assert data["expires_at"] is None
+        assert data["timezone"] == "Europe/Moscow"
+        assert data["default_currency"] == "RUB"
+
+        # Профиль читать можно — MCP-сервер берёт оттуда пояс и валюту.
+        r = await env.client.get(f"{API}/auth/me", headers=_bearer(token))
+        assert r.status_code == 200
+        r = await env.client.post(f"{API}/auth/logout", headers=_bearer(token))
+        assert r.status_code == 403
 
 
 async def test_whoami_rejects_site_jwt_and_garbage() -> None:
@@ -214,7 +222,9 @@ def test_policy_examples() -> None:
     assert deny_reason("POST", f"{p}/transactions", write, p) is None
     assert deny_reason("POST", f"{p}/transactions", read, p)
     assert deny_reason("DELETE", f"{p}/transactions/{{tx_id}}", write, p)
-    assert deny_reason("GET", f"{p}/auth/me", write, p)
+    assert deny_reason("GET", f"{p}/auth/me", read, p) is None
+    assert deny_reason("POST", f"{p}/auth/logout", write, p)
+    assert deny_reason("GET", f"{p}/auth/me/x", read, p)
     assert deny_reason("GET", f"{p}/users/me/currencies", read, p) is None
     assert deny_reason("PUT", f"{p}/users/me/currencies", write, p)
     assert deny_reason("GET", f"{p}/ai/whoami", read, p) is None

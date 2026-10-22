@@ -41,6 +41,7 @@ from app.domains.ai.clients import (
     host_of,
     is_allowed_dcr_redirect,
     is_safe_redirect_uri,
+    redirect_matches,
     resolve_client,
 )
 from app.domains.ai.models import (
@@ -183,6 +184,15 @@ def _with_query(uri: str, params: list[tuple[str, str | None]]) -> str:
     return urlunsplit(parts._replace(query=query))
 
 
+def _without_offline_access(raw: str | None) -> str:
+    """Права из запроса без offline_access.
+
+    Его не объявляем: refresh выдаётся и так. Но клиент, который
+    всё же его пришлёт, не должен получить invalid_scope.
+    """
+    return " ".join(s for s in (raw or "").split() if s != "offline_access")
+
+
 def server_metadata(settings: Settings) -> dict[str, Any]:
     """Метаданные сервера авторизации (RFC 8414)."""
     origin = settings.oauth_issuer
@@ -269,7 +279,7 @@ class OAuthService:
         if (
             not uri
             or not is_safe_redirect_uri(uri)
-            or uri not in client.redirect_uris
+            or not redirect_matches(uri, client.redirect_uris)
         ):
             raise AuthorizeError(
                 "invalid_request",
@@ -330,11 +340,8 @@ class OAuthService:
         try:
             # Без scope просим всё: пользователь сам снимет галочку
             # записи на странице согласия.
-            scopes = (
-                parse_scopes(p.scope)
-                if p.scope and p.scope.strip()
-                else ALL_SCOPES
-            )
+            requested = _without_offline_access(p.scope)
+            scopes = parse_scopes(requested) if requested else ALL_SCOPES
         except InvalidScopeError:
             fail(
                 "invalid_scope",
@@ -487,7 +494,7 @@ class OAuthService:
             raise OAuthError("invalid_grant", "client_id mismatch")
         if conn.resource is not None:
             self._check_resource(form, conn.resource)
-        requested = form.get("scope")
+        requested = _without_offline_access(form.get("scope"))
         if requested:
             try:
                 narrowed = parse_scopes(requested)

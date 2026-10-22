@@ -58,7 +58,9 @@ def _denylisted(method: str, path: str) -> bool:
         for p in _DENY_ANY_METHOD_PREFIXES
     )
     if under:
-        return path != f"{API}/ai/whoami" or method != "GET"
+        # Единственные открытые чтения: whoami и профиль (/auth/me).
+        allowed = {f"{API}/ai/whoami", f"{API}/auth/me"}
+        return path not in allowed or method != "GET"
     if path in _DENY_ANY_METHOD_PATHS:
         return True
     if path.endswith(("/restore", "/archive")):

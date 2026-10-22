@@ -76,6 +76,9 @@ class AiWhoAmI(BaseModel):
     client_id: str | None
     resource: str | None
     expires_at: datetime | None
+    # Чтобы MCP-серверу не ходить ещё и в /auth/me за каждым ответом.
+    timezone: str
+    default_currency: str
 
 
 class AuthorizeCheck(BaseModel):

@@ -72,6 +72,10 @@ def deny_reason(
         return "Управлять ИИ-интеграциями можно только в самом приложении."
 
     if _under(path, f"{prefix}/auth"):
+        # /auth/me — единственное исключение: MCP-сервер берёт оттуда
+        # часовой пояс и валюту, а менять через него нечего.
+        if path == f"{prefix}/auth/me" and method in READ_METHODS:
+            return None
         return "Вход и сессии недоступны ИИ-интеграциям."
     if _under(path, f"{prefix}/import"):
         return "Импорт данных доступен только в самом приложении."

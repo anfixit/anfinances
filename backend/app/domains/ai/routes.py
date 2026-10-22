@@ -120,8 +120,20 @@ async def authorization_server_metadata(
 
 
 @router.get("/whoami", response_model=ApiResponse[AiWhoAmI])
-async def whoami(principal: AiPrincipalDep) -> ApiResponse[AiWhoAmI]:
-    """Чей токен и что ему можно. С JWT сайта — 401."""
+async def whoami(
+    principal: AiPrincipalDep, user: CurrentUser, settings: SettingsDep
+) -> ApiResponse[AiWhoAmI]:
+    """Чей токен и что ему можно. С JWT сайта — 401.
+
+    MCP-сервер сверяет resource со своим адресом. Личный токен ни к
+    какому клиенту не привязан, поэтому для него отдаём текущий
+    MCP_RESOURCE: смена адреса сервера не должна ломать токены.
+    """
+    resource = (
+        principal.resource
+        if principal.kind == "oauth"
+        else settings.ai_resource
+    )
     return ApiResponse(
         data=AiWhoAmI(
             connection_id=principal.connection_id,
@@ -130,8 +142,10 @@ async def whoami(principal: AiPrincipalDep) -> ApiResponse[AiWhoAmI]:
             kind="oauth" if principal.kind == "oauth" else "personal",
             name=principal.name,
             client_id=principal.client_id,
-            resource=principal.resource,
+            resource=resource,
             expires_at=principal.expires_at,
+            timezone=user.timezone,
+            default_currency=user.default_currency,
         )
     )
 

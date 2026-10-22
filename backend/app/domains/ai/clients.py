@@ -35,6 +35,7 @@ __all__ = [
     "host_of",
     "is_allowed_dcr_redirect",
     "is_safe_redirect_uri",
+    "redirect_matches",
     "resolve_client",
 ]
 
@@ -97,6 +98,33 @@ def is_safe_redirect_uri(uri: str) -> bool:
     if parts.scheme == "https":
         return True
     return parts.scheme == "http" and host in _LOOPBACK_HOSTS
+
+
+def redirect_matches(requested: str, registered: Sequence[str]) -> bool:
+    """Совпадает ли запрошенный адрес возврата с зарегистрированным.
+
+    Побайтно — кроме loopback по http: там порт не учитывается
+    (RFC 8252, §7.3). Claude Code каждый раз слушает свободный порт,
+    и зарегистрировать их все заранее нельзя. Хост, путь и query
+    при этом должны совпасть точно. ``requested`` уже проверен
+    is_safe_redirect_uri.
+    """
+    if requested in registered:
+        return True
+    req = urlsplit(requested)
+    host = (req.hostname or "").lower()
+    if req.scheme != "http" or host not in _LOOPBACK_HOSTS:
+        return False
+    for uri in registered:
+        reg = urlsplit(uri)
+        if (
+            reg.scheme == "http"
+            and (reg.hostname or "").lower() == host
+            and reg.path == req.path
+            and reg.query == req.query
+        ):
+            return True
+    return False
 
 
 def is_allowed_dcr_redirect(uri: str, settings: Settings) -> bool:

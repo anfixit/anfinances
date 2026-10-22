@@ -643,3 +643,58 @@ async def test_fetcher_follows_same_host_redirect() -> None:
         make_settings(), transport=httpx.MockTransport(handler)
     )
     assert await fetcher.fetch("https://claude.ai/a") == b'{"ok": true}'
+
+
+# ── Требования ChatGPT и Claude ──────────────────────────────────────
+
+
+async def test_metadata_has_no_extra_scopes() -> None:
+    async with ai_env() as env:
+        meta = (
+            await env.client.get("/.well-known/oauth-authorization-server")
+        ).json()
+        assert meta["issuer"] == "https://anfinances.ru"
+        assert "openid" not in meta["scopes_supported"]
+        assert "offline_access" not in meta["scopes_supported"]
+
+
+async def test_chatgpt_redirects_registrable() -> None:
+    async with ai_env() as env:
+        await _register(
+            env,
+            [
+                "https://chatgpt.com/connector_platform_oauth_redirect",
+                "https://chatgpt.com/connector/oauth/abc123",
+            ],
+        )
+
+
+async def test_loopback_redirect_ignores_port_only() -> None:
+    async with ai_env() as env:
+        client_id = await _register(env, ["http://localhost:33418/callback"])
+        _, challenge = pkce_pair()
+        ok = await _check(
+            env,
+            _params(client_id, challenge, "http://localhost:5555/callback"),
+        )
+        assert ok["status"] == "ok", ok
+        for uri in (
+            "http://localhost:5555/other",
+            "http://127.0.0.1:5555/callback",
+            "https://localhost:5555/callback",
+        ):
+            bad = await _check(env, _params(client_id, challenge, uri))
+            assert bad["status"] == "error", uri
+            assert bad["redirect_to"] is None
+
+
+async def test_offline_access_is_tolerated() -> None:
+    async with ai_env() as env:
+        client_id = await _register(env, [CLAUDE_REDIRECT])
+        _, challenge = pkce_pair()
+        data = await _check(
+            env,
+            _params(client_id, challenge, scope="finance.read offline_access"),
+        )
+        assert data["status"] == "ok"
+        assert data["scopes"] == ["finance.read"]
