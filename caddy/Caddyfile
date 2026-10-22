@@ -1,7 +1,9 @@
 # Caddy — TLS-терминатор на краю стека (авто Let's Encrypt + автопродление).
 #
-# Проксирует ВЕСЬ трафик в frontend-контейнер, чей внутренний nginx уже
+# Почти весь трафик уходит в frontend-контейнер, чей внутренний nginx
 # отдаёт SPA, проксирует /api/* в backend и держит rate-limit на /auth/*.
+# Мимо него идут только адреса для внешних ИИ-ассистентов: MCP-сервер и
+# метаданные OAuth (см. блок anfinances.ru ниже).
 #
 # Порт 443 занимал VPN, поэтому сайт временно жил на 8443. VPN ушёл,
 # и Caddy вернулся на 443.
@@ -31,12 +33,42 @@
 }
 
 anfinances.ru {
-	encode zstd gzip
-
 	# HSTS — на этом контуре TLS уже есть (на http-контуре его не было).
 	header Strict-Transport-Security "max-age=31536000; includeSubDomains"
 
-	reverse_proxy frontend:80
+	# MCP-сервер для ChatGPT, Claude и Claude Code. Отдельный контейнер,
+	# а не путь в nginx фронта: ответ не проходит лишний прокси.
+	# flush_interval -1 — ответ уходит клиенту сразу, без буфера: в
+	# Streamable HTTP сервер вправе отвечать потоком событий, и
+	# буферизованный поток выглядит для клиента как зависание. Сжатия
+	# здесь нет по той же причине.
+	handle /mcp* {
+		reverse_proxy mcp:8100 {
+			flush_interval -1
+		}
+	}
+
+	# Метаданные защищённого ресурса (RFC 9728): по ним клиент узнаёт,
+	# кто выдаёт токены. Отдаёт их сам MCP-сервер.
+	handle /.well-known/oauth-protected-resource* {
+		reverse_proxy mcp:8100
+	}
+
+	# Метаданные сервера авторизации (RFC 8414) живут в backend, но по
+	# корневому пути — /api их не покрывает. OIDC-адрес тоже в backend:
+	# иначе SPA ответила бы на него страницей с кодом 200, и клиент,
+	# перебирающий адреса, споткнулся бы о HTML вместо 404.
+	handle /.well-known/oauth-authorization-server* {
+		reverse_proxy backend:8000
+	}
+	handle /.well-known/openid-configuration* {
+		reverse_proxy backend:8000
+	}
+
+	handle {
+		encode zstd gzip
+		reverse_proxy frontend:80
+	}
 }
 
 www.anfinances.ru {

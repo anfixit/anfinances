@@ -1,4 +1,4 @@
-# Dev-окружение: PostgreSQL + Python backend.
+# Dev-окружение: PostgreSQL + Python backend + MCP-сервер.
 # Для production используй docker-compose.prod.yml (добавляет nginx).
 #
 # Запуск:   docker compose up -d
@@ -47,6 +47,27 @@ services:
     volumes:
       - ./backend:/app
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+
+  # MCP-сервер для ИИ-ассистентов. Проверить локально из Claude Code:
+  #   claude mcp add --transport http anfinances http://localhost:8100/mcp \
+  #     --header "Authorization: Bearer anf_pat_..."
+  mcp:
+    build:
+      context: ./bot
+    container_name: anfinances-mcp
+    restart: unless-stopped
+    depends_on:
+      - backend
+    command: ["uv", "run", "--no-dev", "python", "-m", "anfinances_bot.mcp_server"]
+    environment:
+      ANFINANCES_BASE_URL: http://backend:8000/api/v1
+      # Локально ресурс и издатель — адреса на этой машине: клиенты
+      # сверяют их строкой с тем, что ввели и что отдал backend.
+      MCP_PUBLIC_URL: ${MCP_PUBLIC_URL:-http://localhost:8100/mcp}
+      MCP_ISSUER: ${MCP_ISSUER:-http://localhost:8000}
+      MCP_ALLOWED_ORIGINS: ${MCP_ALLOWED_ORIGINS:-http://localhost:5173,http://localhost:6274}
+    ports:
+      - "${MCP_PORT:-8100}:8100"
 
 volumes:
   postgres_data:

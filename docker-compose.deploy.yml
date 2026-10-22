@@ -4,8 +4,9 @@
 # Топология:
 #   caddy (80/443, авто-TLS) → frontend (nginx: SPA + /api proxy) → backend
 #                                                                  → postgres
-# postgres наружу не публикуется; фронт и бэкенд видны только внутри сети,
-# наружу смотрит только Caddy.
+#                            → mcp (/mcp для ИИ-ассистентов)       → backend
+# postgres наружу не публикуется; фронт, бэкенд и mcp видны только внутри
+# сети, наружу смотрит только Caddy.
 #
 # Запуск (делает CI по SSH):
 #   docker compose -f docker-compose.deploy.yml pull
@@ -81,6 +82,28 @@ services:
       # каждый деплой выглядел бы как новый повод напомнить.
       - bot_state:/data
 
+  mcp:
+    # Тот же образ, что у бота, другая точка входа: MCP-сервер для
+    # ChatGPT, Claude и Claude Code. Секретов бота ему не дают — в сайт
+    # он ходит токеном вызывающего, а не паролем владелицы.
+    image: ${IMAGE_BOT}
+    container_name: anfinances-mcp
+    restart: always
+    depends_on:
+      - backend
+    command:
+      ["uv", "run", "--no-dev", "python", "-m", "anfinances_bot.mcp_server"]
+    environment:
+      ANFINANCES_BASE_URL: http://backend:8000/api/v1
+      MCP_PUBLIC_URL: https://anfinances.ru/mcp
+      MCP_ISSUER: https://anfinances.ru
+    # Только умолчания счетов по валютам — без токенов и ключей.
+    env_file:
+      - ./bot/mcp.env
+    # Наружу не публикуется: трафик приходит только через Caddy.
+    expose:
+      - "8100"
+
   frontend:
     image: ${IMAGE_FRONTEND}
     container_name: anfinances-frontend
@@ -97,6 +120,7 @@ services:
     restart: always
     depends_on:
       - frontend
+      - mcp
     ports:
       # HTTP доступен только системному nginx на этом сервере:
       # порт 80 держит он и редиректит anfinances.ru на https.
@@ -110,7 +134,10 @@ services:
       # работает; ссылки на 8443 к тому времени должны уйти.
       - "8443:8443"
     volumes:
-      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      # Каталог, а не файл: git pull заменяет Caddyfile новым файлом, и
+      # смонтированный по одному файлу контейнер продолжал бы видеть
+      # старый. С каталогом деплою хватает `caddy reload`.
+      - ./caddy:/etc/caddy:ro
       # Персистентность сертификатов между деплоями — иначе LE rate-limit.
       - caddy_data:/data
       - caddy_config:/config
