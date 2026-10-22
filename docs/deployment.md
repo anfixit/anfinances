@@ -14,7 +14,14 @@ caddy (80/443, auto-TLS)
      rate-limits /auth/*)
        └─ backend (FastAPI/uvicorn)
             └─ postgres (not published outside the Docker network)
+  └─ mcp (/mcp and /.well-known/oauth-protected-resource: the MCP
+     server for ChatGPT / Claude, same image as the bot; calls the
+     backend with the caller's own token)
 ```
+
+`/.well-known/oauth-authorization-server` goes straight to the backend.
+The deploy reloads Caddy after `docker compose up -d`, because a
+changed Caddyfile alone does not recreate the container.
 
 The compose file for this is `docker-compose.deploy.yml`. The older
 Nginx + Certbot overlay (`docker-compose.prod.yml`,

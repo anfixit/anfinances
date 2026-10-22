@@ -720,6 +720,12 @@ jobs:
             BOT_BUDGET_MEETING_DAY=${BOT_BUDGET_MEETING_DAY:-15}
             EOF
 
+            # MCP-серверу секреты бота не нужны: в сайт он ходит
+            # токеном вызывающего. Только умолчания счетов по валютам.
+            cat > bot/mcp.env <<EOF
+            BOT_DEFAULT_ACCOUNTS=$BOT_DEFAULT_ACCOUNTS
+            EOF
+
             # Бэкап живёт на хосте, а не в контейнере: ему нужен
             # docker, чтобы снять дамп из postgres.
             cat > backup.env <<EOF
@@ -749,6 +755,24 @@ jobs:
             docker compose \
               -f docker-compose.deploy.yml \
               up -d
+
+            # Caddy читает конфиг только при старте, а compose не
+            # пересоздаёт контейнер из-за правки Caddyfile. Без reload
+            # новые маршруты доехали бы только со следующим рестартом.
+            # Плохой конфиг reload отвергнет, старый продолжит работать,
+            # а деплой покраснеет. Несколько попыток — на случай, если
+            # контейнер только что пересоздан и admin API ещё не поднялся.
+            for attempt in 1 2 3 4 5; do
+              if docker compose \
+                -f docker-compose.deploy.yml \
+                exec -T caddy \
+                caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile
+              then
+                break
+              fi
+              [ "$attempt" = 5 ] && exit 1
+              sleep 3
+            done
 
             docker compose \
               -f docker-compose.deploy.yml \
@@ -784,6 +808,7 @@ jobs:
             • git pull --ff-only
             • docker compose pull
             • docker compose up -d
+            • caddy reload
             • alembic upgrade head
             • docker compose ps
 
@@ -825,6 +850,39 @@ jobs:
           echo "Health endpoint did not return success"
           exit 1
 
+      - name: MCP check
+        shell: bash
+        # Метаданные ресурса — первое, что читают ChatGPT и Claude при
+        # подключении. Если вместо JSON отвечает SPA (маршрут в Caddy не
+        # доехал) или 502 (контейнер mcp лежит), подключение сломано.
+        run: |
+          set -euo pipefail
+
+          url="https://anfinances.ru/.well-known/oauth-protected-resource/mcp"
+
+          for attempt in $(seq 1 10); do
+            echo "MCP metadata attempt ${attempt}/10"
+
+            if response="$(curl --fail --silent --show-error "$url")" &&
+              echo "$response" |
+                jq -e '.resource == "https://anfinances.ru/mcp"' >/dev/null; then
+              echo "Response: $response"
+
+              # Без токена /mcp обязан отвечать 401 — с этого клиенты
+              # начинают вход.
+              code="$(curl --silent --output /dev/null \
+                --write-out '%{http_code}' \
+                -X POST https://anfinances.ru/mcp || true)"
+              echo "POST /mcp without token: $code"
+              [ "$code" = "401" ] && exit 0
+            fi
+
+            sleep 6
+          done
+
+          echo "MCP endpoint did not respond as expected"
+          exit 1
+
       - name: Calculate duration
         if: always()
         id: duration
@@ -846,8 +904,9 @@ jobs:
           status: ${{ job.status }}
           duration: ${{ steps.duration.outputs.value }}
           details: |
-            Проверен endpoint:
+            Проверены endpoints:
             <a href="https://anfinances.ru/api/v1/health/ready">health/ready</a>
+            <a href="https://anfinances.ru/.well-known/oauth-protected-resource/mcp">MCP metadata</a>, 401 на /mcp без токена
 
             Production:
             <a href="https://anfinances.ru">anfinances.ru</a>
