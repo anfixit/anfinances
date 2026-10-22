@@ -9,6 +9,7 @@ import type { ReconciliationPreview } from "@/features/accounts/reconcileApi"
 import type { Account } from "@/features/accounts/types"
 import { AppError } from "@/lib/api/errors"
 import { formatMoney } from "@/lib/money"
+import { MoneyInput } from "@/components/MoneyInput"
 
 function today(): string {
   const d = new Date()
@@ -95,8 +96,7 @@ export function ReconcileSheet({
 
       <label className="field">
         <span>Остаток по банку, {account.currency_code}</span>
-        <input
-          inputMode="decimal"
+        <MoneyInput
           value={balance}
           placeholder="0.00"
           onChange={(e) => {

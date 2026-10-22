@@ -9,6 +9,7 @@ import {
 } from "@/features/recurring/hooks"
 import type { Recurring } from "@/features/recurring/types"
 import { AppError } from "@/lib/api/errors"
+import { MoneyInput } from "@/components/MoneyInput"
 
 export function RecurringForm({
   item,
@@ -105,9 +106,7 @@ export function RecurringForm({
 
       <label className="field">
         <span>Сумма в месяц</span>
-        <input
-          type="number"
-          inputMode="decimal"
+        <MoneyInput
           min="0"
           step="0.01"
           value={amount}

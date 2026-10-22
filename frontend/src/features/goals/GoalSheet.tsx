@@ -6,6 +6,7 @@ import { useDeleteGoal, useGoals, useUpsertGoal } from "@/features/goals/hooks"
 import type { GoalKind } from "@/features/goals/types"
 import { AppError } from "@/lib/api/errors"
 import { formatMoney } from "@/lib/money"
+import { MoneyInput } from "@/components/MoneyInput"
 
 /** Первое число месяца через N месяцев — типичный срок цели. */
 function inMonths(count: number): string {
@@ -99,8 +100,7 @@ export function GoalSheet({
 
       <label className="field">
         <span>{kind === "by_date" ? "Сколько нужно" : "Сколько в месяц"}</span>
-        <input
-          inputMode="decimal"
+        <MoneyInput
           value={amount}
           placeholder="0.00"
           onChange={(e) => setAmount(e.target.value)}

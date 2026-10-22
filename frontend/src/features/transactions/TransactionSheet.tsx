@@ -21,6 +21,7 @@ import type {
   Transfer,
 } from "@/features/transactions/types"
 import { AppError } from "@/lib/api/errors"
+import { MoneyInput } from "@/components/MoneyInput"
 
 type Mode = OrdinaryKind | "transfer"
 type InflowKind = "income" | "refund" | "loan" | "adjustment"
@@ -424,9 +425,7 @@ export function TransactionSheet({
           </label>
           <label className="field">
             <span>Сумма</span>
-            <input
-              type="number"
-              inputMode="decimal"
+            <MoneyInput
               min="0"
               step="0.01"
               value={amount}
@@ -490,9 +489,7 @@ export function TransactionSheet({
             <span>
               Списано{fromAcc ? ` (${fromAcc.currency_code})` : ""}
             </span>
-            <input
-              type="number"
-              inputMode="decimal"
+            <MoneyInput
               min="0"
               step="0.01"
               value={amountFrom}
@@ -502,9 +499,7 @@ export function TransactionSheet({
           {needsConversion && (
             <label className="field">
               <span>Получено ({toAcc?.currency_code})</span>
-              <input
-                type="number"
-                inputMode="decimal"
+              <MoneyInput
                 min="0"
                 step="0.01"
                 value={amountTo}
@@ -514,9 +509,7 @@ export function TransactionSheet({
           )}
           <label className="field">
             <span>Комиссия (необязательно)</span>
-            <input
-              type="number"
-              inputMode="decimal"
+            <MoneyInput
               min="0"
               step="0.01"
               value={feeAmount}

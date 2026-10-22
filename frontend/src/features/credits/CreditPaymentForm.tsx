@@ -7,6 +7,7 @@ import { useCreateCreditPayment } from "@/features/credits/hooks"
 import { creditPaymentFormSchema } from "@/features/credits/schemas"
 import type { Credit } from "@/features/credits/types"
 import { AppError } from "@/lib/api/errors"
+import { MoneyInput } from "@/components/MoneyInput"
 
 function toLocalInput(value: string | Date): string {
   const date = value instanceof Date ? value : new Date(value)
@@ -136,9 +137,7 @@ export function CreditPaymentForm({
 
       <label className="field">
         <span>Сумма платежа</span>
-        <input
-          type="number"
-          inputMode="decimal"
+        <MoneyInput
           min="0"
           step="0.01"
           value={totalAmount}
@@ -148,9 +147,7 @@ export function CreditPaymentForm({
 
       <label className="field">
         <span>Тело кредита</span>
-        <input
-          type="number"
-          inputMode="decimal"
+        <MoneyInput
           min="0"
           step="0.01"
           value={principalAmount}
@@ -160,9 +157,7 @@ export function CreditPaymentForm({
 
       <label className="field">
         <span>Проценты</span>
-        <input
-          type="number"
-          inputMode="decimal"
+        <MoneyInput
           min="0"
           step="0.01"
           value={interestAmount}
@@ -187,9 +182,7 @@ export function CreditPaymentForm({
 
       <label className="field">
         <span>Комиссия</span>
-        <input
-          type="number"
-          inputMode="decimal"
+        <MoneyInput
           min="0"
           step="0.01"
           value={feeAmount}

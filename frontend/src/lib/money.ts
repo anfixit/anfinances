@@ -26,3 +26,28 @@ export function sumMoney(amounts: readonly Money[]): number {
   }
   return minor / MONEY_SCALE
 }
+
+// U+2212 «−» — так минус ставят в банковских выписках и Word.
+const TYPOGRAPHIC_MINUS = String.fromCharCode(0x2212)
+
+/** Привести введённую сумму к виду, который понимает сервер.
+ *
+ * Запятая и точка — одинаково десятичный разделитель; пробелы между
+ * тысячами (и неразрывные, которые прилетают при копировании из
+ * банка) убираются; типографский минус «−» становится обычным. Если
+ * есть и точка, и запятая — «1.234,56» или «1,234.56», — десятичный
+ * разделитель последний, остальные были разрядами. Неразрывные
+ * пробелы ловит сам \s.
+ */
+export function normalizeAmount(raw: string): string {
+  const compact = raw
+    .replace(/[\s']/g, "")
+    .split(TYPOGRAPHIC_MINUS)
+    .join("-")
+  const last = Math.max(compact.lastIndexOf(","), compact.lastIndexOf("."))
+  if (last === -1) {
+    return compact
+  }
+  const whole = compact.slice(0, last).replace(/[.,]/g, "")
+  return `${whole}.${compact.slice(last + 1)}`
+}

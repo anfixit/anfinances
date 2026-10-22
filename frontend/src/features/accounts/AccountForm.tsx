@@ -10,6 +10,7 @@ import type { Account } from "@/features/accounts/types"
 import { useCurrencyOptions } from "@/features/currencies/hooks"
 import { AppError } from "@/lib/api/errors"
 import type { AccountType } from "@/types/enums"
+import { MoneyInput } from "@/components/MoneyInput"
 
 export function AccountForm({
   account,
@@ -141,9 +142,7 @@ export function AccountForm({
 
       <label className="field">
         <span>Начальный баланс</span>
-        <input
-          type="number"
-          inputMode="decimal"
+        <MoneyInput
           step="0.01"
           value={initial}
           disabled={account?.has_transactions ?? false}
@@ -159,9 +158,7 @@ export function AccountForm({
 
       <label className="field">
         <span>Кредитный лимит (необязательно)</span>
-        <input
-          type="number"
-          inputMode="decimal"
+        <MoneyInput
           step="0.01"
           min="0"
           value={creditLimit}

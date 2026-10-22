@@ -5,6 +5,7 @@ import type { Budget } from "@/features/budgets/types"
 import type { Category } from "@/features/categories/types"
 import { Sheet } from "@/components/Sheet"
 import { formatMoney } from "@/lib/money"
+import { MoneyInput } from "@/components/MoneyInput"
 
 interface Donor {
   category: Category
@@ -96,8 +97,7 @@ export function MoveSheet({
 
           <label className="field">
             <span>Сумма</span>
-            <input
-              inputMode="decimal"
+            <MoneyInput
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
             />

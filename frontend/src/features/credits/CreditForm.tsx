@@ -9,6 +9,7 @@ import { creditFormSchema } from "@/features/credits/schemas"
 import type { Credit } from "@/features/credits/types"
 import { useCurrencyOptions } from "@/features/currencies/hooks"
 import { AppError } from "@/lib/api/errors"
+import { MoneyInput } from "@/components/MoneyInput"
 
 function emptyToNull(value: string): string | null {
   const trimmed = value.trim()
@@ -159,9 +160,7 @@ export function CreditForm({ credit, onDone }: CreditFormProps) {
 
       <label className="field">
         <span>Начальная сумма кредита</span>
-        <input
-          type="number"
-          inputMode="decimal"
+        <MoneyInput
           min="0"
           step="0.01"
           value={principalInitial}
@@ -171,9 +170,7 @@ export function CreditForm({ credit, onDone }: CreditFormProps) {
 
       <label className="field">
         <span>Ставка годовых, %</span>
-        <input
-          type="number"
-          inputMode="decimal"
+        <MoneyInput
           min="0"
           step="0.01"
           value={annualRate}
@@ -195,9 +192,7 @@ export function CreditForm({ credit, onDone }: CreditFormProps) {
 
       <label className="field">
         <span>Ежемесячный платёж</span>
-        <input
-          type="number"
-          inputMode="decimal"
+        <MoneyInput
           min="0"
           step="0.01"
           value={monthlyPayment}

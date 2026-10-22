@@ -6,6 +6,7 @@ import {
 } from "@/features/budgets/hooks"
 import type { Budget } from "@/features/budgets/types"
 import { AppError } from "@/lib/api/errors"
+import { MoneyInput } from "@/components/MoneyInput"
 
 export function BudgetForm({
   month,
@@ -74,9 +75,7 @@ export function BudgetForm({
 
       <label className="field">
         <span>План на месяц (₽)</span>
-        <input
-          type="number"
-          inputMode="decimal"
+        <MoneyInput
           min="0"
           step="0.01"
           value={planned}
