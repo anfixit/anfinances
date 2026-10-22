@@ -34,16 +34,22 @@
   gap: 12px;
 }
 
+/* Цифрам переноса не даём, а строке — даём: не влезло рядом с
+   именем — цифры уходят вниз, к правому краю. Без переноса на
+   телефоне «потрачено … · без лимита» уезжало за край карточки. */
 .budget-head {
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
   justify-content: space-between;
-  gap: 12px;
+  gap: 4px 12px;
 }
 
+/* База — по тексту, а не ноль: длинное имя занимает свою ширину, и
+   переносятся цифры, а не само имя по слогам. */
 .budget-name {
   font-weight: 600;
-  flex: 1;
+  flex: 1 1 auto;
 }
 
 .budget-hint {
@@ -54,6 +60,7 @@
 .budget-figures {
   font-size: 0.9rem;
   white-space: nowrap;
+  margin-left: auto;
 }
 
 .bar {
@@ -93,8 +100,9 @@
 
 .group-head {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 12px;
+  gap: 4px 12px;
   width: 100%;
   background: transparent;
   color: var(--on-surface);
@@ -110,22 +118,40 @@
   filter: none;
 }
 
+/* Стрелка не сжимается: иначе длинная строка цифр сдвигала её, и
+   имена групп начинались каждое со своего места. */
 .group-caret {
   width: 16px;
+  flex-shrink: 0;
   color: var(--on-surface-variant);
 }
 
 .group-name {
   font-weight: 700;
   font-size: 1.05rem;
-  flex: 1;
+  flex: 1 1 auto;
   text-align: left;
 }
 
 .group-figures {
   font-size: 0.9rem;
   white-space: nowrap;
+  margin-left: auto;
   color: var(--on-surface-variant);
+}
+
+/* Серый цвет цифр группы не должен перебивать красный перерасхода. */
+.group-figures.expense {
+  color: var(--expense);
+}
+
+/* На телефоне моноширинные цифры широки: мельче, чтобы чаще
+   помещались в строку с именем. */
+@media (max-width: 600px) {
+  .group-figures,
+  .budget-figures {
+    font-size: 0.8rem;
+  }
 }
 
 .group-bar {
