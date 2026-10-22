@@ -85,6 +85,11 @@ def deny_reason(
         return "Обновлять курсы валют ИИ-интеграциям нельзя."
     if path.rstrip("/").rsplit("/", 1)[-1] in _ARCHIVE_SEGMENTS:
         return "Архив счетов меняется только в самом приложении."
+    if path.endswith("/reconcile") and method not in READ_METHODS:
+        # Закрыть сверку — значит пометить операции сверенными и, при
+        # расхождении, записать корректировку. Это решение человека
+        # над выпиской банка; посмотреть расхождение (/preview) можно.
+        return "Закрывать сверку можно только в самом приложении."
     if _under(path, f"{prefix}/users/me") and method not in READ_METHODS:
         return "Профиль меняется только в самом приложении."
 

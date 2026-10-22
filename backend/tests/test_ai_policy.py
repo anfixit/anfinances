@@ -65,6 +65,9 @@ def _denylisted(method: str, path: str) -> bool:
         return True
     if path.endswith(("/restore", "/archive")):
         return True
+    # Закрыть сверку — решение человека; /reconcile/preview открыт.
+    if path.endswith("/reconcile") and method != "GET":
+        return True
     users_me = f"{API}/users/me"
     return (
         path == users_me or path.startswith(users_me + "/")

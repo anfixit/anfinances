@@ -77,7 +77,9 @@ function Consent({
   params: ReturnType<typeof authorizeParamsFrom>
 }) {
   const canWrite = check.scopes.includes("finance.write")
-  const [write, setWrite] = useState(canWrite)
+  // Запись — только если её включили руками: случайное «Разрешить»
+  // не должно давать ассистенту права менять данные.
+  const [write, setWrite] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
