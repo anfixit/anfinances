@@ -3,6 +3,7 @@
 import uuid
 from datetime import date
 from decimal import Decimal
+from typing import Literal
 
 from pydantic import BaseModel
 
@@ -17,6 +18,7 @@ __all__ = [
     "IncomeByCategoryResult",
     "MoneyAgeResult",
     "Obligation",
+    "UpcomingPayment",
 ]
 
 
@@ -79,6 +81,23 @@ class Obligation(BaseModel):
     amount_rub: Decimal
     # recurring — план-минимум, credit — платёж по кредиту.
     kind: str
+
+
+class UpcomingPayment(BaseModel):
+    """Ближайший платёж: что, когда и сколько.
+
+    ``credit`` — платёж по кредиту, дата по дню платежа из договора.
+    ``recurring`` — неоплаченный остаток плана-минимума этого месяца;
+    дня платежа у него нет, поэтому ``due_date`` пустая, а сумма в
+    рублях. ``amount_rub`` пустая, если для валюты нет курса.
+    """
+
+    kind: Literal["credit", "recurring"]
+    name: str
+    due_date: date | None
+    amount: Decimal  # в валюте платежа
+    currency_code: str
+    amount_rub: Decimal | None
 
 
 class DailyAllowanceResult(BaseModel):

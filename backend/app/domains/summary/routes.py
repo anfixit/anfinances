@@ -20,6 +20,7 @@ from app.domains.summary.schemas import (
     DashboardResult,
     IncomeByCategoryResult,
     MoneyAgeResult,
+    UpcomingPayment,
 )
 from app.domains.summary.service import SummaryService
 
@@ -59,6 +60,20 @@ async def daily_allowance(
 ) -> ApiResponse[DailyAllowanceResult]:
     """Сколько можно тратить в день, не сорвав обязательства."""
     result = await service.daily_allowance(user.id, user.timezone, until)
+    return ApiResponse(data=result)
+
+
+@router.get(
+    "/upcoming-payments",
+    response_model=ApiResponse[list[UpcomingPayment]],
+)
+async def upcoming_payments(
+    user: CurrentUser,
+    service: ServiceDep,
+    days: Annotated[int, Query(ge=1, le=92)] = 30,
+) -> ApiResponse[list[UpcomingPayment]]:
+    """Платежи по кредитам и неоплаченный план-минимум на ``days``."""
+    result = await service.upcoming_payments(user.id, days, user.timezone)
     return ApiResponse(data=result)
 
 

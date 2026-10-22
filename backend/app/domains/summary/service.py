@@ -10,6 +10,7 @@ Cashflow и разбивка по категориям учитывают обы
 """
 
 import uuid
+from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from zoneinfo import ZoneInfo
@@ -20,7 +21,9 @@ from app.core.datetime import (
     month_bounds_utc,
 )
 from app.core.exceptions import NotFoundError
+from app.core.money import BASE_CURRENCY
 from app.domains.currencies.service import CurrencyService
+from app.domains.recurring.models import RecurringExpense
 from app.domains.summary.money_age import Flow, age_of_money
 from app.domains.summary.repository import SummaryRepository
 from app.domains.summary.schemas import (
@@ -34,9 +37,21 @@ from app.domains.summary.schemas import (
     IncomeByCategoryResult,
     MoneyAgeResult,
     Obligation,
+    UpcomingPayment,
 )
 
 __all__ = ["SummaryService"]
+
+
+@dataclass(frozen=True)
+class _CreditDue:
+    """Один будущий платёж по кредиту."""
+
+    name: str
+    date: date
+    amount: Decimal  # в валюте кредита
+    currency_code: str
+    amount_rub: Decimal | None  # None — нет курса
 
 
 class SummaryService:
@@ -240,14 +255,9 @@ class SummaryService:
 
         liquid, missing = await self._liquid_rub(user_id)
         month_start = date(today.year, today.month, 1)
-        start, end = month_bounds_utc(month_start, timezone_name)
-        spent_rows = await self._repo.spending_by_category(user_id, start, end)
-        # Траты без категории в резервы не входят: их не с чем сверить.
-        spent = {
-            cat_id: -total
-            for cat_id, total in spent_rows
-            if cat_id is not None
-        }
+        spent = await self._spent_this_month(
+            user_id, month_start, timezone_name
+        )
 
         obligations, committed = await self._obligations(
             user_id, today, horizon, spent, missing
@@ -358,41 +368,161 @@ class SummaryService:
         obligations: list[Obligation] = []
         committed: dict[uuid.UUID, Decimal] = {}
 
-        # План-минимум: резервируем только неоплаченный остаток.
-        # Уже потраченное по категории второй раз откладывать незачем.
+        for item, left in await self._plan_minimum_left(user_id, spent):
+            obligations.append(
+                Obligation(name=item.name, amount_rub=left, kind="recurring")
+            )
+            committed[item.category_id] = (
+                committed.get(item.category_id, Decimal(0)) + left
+            )
+
+        for due in await self._credit_dues(user_id, today, horizon, missing):
+            # Без курса платёж в рублях не зарезервировать; валюта уже
+            # попала в missing, и итог помечен неполным.
+            if due.amount_rub is None:
+                continue
+            obligations.append(
+                Obligation(
+                    name=f"Платёж по кредиту {due.date.isoformat()}",
+                    amount_rub=due.amount_rub,
+                    kind="credit",
+                )
+            )
+
+        return obligations, committed
+
+    async def upcoming_payments(
+        self,
+        user_id: uuid.UUID,
+        days: int = 30,
+        timezone_name: str = DEFAULT_TIMEZONE,
+        now: datetime | None = None,
+    ) -> list[UpcomingPayment]:
+        """Что предстоит заплатить в ближайшие ``days`` дней.
+
+        Те же обязательства, что резервирует дневной лимит, только
+        с датами и в валюте платежа: ассистенту нужно знать не
+        «сколько отложить», а «что, когда и сколько».
+
+        Окно — от сегодня до сегодня + ``days`` включительно. В
+        отличие от дневного лимита сегодняшний платёж по кредиту
+        здесь виден: напоминание в день платежа полезнее, чем
+        молчание, а оплачен ли он, по одному остатку не понять.
+        План-минимум дня платежа не знает, поэтому идёт без даты и
+        только неоплаченным остатком текущего месяца.
+        """
+        moment = (now or datetime.now(UTC)).astimezone(ZoneInfo(timezone_name))
+        today = moment.date()
+        horizon = today + timedelta(days=days)
+
+        items: list[UpcomingPayment] = []
+        missing: set[str] = set()
+        dues = await self._credit_dues(
+            user_id, today - timedelta(days=1), horizon, missing
+        )
+        for due in dues:
+            items.append(
+                UpcomingPayment(
+                    kind="credit",
+                    name=due.name,
+                    due_date=due.date,
+                    amount=due.amount,
+                    currency_code=due.currency_code,
+                    amount_rub=due.amount_rub,
+                )
+            )
+
+        month_start = date(today.year, today.month, 1)
+        spent = await self._spent_this_month(
+            user_id, month_start, timezone_name
+        )
+        for item, left in await self._plan_minimum_left(user_id, spent):
+            # План-минимум и траты сверяются в рублях, поэтому и
+            # остаток к оплате — в рублях, даже если сам платёж в
+            # другой валюте.
+            items.append(
+                UpcomingPayment(
+                    kind="recurring",
+                    name=item.name,
+                    due_date=None,
+                    amount=left,
+                    currency_code=BASE_CURRENCY,
+                    amount_rub=left,
+                )
+            )
+
+        # Без даты — в конец: срок у них «до конца месяца».
+        items.sort(
+            key=lambda p: (p.due_date is None, p.due_date or today, p.name)
+        )
+        return items
+
+    async def _spent_this_month(
+        self,
+        user_id: uuid.UUID,
+        month_start: date,
+        timezone_name: str,
+    ) -> dict[uuid.UUID, Decimal]:
+        """Траты месяца по категориям, положительными суммами."""
+        start, end = month_bounds_utc(month_start, timezone_name)
+        rows = await self._repo.spending_by_category(user_id, start, end)
+        # Траты без категории в резервы не входят: их не с чем сверить.
+        return {cat_id: -total for cat_id, total in rows if cat_id is not None}
+
+    async def _plan_minimum_left(
+        self,
+        user_id: uuid.UUID,
+        spent: dict[uuid.UUID, Decimal],
+    ) -> list[tuple[RecurringExpense, Decimal]]:
+        """План-минимум, ещё не покрытый тратами месяца, в рублях.
+
+        Резервируем только неоплаченный остаток: уже потраченное по
+        категории второй раз откладывать незачем, а перерасход не
+        освобождает деньги под другие обязательства.
+        """
+        result: list[tuple[RecurringExpense, Decimal]] = []
         for item in await self._repo.active_recurring(user_id):
             planned = item.amount_rub or Decimal(0)
             left = planned - spent.get(item.category_id, Decimal(0))
             if left > 0:
-                obligations.append(
-                    Obligation(
-                        name=item.name, amount_rub=left, kind="recurring"
-                    )
-                )
-                committed[item.category_id] = (
-                    committed.get(item.category_id, Decimal(0)) + left
-                )
+                result.append((item, left))
+        return result
 
+    async def _credit_dues(
+        self,
+        user_id: uuid.UUID,
+        after: date,
+        horizon: date,
+        missing: set[str],
+    ) -> list[_CreditDue]:
+        """Платежи по активным кредитам строго после ``after``.
+
+        Кредит без платежа или дня платежа пропускается: без них
+        дату не построить. Без курса платёж остаётся в списке, но
+        без рублёвой суммы, а валюта попадает в ``missing``.
+        """
+        dues: list[_CreditDue] = []
         for credit in await self._repo.active_credits(user_id):
             payment = credit.monthly_payment
             if not payment or not credit.payment_day:
                 continue
+            rate: Decimal | None
             try:
                 rate = await self._currencies.rate_to_rub(credit.currency_code)
             except NotFoundError:
                 missing.add(credit.currency_code)
-                continue
-            due_dates = _due_dates(credit.payment_day, today, horizon)
-            for due in due_dates:
-                obligations.append(
-                    Obligation(
-                        name=f"Платёж по кредиту {due.isoformat()}",
-                        amount_rub=payment * rate,
-                        kind="credit",
+                rate = None
+            for due in _due_dates(credit.payment_day, after, horizon):
+                dues.append(
+                    _CreditDue(
+                        name=credit.name,
+                        date=due,
+                        amount=payment,
+                        currency_code=credit.currency_code,
+                        amount_rub=None if rate is None else payment * rate,
                     )
                 )
-
-        return obligations, committed
+        return dues
 
 
 def _end_of_month(value: date) -> date:
@@ -402,20 +532,20 @@ def _end_of_month(value: date) -> date:
     )
 
 
-def _due_dates(payment_day: int, today: date, horizon: date) -> list[date]:
-    """Даты платежей строго после сегодня и не позже горизонта.
+def _due_dates(payment_day: int, after: date, horizon: date) -> list[date]:
+    """Даты платежей строго после ``after`` и не позже горизонта.
 
-    Платёж этого месяца, который уже прошёл, не резервируется:
-    деньги за него либо ушли, либо просрочены, и в остатке на счёте
-    это уже видно.
+    Дневной лимит передаёт сюда сегодняшний день: платёж этого
+    месяца, который уже прошёл, не резервируется — деньги за него
+    либо ушли, либо просрочены, и в остатке на счёте это уже видно.
     """
     dates: list[date] = []
-    cursor = date(today.year, today.month, 1)
+    cursor = date(after.year, after.month, 1)
     while cursor <= horizon:
         last_day = (_shift_month(cursor, 1) - timedelta(days=1)).day
         # 31-го нет в каждом месяце: списывают в последний день.
         due = date(cursor.year, cursor.month, min(payment_day, last_day))
-        if today < due <= horizon:
+        if after < due <= horizon:
             dates.append(due)
         cursor = _shift_month(cursor, 1)
     return dates

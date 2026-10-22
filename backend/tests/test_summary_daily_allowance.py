@@ -31,6 +31,7 @@ class _Credit:
         payment_day: int | None = None,
         currency: str = "RUB",
     ) -> None:
+        self.name = "Кредит"
         self.currency_code = currency
         self.principal_balance = balance
         self.monthly_payment = monthly_payment
