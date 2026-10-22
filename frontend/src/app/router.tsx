@@ -5,6 +5,7 @@ import { Layout } from "@/app/Layout"
 import { AccountsPage } from "@/features/accounts/AccountsPage"
 import { BackupPage } from "@/features/backup/BackupPage"
 import { BudgetsPage } from "@/features/budgets/BudgetsPage"
+import { OAuthAuthorizePage } from "@/features/ai/OAuthAuthorizePage"
 import { CategoriesPage } from "@/features/categories/CategoriesPage"
 import { CreditsPage } from "@/features/credits/CreditsPage"
 import { CurrenciesPage } from "@/features/currencies/CurrenciesPage"
@@ -19,6 +20,12 @@ export const router = createBrowserRouter([
   {
     path: "/login",
     element: <LoginPage />,
+  },
+  // Согласие OAuth для ИИ-ассистентов: вне Layout (без меню), вход
+  // проверяет сама страница — после логина возвращает сюда же.
+  {
+    path: "/oauth/authorize",
+    element: <OAuthAuthorizePage />,
   },
   {
     element: <ProtectedRoute />,
