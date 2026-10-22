@@ -35,6 +35,7 @@ from anfinances_bot.state import BotState
 from anfinances_bot.telegram.access import AllowlistMiddleware
 from anfinances_bot.telegram.albums import AlbumBuffer
 from anfinances_bot.telegram.handlers import (
+    AI_OFF,
     Session,
     handle_callback,
     handle_user_attachments,
@@ -58,7 +59,7 @@ class Deps:
     def __init__(
         self,
         client: AnfinancesClient,
-        runner: AgentRunner,
+        runner: AgentRunner | None,
         profile: UserProfile,
         spend: SpendLog,
     ) -> None:
@@ -78,6 +79,9 @@ class Deps:
         images: list[tuple[str, str]] | None = None,
         pdfs: list[str] | None = None,
     ) -> AgentReply:
+        if self._runner is None:
+            # ИИ выключен: модель не зовём, ничего не тратим.
+            return AgentReply(text=AI_OFF)
         # Счета и категории тянем каждый раз: она их правит на сайте,
         # а устаревший список тихо испортил бы разнесение операций.
         async with self._lock:
@@ -137,29 +141,41 @@ async def main() -> None:
     profile = await client.me()
     await _check_default_accounts(client, settings.bot_default_accounts)
 
-    toolbox = ToolBox(
-        client,
-        default_accounts=settings.bot_default_accounts,
-        timezone=profile.timezone,
-        home_currency=profile.default_currency,
-    )
-    runner = AgentRunner(
-        AsyncAnthropic(
-            api_key=settings.anthropic_api_key.get_secret_value(),
-            # По умолчанию SDK ждёт ответа десять минут и дважды
-            # повторяет — полчаса на один заход. Бот всё это время
-            # молчал, а сообщения копились в очереди за ним.
-            timeout=ANTHROPIC_TIMEOUT,
-            max_retries=1,
-        ),
-        toolbox,
-    )
+    runner: AgentRunner | None = None
+    speech: AsyncOpenAI | None = None
+    if (
+        settings.bot_ai_enabled
+        and settings.anthropic_api_key is not None
+        and settings.openai_api_key is not None
+    ):
+        toolbox = ToolBox(
+            client,
+            default_accounts=settings.bot_default_accounts,
+            timezone=profile.timezone,
+            home_currency=profile.default_currency,
+        )
+        runner = AgentRunner(
+            AsyncAnthropic(
+                api_key=settings.anthropic_api_key.get_secret_value(),
+                # По умолчанию SDK ждёт ответа десять минут и дважды
+                # повторяет — полчаса на один заход. Бот всё это время
+                # молчал, а сообщения копились в очереди за ним.
+                timeout=ANTHROPIC_TIMEOUT,
+                max_retries=1,
+            ),
+            toolbox,
+        )
+    # Расшифровка голосовых — отдельно от ИИ: Whisper стоит копейки,
+    # и голосовые остаются, даже когда разбор фраз выключен.
+    if settings.openai_api_key is not None:
+        speech = AsyncOpenAI(
+            api_key=settings.openai_api_key.get_secret_value()
+        )
     spend = SpendLog(
         Path(settings.bot_state_path).with_name("spend.json"),
         settings.bot_monthly_limit_usd,
     )
     deps = Deps(client, runner, profile, spend)
-    speech = AsyncOpenAI(api_key=settings.openai_api_key.get_secret_value())
 
     # Разметку модели переводим в HTML сами; без parse_mode телеграм
     # покажет её как есть, звёздочками.
@@ -186,7 +202,7 @@ async def main() -> None:
 
     async def _download_and_transcribe(message: Message) -> str:
         """Скачать голосовое во временный файл и расшифровать."""
-        if message.voice is None:
+        if message.voice is None or speech is None:
             raise SpeechUnavailableError("В сообщении нет голосового.")
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "voice.ogg"
@@ -246,6 +262,10 @@ async def main() -> None:
 
     @dispatcher.message(F.photo | F.document)
     async def _on_attachment(message: Message) -> None:
+        if runner is None:
+            # Без ИИ выписку разбирать некому — и качать файл незачем.
+            await message.answer(AI_OFF)
+            return
         collected = await albums.collect(message.media_group_id, message)
         if collected is None:
             # Пачку заберёт первое сообщение альбома.
@@ -260,6 +280,10 @@ async def main() -> None:
 
     @dispatcher.message(F.voice)
     async def _on_voice(message: Message) -> None:
+        if speech is None:
+            # Без ключа OpenAI расшифровать нечем.
+            await message.answer(AI_OFF)
+            return
         await handle_user_voice(
             message,
             deps,

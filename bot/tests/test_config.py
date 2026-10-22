@@ -122,3 +122,25 @@ def test_meeting_day_comes_from_environment(monkeypatch: Any) -> None:
     """Значение из секрета должно перебивать умолчание."""
     _apply(monkeypatch, BOT_BUDGET_MEETING_DAY="5")
     assert BotSettings().bot_budget_meeting_day == 5
+
+
+def test_ai_is_off_by_default_and_needs_no_keys(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Без ИИ бот не должен требовать ключей моделей: их можно убрать
+    из секретов, и ничего не потратится даже случайно."""
+    _apply(monkeypatch)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    settings = BotSettings()  # type: ignore[call-arg]
+    assert settings.bot_ai_enabled is False
+    assert settings.anthropic_api_key is None
+
+
+def test_ai_on_without_keys_is_refused(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _apply(monkeypatch, BOT_AI_ENABLED="true")
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    with pytest.raises(ValueError, match="BOT_AI_ENABLED"):
+        BotSettings()  # type: ignore[call-arg]

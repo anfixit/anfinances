@@ -7,7 +7,7 @@
 from functools import lru_cache
 from typing import Annotated
 
-from pydantic import Field, SecretStr, field_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 __all__ = ["BotSettings", "get_bot_settings", "parse_default_accounts"]
@@ -26,8 +26,14 @@ class BotSettings(BaseSettings):
     # ещё до валидаторов, и "111, 222" в него не уложится.
     telegram_allowed_user_ids: Annotated[frozenset[int], NoDecode]
 
-    anthropic_api_key: SecretStr
-    openai_api_key: SecretStr
+    # ИИ в боте: разбор фраз и выписок моделью и совещание по бюджету.
+    # Выключен — бот не создаёт клиента Claude и на него не тратит:
+    # записи идут через ChatGPT или Claude с коннектором anfinances.
+    # Голосовые расшифровываются, пока задан OPENAI_API_KEY, — отдельно
+    # от этого флага.
+    bot_ai_enabled: bool = False
+    anthropic_api_key: SecretStr | None = None
+    openai_api_key: SecretStr | None = None
     speech_model: str = "whisper-1"
 
     # Внутри compose-сети сайт доступен по имени сервиса; наружу
@@ -50,6 +56,18 @@ class BotSettings(BaseSettings):
     # Лимит расхода на модель в месяц, долларов. На 80% и 100% бот
     # предупреждает сам; /расход показывает, сколько набежало.
     bot_monthly_limit_usd: float = Field(default=10.0, gt=0)
+
+    @model_validator(mode="after")
+    def _keys_for_ai(self) -> "BotSettings":
+        """С включённым ИИ без ключей бот упал бы на первой же фразе."""
+        if self.bot_ai_enabled and (
+            self.anthropic_api_key is None or self.openai_api_key is None
+        ):
+            raise ValueError(
+                "BOT_AI_ENABLED=true требует ANTHROPIC_API_KEY и "
+                "OPENAI_API_KEY."
+            )
+        return self
 
     @field_validator("telegram_allowed_user_ids", mode="before")
     @classmethod

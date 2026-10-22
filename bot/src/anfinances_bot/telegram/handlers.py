@@ -36,6 +36,7 @@ from anfinances_bot.telegram.keyboards import (
 logger = logging.getLogger("anfinances_bot.handlers")
 
 __all__ = [
+    "AI_OFF",
     "Session",
     "handle_callback",
     "handle_user_attachments",
@@ -55,6 +56,12 @@ SPEECH_DOWN = "Не смогла разобрать голосовое. Напи
 FIX_PROMPT = "Что исправить? Напиши, например: «это был транспорт»."
 DOC_UNREADABLE = "Не смогла прочитать файл."
 DELETED = "Удалила операцию."
+AI_OFF = (
+    "Я сейчас без ИИ и сама сообщения не разбираю — так дешевле. "
+    "Записывай траты в ChatGPT: он подключён к anfinances. Или на сайте "
+    "anfinances.ru. Голосовые расшифрую, напоминания, /расход и кнопка "
+    "«Удалить» работают."
+)
 QUEUED = "Ещё разбираю предыдущее — отвечу на это следом."
 TOO_LONG = (
     "Слишком долго разбирала и остановилась. Часть операций могла "

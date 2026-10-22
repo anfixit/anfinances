@@ -55,6 +55,7 @@ async def test_unsent_meeting_is_resent_not_regenerated(
         telegram_allowed_user_ids=frozenset({42}),
         bot_quiet_hours=(0, 0),
         bot_budget_meeting_day=1,
+        bot_ai_enabled=True,
     )
     deps = _Deps()
     bot = _FlakyBot()
@@ -77,3 +78,42 @@ async def test_unsent_meeting_is_resent_not_regenerated(
         datetime.now(UTC).year,
         datetime.now(UTC).month,
     )
+
+
+async def test_no_meeting_without_ai(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Совещание пишет модель: без ИИ его нет, и модель не зовётся."""
+    ticks = 0
+
+    async def _sleep(_: float) -> None:
+        nonlocal ticks
+        ticks += 1
+        if ticks >= 1:
+            raise _StopLoopError
+
+    monkeypatch.setattr(proactive_loop.asyncio, "sleep", _sleep)
+    settings = SimpleNamespace(
+        telegram_allowed_user_ids=frozenset({42}),
+        bot_quiet_hours=(0, 0),
+        bot_budget_meeting_day=1,
+        bot_ai_enabled=False,
+    )
+    deps = _Deps()
+    bot = _FlakyBot()
+    bot.failures_left = 0
+
+    async def _no_transactions(*_: Any, **__: Any) -> list[Any]:
+        return [{"date": datetime.now(UTC).isoformat()}]
+
+    deps.client = SimpleNamespace(request=_no_transactions)
+    with pytest.raises(_StopLoopError):
+        await proactive_loop.run_proactive_loop(
+            bot,
+            deps,
+            settings,  # type: ignore[arg-type]
+            "UTC",
+            BotState(tmp_path / "state.json"),
+        )
+    assert deps.runs == 0
+    assert bot.sent == []

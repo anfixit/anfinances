@@ -74,7 +74,9 @@ async def run_proactive_loop(
         try:
             now = datetime.now(UTC).astimezone(zone)
             if not is_quiet(now, settings.bot_quiet_hours):
-                if should_hold_meeting(
+                # Совещание пишет модель: без ИИ его не будет, а
+                # напоминания о тишине модели не требуют и остаются.
+                if settings.bot_ai_enabled and should_hold_meeting(
                     now,
                     settings.bot_budget_meeting_day,
                     state.get("last_meeting_at"),
