@@ -18,6 +18,7 @@ from app.domains.summary.schemas import (
     CashflowResult,
     DailyAllowanceResult,
     DashboardResult,
+    IncomeByCategoryResult,
     MoneyAgeResult,
 )
 from app.domains.summary.service import SummaryService
@@ -92,4 +93,18 @@ async def by_category(
     month: Annotated[str, Query(pattern=r"^\d{4}-\d{2}$")],
 ) -> ApiResponse[ByCategoryResult]:
     result = await service.by_category(user.id, month, user.timezone)
+    return ApiResponse(data=result)
+
+
+@router.get(
+    "/income-by-category",
+    response_model=ApiResponse[IncomeByCategoryResult],
+)
+async def income_by_category(
+    user: CurrentUser,
+    service: ServiceDep,
+    month: Annotated[str, Query(pattern=r"^\d{4}-\d{2}$")],
+) -> ApiResponse[IncomeByCategoryResult]:
+    """Заработанное за месяц по категориям, без кредитов и возвратов."""
+    result = await service.income_by_category(user.id, month, user.timezone)
     return ApiResponse(data=result)

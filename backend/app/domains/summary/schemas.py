@@ -10,9 +10,11 @@ __all__ = [
     "AccountBalance",
     "CashflowResult",
     "ByCategoryResult",
+    "CategoryIncome",
     "CategorySpending",
     "DailyAllowanceResult",
     "DashboardResult",
+    "IncomeByCategoryResult",
     "MoneyAgeResult",
     "Obligation",
 ]
@@ -50,6 +52,23 @@ class CategorySpending(BaseModel):
 class ByCategoryResult(BaseModel):
     month: str
     items: list[CategorySpending]
+    total_rub: Decimal
+
+
+class CategoryIncome(BaseModel):
+    category_id: uuid.UUID | None
+    amount_rub: Decimal  # положительная сумма дохода
+
+
+class IncomeByCategoryResult(BaseModel):
+    """Доходы месяца по категориям — только заработанное.
+
+    Кредит, возврат и корректировка сюда не входят: деньги на счёт
+    они приносят, но доходом не являются.
+    """
+
+    month: str
+    items: list[CategoryIncome]
     total_rub: Decimal
 
 

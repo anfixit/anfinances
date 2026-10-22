@@ -27,9 +27,11 @@ from app.domains.summary.schemas import (
     AccountBalance,
     ByCategoryResult,
     CashflowResult,
+    CategoryIncome,
     CategorySpending,
     DailyAllowanceResult,
     DashboardResult,
+    IncomeByCategoryResult,
     MoneyAgeResult,
     Obligation,
 )
@@ -143,6 +145,32 @@ class SummaryService:
         items.sort(key=lambda x: x.amount_rub, reverse=True)
         total_rub = sum((i.amount_rub for i in items), Decimal(0))
         return ByCategoryResult(month=month, items=items, total_rub=total_rub)
+
+    async def income_by_category(
+        self,
+        user_id: uuid.UUID,
+        month: str,
+        timezone_name: str = DEFAULT_TIMEZONE,
+    ) -> IncomeByCategoryResult:
+        """Заработанное за месяц по категориям.
+
+        Месяц режется по таймзоне пользователя так же, как у
+        разбивки расходов: иначе зарплата, пришедшая вечером
+        последнего числа, уехала бы в следующий месяц.
+        """
+        month_date = _month_to_date(month)
+        start, end = month_bounds_utc(month_date, timezone_name)
+        rows = await self._repo.income_by_category(user_id, start, end)
+        # Доход хранится положительным — знак менять не нужно.
+        items = [
+            CategoryIncome(category_id=cat_id, amount_rub=total)
+            for cat_id, total in rows
+        ]
+        items.sort(key=lambda x: x.amount_rub, reverse=True)
+        total_rub = sum((i.amount_rub for i in items), Decimal(0))
+        return IncomeByCategoryResult(
+            month=month, items=items, total_rub=total_rub
+        )
 
     async def money_age(
         self,

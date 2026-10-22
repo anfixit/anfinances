@@ -66,6 +66,13 @@ class SummaryRepository(Protocol):
         date_to: datetime,
     ) -> list[tuple[uuid.UUID | None, Decimal]]: ...
 
+    async def income_by_category(
+        self,
+        user_id: uuid.UUID,
+        date_from: datetime,
+        date_to: datetime,
+    ) -> list[tuple[uuid.UUID | None, Decimal]]: ...
+
 
 class SqlSummaryRepository:
     def __init__(self, session: AsyncSession) -> None:
@@ -254,3 +261,31 @@ class SqlSummaryRepository:
                 spending.get(category_id, Decimal(0)) + amount
             )
         return list(spending.items())
+
+    async def income_by_category(
+        self,
+        user_id: uuid.UUID,
+        date_from: datetime,
+        date_to: datetime,
+    ) -> list[tuple[uuid.UUID | None, Decimal]]:
+        """Заработанное за период, сгруппированное по категории.
+
+        Только INCOME. Полученный кредит, возврат и корректировка
+        приносят деньги на счёт, но заработком не являются — ровно
+        то же правило, что и в ``cashflow``. Переводы имеют свой вид
+        операции и сюда не попадают.
+        """
+        result = await self._session.execute(
+            select(
+                Transaction.category_id,
+                func.coalesce(func.sum(Transaction.amount_rub), Decimal(0)),
+            )
+            .where(
+                Transaction.user_id == user_id,
+                Transaction.date >= date_from,
+                Transaction.date < date_to,
+                Transaction.kind == TransactionKind.INCOME,
+            )
+            .group_by(Transaction.category_id)
+        )
+        return [(row[0], row[1]) for row in result.all()]
