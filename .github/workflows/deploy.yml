@@ -904,14 +904,18 @@ jobs:
             docker compose \
               -f docker-compose.deploy.yml \
               up -d --wait postgres
-            mkdir -p backups/pre-migrate
-            dump="backups/pre-migrate/$(date -u +%Y%m%dT%H%M%SZ)-${DEPLOY_SHA:0:7}.dump"
+            # Не в backups/: её создаёт ночной бэкап от root, и деплой
+            # (пользователь admin) не может в ней писать. Домашняя папка
+            # деплоя — своя, а umask 077 выше закрывает её от остальных.
+            pre="$HOME/anfinances-pre-migrate"
+            mkdir -p "$pre"
+            dump="$pre/$(date -u +%Y%m%dT%H%M%SZ)-${DEPLOY_SHA:0:7}.dump"
             docker compose \
               -f docker-compose.deploy.yml \
               exec -T postgres \
               pg_dump -U anfinances -d anfinances -Fc > "$dump"
             test -s "$dump"
-            ls -1t backups/pre-migrate/*.dump | tail -n +6 | xargs -r rm --
+            ls -1t "$pre"/*.dump | tail -n +6 | xargs -r rm --
 
             # Миграция — новым образом и ДО запуска нового кода. Раньше
             # новый backend стартовал на старой схеме и до миграции

@@ -11,7 +11,7 @@
 # Запуск (делает CI по SSH, .github/workflows/deploy.yml):
 #   git checkout --detach <sha прогона>
 #   docker compose -f docker-compose.deploy.yml pull backend bot mcp frontend
-#   pg_dump в backups/pre-migrate/
+#   pg_dump в ~/anfinances-pre-migrate/ (домашняя папка пользователя деплоя)
 #   docker compose -f docker-compose.deploy.yml run --rm backend alembic upgrade head
 #   docker compose -f docker-compose.deploy.yml up -d
 # Миграция идёт до up: она должна быть совместима со старым кодом.
@@ -19,7 +19,7 @@
 # Переменные IMAGE_BACKEND / IMAGE_FRONTEND / IMAGE_BOT прокидывает pipeline —
 # образы с тегом sha коммита. Откат: перезапустить прогон старого коммита
 # (его образы лежат в GHCR) и при необходимости восстановить дамп из
-# backups/pre-migrate/.
+# ~/anfinances-pre-migrate/.
 # Домен задаётся в caddy/Caddyfile и в CORS_ORIGINS ниже (один sed на оба).
 
 services:
