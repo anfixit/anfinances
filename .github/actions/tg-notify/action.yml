@@ -52,14 +52,13 @@ runs:
       run: |
         set -euo pipefail
 
-        if [ -z "$TG_TOKEN" ]; then
-          echo "::error::TELEGRAM_BOT_TOKEN is empty"
-          exit 1
-        fi
-
-        if [ -z "$TG_CHAT" ]; then
-          echo "::error::TELEGRAM_CHAT_ID is empty"
-          exit 1
+        # Уведомление — не часть проверки. Сбой Telegram (25.11.2026:
+        # curl 35, TLS не установился) ронял job с зелёными тестами, а
+        # за ним и деплой. Теперь — повторы и предупреждение в логе, но
+        # шаг не падает.
+        if [ -z "$TG_TOKEN" ] || [ -z "$TG_CHAT" ]; then
+          echo "::warning::Telegram token or chat is empty — notification skipped"
+          exit 0
         fi
 
         case "$STATUS" in
@@ -128,6 +127,10 @@ runs:
           curl \
             --silent \
             --show-error \
+            --max-time 20 \
+            --retry 3 \
+            --retry-all-errors \
+            --retry-delay 3 \
             --output "$response_file" \
             --write-out "%{http_code}" \
             -X POST \
@@ -136,17 +139,16 @@ runs:
             -d "parse_mode=HTML" \
             -d "disable_web_page_preview=true" \
             --data-urlencode "text=${text}"
-        )"
+        )" || http_code="000"
 
         # Тело ответа в лог не печатаем: репозиторий публичный, а в
         # ответе Telegram — имя, фамилия и username получателя и
         # данные бота. При ошибке хватает её описания.
         if [ "$http_code" -lt 200 ] || [ "$http_code" -ge 300 ]; then
-          echo "::error::Telegram API returned HTTP ${http_code}: $(jq -r '.description // empty' "$response_file" 2>/dev/null)"
-          exit 1
+          echo "::warning::Telegram API returned HTTP ${http_code}: $(jq -r '.description // empty' "$response_file" 2>/dev/null)"
+          exit 0
         fi
 
         if ! grep -q '"ok":true' "$response_file"; then
-          echo "::error::Telegram API did not confirm delivery"
-          exit 1
+          echo "::warning::Telegram API did not confirm delivery"
         fi
