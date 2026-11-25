@@ -17,6 +17,8 @@ __all__ = ["CreditRepository", "SqlCreditRepository"]
 class CreditRepository(Protocol):
     async def list_active(self, user_id: uuid.UUID) -> list[Credit]: ...
 
+    async def list_archived(self, user_id: uuid.UUID) -> list[Credit]: ...
+
     async def get(
         self, credit_id: uuid.UUID, user_id: uuid.UUID
     ) -> Credit | None: ...
@@ -62,6 +64,17 @@ class SqlCreditRepository:
             .where(
                 Credit.user_id == user_id,
                 Credit.is_archived.is_(False),
+            )
+            .order_by(Credit.name)
+        )
+        return list(result.scalars().all())
+
+    async def list_archived(self, user_id: uuid.UUID) -> list[Credit]:
+        result = await self._session.execute(
+            select(Credit)
+            .where(
+                Credit.user_id == user_id,
+                Credit.is_archived.is_(True),
             )
             .order_by(Credit.name)
         )

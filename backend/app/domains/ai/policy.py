@@ -7,9 +7,12 @@
 адресу — так правила не обойти кодированием или лишним слэшем.
 
 Принцип: ассистент может читать всё и, с правом записи, добавлять
-и править операции, бюджеты, цели, счета и кредиты. Удалять и
-убирать в архив он не может ничего —
-ошибку модели, стёршую операцию, пользователь заметит не сразу.
+и править операции, бюджеты, цели, счета и кредиты. Удалять он не
+может ничего — ошибку модели, стёршую операцию, пользователь
+заметит не сразу. Исключение — архив счетов и кредитов: это мягкое
+удаление, обратимое через ``/restore``, и оба пути открыты вместе.
+Опасные случаи (счёт с остатком, кредит с долгом) роуты отсекают
+сами, по ``AiRequest``.
 Не трогает он и то, что относится к учётной записи и доступам:
 вход, профиль, импорт, полную выгрузку, свои же подключения.
 """
@@ -31,12 +34,29 @@ WELL_KNOWN_PATH = "/.well-known/oauth-authorization-server"
 READ_METHODS = frozenset({"GET", "HEAD"})
 WRITE_METHODS = frozenset({"POST", "PUT", "PATCH"})
 
-# Последний сегмент пути, по которому меняется архив счетов.
+# Последний сегмент пути, по которому меняется архив.
 _ARCHIVE_SEGMENTS = frozenset({"archive", "unarchive", "restore"})
+
+# Архив и возврат, открытые ассистенту: (метод, шаблон пути без
+# префикса API). DELETE у счетов и кредитов — мягкий архив.
+_OPEN_ARCHIVE = frozenset(
+    {
+        ("DELETE", "/accounts/{account_id}"),
+        ("POST", "/accounts/{account_id}/restore"),
+        ("DELETE", "/credits/{credit_id}"),
+        ("POST", "/credits/{credit_id}/restore"),
+    }
+)
 
 
 def _under(path: str, base: str) -> bool:
     return path == base or path.startswith(base + "/")
+
+
+def _open_archive(method: str, path: str, prefix: str) -> bool:
+    if not path.startswith(prefix):
+        return False
+    return (method, path.removeprefix(prefix)) in _OPEN_ARCHIVE
 
 
 def is_protocol_path(path: str, prefix: str) -> bool:
@@ -84,8 +104,13 @@ def deny_reason(
         return "Полная выгрузка доступна только в самом приложении."
     if path == f"{prefix}/currencies/rates/refresh":
         return "Обновлять курсы валют ИИ-интеграциям нельзя."
-    if path.rstrip("/").rsplit("/", 1)[-1] in _ARCHIVE_SEGMENTS:
-        return "Архив счетов меняется только в самом приложении."
+    archive = _open_archive(method, path, prefix)
+    last_segment = path.rstrip("/").rsplit("/", 1)[-1]
+    if last_segment in _ARCHIVE_SEGMENTS and not archive:
+        return (
+            "Через ИИ-интеграции меняется только архив счетов и "
+            "кредитов; остальное — в самом приложении."
+        )
     if path.endswith("/reconcile") and method not in READ_METHODS:
         # Закрыть сверку — значит пометить операции сверенными и, при
         # расхождении, записать корректировку. Это решение человека
@@ -94,7 +119,7 @@ def deny_reason(
     if _under(path, f"{prefix}/users/me") and method not in READ_METHODS:
         return "Профиль меняется только в самом приложении."
 
-    if method == "DELETE":
+    if method == "DELETE" and not archive:
         return (
             "ИИ-интеграциям нельзя удалять данные. "
             "Удалите это вручную в приложении."
@@ -103,7 +128,7 @@ def deny_reason(
         return "У токена нет права на чтение."
     if method in READ_METHODS:
         return None
-    if method in WRITE_METHODS:
+    if method in WRITE_METHODS or archive:
         if SCOPE_WRITE in scopes:
             return None
         return "Токен выдан только на чтение: менять данные нельзя."

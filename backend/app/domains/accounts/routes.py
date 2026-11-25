@@ -5,7 +5,8 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, status
 
-from app.core.dependencies import CurrentUser, DbSession
+from app.core.dependencies import AiRequest, CurrentUser, DbSession
+from app.core.exceptions import ForbiddenError
 from app.core.schemas import ApiResponse
 from app.domains.accounts.repository import (
     AccountRepository,
@@ -120,13 +121,21 @@ async def delete_account(
     user: CurrentUser,
     service: ServiceDep,
     db: DbSession,
+    ai: AiRequest,
     force: bool = False,
 ) -> ApiResponse[dict[str, str]]:
     """Архивировать счёт.
 
     ``force=true`` — подтверждение архивации счёта с ненулевым
     остатком: без него такой счёт молча исчез бы из капитала.
+    Ассистенту это подтверждение недоступно: убрать деньги из
+    капитала решает человек, на сайте.
     """
+    if force and ai:
+        raise ForbiddenError(
+            "Счёт с остатком ИИ-интеграции архивировать не могут. "
+            "Переведите остаток или архивируйте счёт на сайте."
+        )
     await service.archive_account(account_id, user.id, force=force)
     await db.commit()
     return ApiResponse(data={"status": "archived"})

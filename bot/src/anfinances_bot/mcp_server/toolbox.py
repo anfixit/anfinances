@@ -221,6 +221,109 @@ class McpToolBox(ToolBox):
             f"{body['amount_to']}, дата {body['date']}."
         )
 
+    # --- архив ----------------------------------------------------
+    #
+    # У бота архив — те же методы без confirm: там согласие видно в
+    # переписке. В MCP подтверждение клиента общее для всех пишущих
+    # вызовов, поэтому архиву нужен свой явный флаг.
+
+    async def mcp_archive_account(
+        self, account_name: str, confirm: bool = False
+    ) -> str:
+        """Убрать в архив счёт, который больше не нужен.
+
+        Только пустой счёт: архивный не входит в капитал, и деньги с
+        него молча пропали бы из итога. Если остаток не ноль — сначала
+        переведи его на другой счёт. Счёт с остатком архивирует только
+        сам пользователь, на сайте.
+
+        Сначала назови пользователю счёт и спроси, убирать ли его в
+        архив. confirm=true — только после его прямого согласия в
+        этом разговоре. Вернуть счёт — restore_account.
+        """
+        if not confirm:
+            return _ask_first(f"счёт «{account_name}»")
+        accounts = await self._client.accounts()
+        account = _find_account(accounts, account_name)
+        if account is None:
+            names = ", ".join(a.name for a in accounts)
+            return f"Счёт не найден. Доступные: {names}"
+        balance = account.current_balance
+        if balance is not None and balance != 0:
+            return (
+                f"На счёте «{account.name}» остаток {balance} "
+                f"{account.currency_code}. Архивировать можно только "
+                "пустой счёт: сначала переведи остаток. Счёт с "
+                "остатком архивирует сам пользователь на сайте."
+            )
+        await self._client.request("DELETE", f"/accounts/{account.id}")
+        return (
+            f"Счёт «{account.name}» убран в архив. Вернуть его — "
+            "restore_account с этим названием."
+        )
+
+    async def mcp_archive_credit(
+        self, name: str, confirm: bool = False
+    ) -> str:
+        """Убрать в архив погашенный кредит.
+
+        Только кредит без долга: архивный не вычитается из капитала, и
+        долг молча пропал бы из итога. Если долг остался, а банк
+        считает кредит закрытым, — не хватает платежа или разбивка
+        неверна: запиши последний платёж (create_credit_payment) или
+        разберись с пользователем, но не архивируй.
+
+        Сначала назови пользователю кредит и спроси, убирать ли его в
+        архив. confirm=true — только после его прямого согласия в
+        этом разговоре. Вернуть кредит — restore_credit.
+        """
+        if not confirm:
+            return _ask_first(f"кредит «{name}»")
+        found, error = await self._find_credit(name)
+        if found is None:
+            return error
+        try:
+            debt = _num(found.get("principal_balance", "0"))
+        except InvalidOperation:
+            debt = Decimal(0)
+        if debt > 0:
+            return (
+                f"По кредиту «{found['name']}» остаток долга {debt} "
+                f"{found.get('currency_code', '')}. Архивировать можно "
+                "только погашенный кредит: сначала запиши последний "
+                "платёж."
+            )
+        await self._client.request("DELETE", f"/credits/{found['id']}")
+        return (
+            f"Кредит «{found['name']}» (id {found['id']}) убран в "
+            "архив. Вернуть его — restore_credit с этим названием."
+        )
+
+    async def restore_credit(self, name: str) -> str:
+        """Вернуть кредит из архива в активные."""
+        rows = (
+            await self._client.request(
+                "GET", "/credits", params={"include_archived": "true"}
+            )
+            or []
+        )
+        archived = [r for r in rows if r.get("is_archived")]
+        needle = name.casefold().strip()
+        exact = [r for r in archived if str(r["name"]).casefold() == needle]
+        match = exact or [
+            r for r in archived if needle in str(r["name"]).casefold()
+        ]
+        if len(match) != 1:
+            names = ", ".join(f"«{r['name']}»" for r in archived)
+            return (
+                f"Не нашла один архивный кредит по «{name}». "
+                f"В архиве: {names or 'пусто'}"
+            )
+        await self._client.request(
+            "POST", f"/credits/{match[0]['id']}/restore"
+        )
+        return f"Кредит «{match[0]['name']}» возвращён из архива."
+
     # --- аналитика ------------------------------------------------
 
     async def get_income_by_category(self, month: str) -> str:
@@ -295,6 +398,14 @@ class McpToolBox(ToolBox):
                 *_age_lines(age or {}),
             ]
         )
+
+
+def _ask_first(what: str) -> str:
+    return (
+        f"Ничего не сделано: убрать в архив {what} можно только с "
+        "прямого согласия пользователя. Спроси его и, если он "
+        "согласится, вызови снова с confirm=true."
+    )
 
 
 def _num(value: Any) -> Decimal:

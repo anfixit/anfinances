@@ -6,7 +6,12 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, status
 
-from app.core.dependencies import CurrentUser, DbSession, SettingsDep
+from app.core.dependencies import (
+    AiRequest,
+    CurrentUser,
+    DbSession,
+    SettingsDep,
+)
 from app.core.schemas import ApiResponse
 from app.domains.accounts.repository import SqlAccountRepository
 from app.domains.categories.repository import SqlCategoryRepository
@@ -62,8 +67,9 @@ ServiceDep = Annotated[CreditService, Depends(get_credit_service)]
 async def list_credits(
     user: CurrentUser,
     service: ServiceDep,
+    include_archived: bool = False,
 ) -> ApiResponse[list[CreditRead]]:
-    items = await service.list_credits(user.id)
+    items = await service.list_credits(user.id, include_archived)
     return ApiResponse(
         data=[CreditRead.model_validate(item) for item in items]
     )
@@ -152,10 +158,25 @@ async def delete_credit(
     user: CurrentUser,
     service: ServiceDep,
     db: DbSession,
+    ai: AiRequest,
 ) -> ApiResponse[dict[str, str]]:
-    await service.archive_credit(credit_id, user.id)
+    """Архивировать кредит. Ассистенту — только погашенный."""
+    await service.archive_credit(credit_id, user.id, require_paid_off=ai)
     await db.commit()
     return ApiResponse(data={"status": "archived"})
+
+
+@router.post("/{credit_id}/restore", response_model=ApiResponse[CreditRead])
+async def restore_credit(
+    credit_id: uuid.UUID,
+    user: CurrentUser,
+    service: ServiceDep,
+    db: DbSession,
+) -> ApiResponse[CreditRead]:
+    """Вернуть кредит из архива."""
+    credit = await service.restore_credit(credit_id, user.id)
+    await db.commit()
+    return ApiResponse(data=CreditRead.model_validate(credit))
 
 
 @router.get(

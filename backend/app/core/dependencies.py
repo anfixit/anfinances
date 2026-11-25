@@ -41,6 +41,7 @@ from app.domains.auth.service import AuthService
 
 __all__ = [
     "AiPrincipalDep",
+    "AiRequest",
     "CurrentUser",
     "DbSession",
     "SettingsDep",
@@ -50,6 +51,7 @@ __all__ = [
     "get_current_user",
     "get_db",
     "get_settings",
+    "is_ai_request",
 ]
 
 DbSession = Annotated[AsyncSession, Depends(get_db)]
@@ -118,6 +120,21 @@ async def ai_token_guard(request: Request, settings: SettingsDep) -> None:
     )
     if reason is not None:
         raise ForbiddenError(reason)
+
+
+def is_ai_request(request: Request) -> bool:
+    """Запрос пришёл с токеном ИИ-интеграции, а не с сессии сайта.
+
+    Нужен роутам, где ассистенту дозволено меньше, чем человеку, и
+    это зависит не от пути, а от параметров (архив счёта с остатком,
+    кредита с долгом). Смотрит прямо на заголовок — не зависит от того,
+    успела ли отработать проверка токена.
+    """
+    token = _bearer_value(request)
+    return token is not None and is_ai_token(token)
+
+
+AiRequest = Annotated[bool, Depends(is_ai_request)]
 
 
 async def _authenticate_ai(

@@ -229,8 +229,22 @@ def test_policy_examples() -> None:
     assert deny_reason("PUT", f"{p}/users/me/currencies", write, p)
     assert deny_reason("GET", f"{p}/ai/whoami", read, p) is None
     assert deny_reason("GET", f"{p}/ai/connections", write, p)
+    # Архив счетов и кредитов открыт записи, и только им.
+    restore = f"{p}/accounts/{{account_id}}/restore"
+    assert deny_reason("POST", restore, write, p) is None
+    assert deny_reason("POST", restore, read, p)
+    assert (
+        deny_reason("DELETE", f"{p}/credits/{{credit_id}}", write, p) is None
+    )
+    assert deny_reason("DELETE", f"{p}/credits/{{credit_id}}", read, p)
     assert deny_reason(
-        "POST", f"{p}/accounts/{{account_id}}/restore", write, p
+        "POST", f"{p}/categories/{{category_id}}/restore", write, p
+    )
+    assert deny_reason(
+        "DELETE",
+        f"{p}/credits/{{credit_id}}/payments/{{payment_id}}",
+        write,
+        p,
     )
     assert deny_reason("OPTIONS", f"{p}/accounts", write, p)
 

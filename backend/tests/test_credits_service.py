@@ -165,6 +165,32 @@ async def test_archive_credit_allows_name_reuse() -> None:
     assert second.id != first.id
 
 
+async def test_restore_credit_refuses_active_namesake() -> None:
+    # Партиальный уникальный индекс есть только в PostgreSQL, поэтому
+    # конфликт имён проверяется здесь, а не на SQLite.
+    service, _ = _service()
+    first = await service.create_credit(USER, _create(name="A"))
+    await service.archive_credit(first.id, USER)
+    await service.create_credit(USER, _create(name="A"))
+
+    with pytest.raises(AlreadyExistsError):
+        await service.restore_credit(first.id, USER)
+    assert first.is_archived is True
+
+
+async def test_assistant_archives_only_paid_off_credit() -> None:
+    service, _ = _service()
+    credit = await service.create_credit(USER, _create(name="A"))
+
+    with pytest.raises(ValidationFailedError):
+        await service.archive_credit(credit.id, USER, require_paid_off=True)
+    assert not credit.is_archived
+
+    credit.principal_balance = Decimal("0")
+    await service.archive_credit(credit.id, USER, require_paid_off=True)
+    assert credit.is_archived is True
+
+
 async def test_linked_account_must_exist() -> None:
     service, _ = _service()
 

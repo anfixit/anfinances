@@ -28,6 +28,15 @@ _PROTOCOL = {
     "/.well-known/oauth-authorization-server",
 }
 
+# Архив счетов и кредитов — мягкое удаление с возвратом; только он
+# открыт токену записи из всего, что архивирует или удаляет.
+_OPEN_ARCHIVE = {
+    ("DELETE", f"{API}/accounts/{{account_id}}"),
+    ("POST", f"{API}/accounts/{{account_id}}/restore"),
+    ("DELETE", f"{API}/credits/{{credit_id}}"),
+    ("POST", f"{API}/credits/{{credit_id}}/restore"),
+}
+
 _DENY_ANY_METHOD_PREFIXES = (f"{API}/auth", f"{API}/import", f"{API}/ai")
 _DENY_ANY_METHOD_PATHS = {
     f"{API}/export/all.json",
@@ -50,6 +59,13 @@ def _routes(env: AiEnv) -> list[tuple[str, str]]:
 
 def _concrete(path: str) -> str:
     return re.sub(r"\{[^}]+\}", str(uuid.uuid4()), path)
+
+
+def _refused_to_writer(method: str, path: str) -> bool:
+    """Что токену записи закрыто: всё удаляющее и список запретов."""
+    if (method, path) in _OPEN_ARCHIVE:
+        return False
+    return method == "DELETE" or _denylisted(method, path)
 
 
 def _denylisted(method: str, path: str) -> bool:
@@ -90,7 +106,7 @@ async def test_write_token_refused_on_delete_and_denylist() -> None:
         token = await env.personal_token(["finance.write"])
         checked = 0
         for method, path in _routes(env):
-            if method == "DELETE" or _denylisted(method, path):
+            if _refused_to_writer(method, path):
                 status = await _call(env, method, path, token)
                 assert status == 403, (method, path, status)
                 checked += 1
@@ -116,10 +132,17 @@ async def test_write_token_can_reach_allowed_writes() -> None:
     async with ai_env(make_settings(**_NO_LIMIT)) as env:
         token = await env.personal_token(["finance.write"])
         for method, path in _routes(env):
-            if method == "DELETE" or _denylisted(method, path):
+            if _refused_to_writer(method, path):
                 continue
             status = await _call(env, method, path, token)
             assert status != 403, (method, path, status)
+
+
+async def test_every_open_archive_route_exists() -> None:
+    # Опечатка в шаблоне пути политики молча закрыла бы архив —
+    # или, хуже, открыла бы не то.
+    async with ai_env() as env:
+        assert set(_routes(env)) >= _OPEN_ARCHIVE
 
 
 async def test_read_token_reads_and_cannot_write() -> None:

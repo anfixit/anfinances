@@ -69,8 +69,13 @@ class CreditService:
         self._transactions = transactions
         self._currencies = currencies
 
-    async def list_credits(self, user_id: uuid.UUID) -> list[Credit]:
-        return await self._repo.list_active(user_id)
+    async def list_credits(
+        self, user_id: uuid.UUID, include_archived: bool = False
+    ) -> list[Credit]:
+        active = await self._repo.list_active(user_id)
+        if not include_archived:
+            return active
+        return active + await self._repo.list_archived(user_id)
 
     async def list_payments(
         self, credit_id: uuid.UUID, user_id: uuid.UUID
@@ -404,10 +409,47 @@ class CreditService:
         await self._repo.delete_payment(payment)
 
     async def archive_credit(
-        self, credit_id: uuid.UUID, user_id: uuid.UUID
+        self,
+        credit_id: uuid.UUID,
+        user_id: uuid.UUID,
+        require_paid_off: bool = False,
     ) -> None:
+        """Убрать кредит в архив.
+
+        Архивный кредит не вычитается из капитала. ``require_paid_off``
+        — для ассистента: кредит с долгом из архива молча исчез бы из
+        капитала, а заметить это человек смог бы не сразу.
+        """
         credit = await self.get_credit(credit_id, user_id)
+        if require_paid_off and credit.principal_balance > 0:
+            raise ValidationFailedError(
+                f"По кредиту «{credit.name}» остаток долга "
+                f"{credit.principal_balance} {credit.currency_code}. "
+                "Архивировать можно только погашенный кредит: сначала "
+                "запишите последний платёж.",
+                details=[
+                    {
+                        "field": "principal_balance",
+                        "message": str(credit.principal_balance),
+                    }
+                ],
+            )
         credit.is_archived = True
+
+    async def restore_credit(
+        self, credit_id: uuid.UUID, user_id: uuid.UUID
+    ) -> Credit:
+        """Вернуть кредит из архива — обратная сторона archive_credit."""
+        credit = await self.get_credit(credit_id, user_id)
+        if not credit.is_archived:
+            return credit
+        if await self._repo.get_active_by_name(user_id, credit.name):
+            raise AlreadyExistsError(
+                "Нельзя восстановить: активный кредит с именем "
+                f"«{credit.name}» уже есть."
+            )
+        credit.is_archived = False
+        return credit
 
     async def _validate_currency(self, code: str) -> None:
         if not await self._repo.currency_exists(code):

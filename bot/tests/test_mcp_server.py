@@ -62,6 +62,15 @@ class FakeBackend:
         self.created = 0
         self.down = False
         self.accounts = [dict(a) for a in ACCOUNTS]
+        self.credits: list[dict[str, Any]] = [
+            {
+                "id": "cr-1",
+                "name": "Т-Банк",
+                "currency_code": "RUB",
+                "principal_balance": "420527.66",
+                "is_archived": False,
+            }
+        ]
         self.transfer: dict[str, Any] = {
             "id": "tr-1",
             "legs": [
@@ -123,10 +132,19 @@ class FakeBackend:
             return _ok(self.accounts)
         if path.startswith("/accounts/") and method == "PATCH":
             return _ok({"id": path.rsplit("/", 1)[-1]})
+        if path.endswith("/restore") and method == "POST":
+            return _ok({"id": path.split("/")[2], "is_archived": False})
+        if path.startswith(("/accounts/", "/credits/")) and (
+            method == "DELETE"
+        ):
+            return _ok({"status": "archived"})
         if path == "/credits" and method == "POST":
             return _ok({"id": "cr-new"})
         if path == "/credits":
-            return _ok([{"id": "cr-1", "name": "Т-Банк"}])
+            every = request.url.params.get("include_archived") == "true"
+            return _ok(
+                [c for c in self.credits if every or not c["is_archived"]]
+            )
         if path.endswith("/payments") and method == "POST":
             return _ok({"id": "pay-1"})
         if path.startswith("/credits/") and method == "PATCH":
@@ -458,12 +476,14 @@ async def test_write_token_sees_and_calls_write_tools(
     assert post.headers["authorization"] == f"Bearer {WRITE}"
 
 
-def test_catalog_has_no_delete_or_archive() -> None:
+def test_catalog_has_no_delete_and_every_archive_is_reversible() -> None:
     names = {spec.name for spec in CATALOG}
 
-    assert not any(
-        name.startswith(("delete_", "archive_", "restore_")) for name in names
-    )
+    assert not any(name.startswith("delete_") for name in names)
+    archives = {n for n in names if n.startswith("archive_")}
+    assert archives == {"archive_account", "archive_credit"}
+    for name in archives:
+        assert name.replace("archive_", "restore_") in names
     assert len(names) == len(CATALOG)
 
 
@@ -474,6 +494,10 @@ ACCOUNT_AND_CREDIT_TOOLS = (
     "update_credit",
     "create_credit_payment",
     "update_transfer",
+    "archive_account",
+    "restore_account",
+    "archive_credit",
+    "restore_credit",
 )
 
 
@@ -627,6 +651,90 @@ async def test_transfer_moves_to_another_account(
     assert json.loads(patch.content)["to_account_id"] == "a-3"
 
 
+async def test_archive_needs_explicit_confirm(
+    mcp: httpx.AsyncClient, backend: FakeBackend
+) -> None:
+    result = await _call(mcp, WRITE, "archive_credit", name="Т-Банк")
+
+    assert "Ничего не сделано" in _text(result)
+    assert backend.writes() == []
+
+
+async def test_account_with_money_is_not_archived(
+    mcp: httpx.AsyncClient, backend: FakeBackend
+) -> None:
+    result = await _call(
+        mcp, WRITE, "archive_account", account_name="Альфа", confirm=True
+    )
+
+    assert "остаток 1000" in _text(result)
+    assert backend.writes() == []
+
+
+async def test_empty_account_is_archived_without_force(
+    mcp: httpx.AsyncClient, backend: FakeBackend
+) -> None:
+    backend.accounts.append(
+        {
+            "id": "a-9",
+            "name": "Озон накопления",
+            "currency_code": "RUB",
+            "current_balance": "0",
+        }
+    )
+
+    result = await _call(
+        mcp,
+        WRITE,
+        "archive_account",
+        account_name="накопления",
+        confirm=True,
+    )
+
+    assert "restore_account" in _text(result)
+    (delete,) = backend.writes()
+    assert (delete.method, delete.url.path) == (
+        "DELETE",
+        "/api/v1/accounts/a-9",
+    )
+    assert "force" not in delete.url.params
+
+
+async def test_credit_with_debt_is_not_archived(
+    mcp: httpx.AsyncClient, backend: FakeBackend
+) -> None:
+    result = await _call(
+        mcp, WRITE, "archive_credit", name="Т-Банк", confirm=True
+    )
+
+    assert "остаток долга 420527.66" in _text(result)
+    assert backend.writes() == []
+
+
+async def test_paid_off_credit_is_archived_and_restored(
+    mcp: httpx.AsyncClient, backend: FakeBackend
+) -> None:
+    backend.credits[0]["principal_balance"] = "0.0000"
+
+    archived = await _call(
+        mcp, WRITE, "archive_credit", name="т-банк", confirm=True
+    )
+    backend.credits[0]["is_archived"] = True
+    restored = await _call(mcp, WRITE, "restore_credit", name="Т-Банк")
+
+    assert "id cr-1" in _text(archived)
+    assert "возвращён" in _text(restored)
+    delete, restore = backend.writes()
+    assert (delete.method, delete.url.path) == (
+        "DELETE",
+        "/api/v1/credits/cr-1",
+    )
+    assert (restore.method, restore.url.path) == (
+        "POST",
+        "/api/v1/credits/cr-1/restore",
+    )
+
+
 async def test_annotations(mcp: httpx.AsyncClient) -> None:
     tools = await _tools(mcp, WRITE)
 
@@ -636,6 +744,10 @@ async def test_annotations(mcp: httpx.AsyncClient) -> None:
     assert write["readOnlyHint"] is False
     assert write["destructiveHint"] is False
     assert write["idempotentHint"] is False
+    for name in ("archive_account", "archive_credit"):
+        assert tools[name]["annotations"]["destructiveHint"] is True
+        assert "confirm" in tools[name]["inputSchema"]["properties"]
+    assert tools["restore_credit"]["annotations"]["destructiveHint"] is False
     assert (
         "idempotency_key"
         in (tools["create_expense"]["inputSchema"]["properties"])
