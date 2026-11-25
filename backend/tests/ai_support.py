@@ -36,6 +36,7 @@ from app.domains.ai.clients import (
 from app.domains.ai.ratelimit import connection_limiter
 from app.domains.ai.routes import get_metadata_fetcher
 from app.domains.auth.models import User
+from app.domains.currencies.models import Currency
 from app.main import create_app
 from tests.conftest import TEST_DATABASE_URL
 
@@ -116,6 +117,9 @@ async def ai_env(
             email=f"ai-{uuid.uuid4()}@example.com", hashed_password="x"
         )
         session.add(user)
+        # Рубль — как на проде: счета и кредиты ссылаются на валюту
+        # внешним ключом. SQLite его не проверяет, PostgreSQL — да.
+        session.add(Currency(code="RUB", name="Рубль", decimals=2))
         await session.commit()
         user_id = user.id
 
