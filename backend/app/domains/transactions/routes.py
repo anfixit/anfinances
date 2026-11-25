@@ -40,6 +40,8 @@ from app.domains.transactions.service import (
     TransactionService,
     TransferService,
 )
+from app.domains.trash.routes import DeleterDep, TrashServiceDep
+from app.domains.trash.schemas import DeletedResult
 
 router = APIRouter(prefix="/transactions", tags=["transactions"])
 transfer_router = APIRouter(prefix="/transfers", tags=["transfers"])
@@ -165,16 +167,22 @@ async def update_transaction(
     return ApiResponse(data=TransactionRead.model_validate(tx))
 
 
-@router.delete("/{tx_id}", response_model=ApiResponse[dict[str, str]])
+@router.delete("/{tx_id}", response_model=ApiResponse[DeletedResult])
 async def delete_transaction(
     tx_id: uuid.UUID,
     user: CurrentUser,
     service: TxServiceDep,
     db: DbSession,
-) -> ApiResponse[dict[str, str]]:
+    trash: TrashServiceDep,
+    who: DeleterDep,
+) -> ApiResponse[DeletedResult]:
+    """Удалить операцию; копия ляжет в корзину."""
+    record = await trash.keep_transaction(tx_id, user.id, who)
     await service.delete_transaction(tx_id, user.id)
     await db.commit()
-    return ApiResponse(data={"status": "deleted"})
+    return ApiResponse(
+        data=DeletedResult(trash_id=record.id, summary=record.summary)
+    )
 
 
 # ── /transfers ───────────────────────────────────────────────
@@ -234,14 +242,20 @@ async def update_transfer(
 
 @transfer_router.delete(
     "/{transfer_id}",
-    response_model=ApiResponse[dict[str, str]],
+    response_model=ApiResponse[DeletedResult],
 )
 async def delete_transfer(
     transfer_id: uuid.UUID,
     user: CurrentUser,
     service: TransferServiceDep,
     db: DbSession,
-) -> ApiResponse[dict[str, str]]:
+    trash: TrashServiceDep,
+    who: DeleterDep,
+) -> ApiResponse[DeletedResult]:
+    """Удалить перевод целиком; копия всех ног ляжет в корзину."""
+    record = await trash.keep_transfer(transfer_id, user.id, who)
     await service.delete_transfer(transfer_id, user.id)
     await db.commit()
-    return ApiResponse(data={"status": "deleted"})
+    return ApiResponse(
+        data=DeletedResult(trash_id=record.id, summary=record.summary)
+    )

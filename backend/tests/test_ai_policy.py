@@ -28,13 +28,18 @@ _PROTOCOL = {
     "/.well-known/oauth-authorization-server",
 }
 
-# Архив счетов и кредитов — мягкое удаление с возвратом; только он
-# открыт токену записи из всего, что архивирует или удаляет.
+# Обратимое — архив счетов и кредитов и удаление в корзину; только
+# оно открыто токену записи из всего, что архивирует или удаляет, и
+# каждое — вместе со своим возвратом.
 _OPEN_ARCHIVE = {
     ("DELETE", f"{API}/accounts/{{account_id}}"),
     ("POST", f"{API}/accounts/{{account_id}}/restore"),
     ("DELETE", f"{API}/credits/{{credit_id}}"),
     ("POST", f"{API}/credits/{{credit_id}}/restore"),
+    ("DELETE", f"{API}/transactions/{{tx_id}}"),
+    ("DELETE", f"{API}/transfers/{{transfer_id}}"),
+    ("DELETE", f"{API}/credits/{{credit_id}}/payments/{{payment_id}}"),
+    ("POST", f"{API}/trash/{{record_id}}/restore"),
 }
 
 _DENY_ANY_METHOD_PREFIXES = (f"{API}/auth", f"{API}/import", f"{API}/ai")

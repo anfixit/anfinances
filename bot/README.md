@@ -21,7 +21,9 @@ Claude Code: `python -m anfinances_bot.mcp_server`, Streamable HTTP на
   `WWW-Authenticate: Bearer resource_metadata=…`, метаданные ресурса —
   на `/.well-known/oauth-protected-resource/mcp`.
 - Инструменты — из `agent/tools.py`, список в `mcp_server/catalog.py`.
-  Удалений нет. Счета и кредиты ассистент заводит и правит сам,
+  Операции, переводы и платежи по кредиту ассистент удаляет только в
+  корзину сайта (`restore_deleted` возвращает) и только с
+  `confirm=true`; сверенное не трогает. Счета и кредиты заводит и правит сам,
   платежи по кредиту записывает, переводы исправляет целиком
   (`update_transfer`). В архив убирает только пустой счёт и
   погашенный кредит, с `confirm=true` и парным `restore_*`; сайт

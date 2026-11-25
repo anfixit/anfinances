@@ -1,0 +1,33 @@
+/* Корзина. Подключается в main.tsx. */
+
+.trash-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+}
+
+.trash-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 0;
+  border-top: 1px solid var(--outline-variant);
+}
+
+.trash-list li:first-child .trash-row {
+  border-top: none;
+}
+
+.trash-row-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.trash-meta {
+  color: var(--on-surface-variant);
+  font-size: 0.9rem;
+}

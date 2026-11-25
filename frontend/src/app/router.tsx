@@ -15,6 +15,7 @@ import { RecurringPage } from "@/features/recurring/RecurringPage"
 import { SettingsPage } from "@/features/settings/SettingsPage"
 import { DashboardPage } from "@/features/summary/DashboardPage"
 import { TransactionsPage } from "@/features/transactions/TransactionsPage"
+import { TrashPage } from "@/features/trash/TrashPage"
 
 export const router = createBrowserRouter([
   {
@@ -44,6 +45,7 @@ export const router = createBrowserRouter([
           { path: "/currencies", element: <CurrenciesPage /> },
           { path: "/settings", element: <SettingsPage /> },
           { path: "/backup", element: <BackupPage /> },
+          { path: "/trash", element: <TrashPage /> },
         ],
       },
     ],

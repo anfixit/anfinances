@@ -12,6 +12,7 @@ import {
   useCredits,
 } from "@/features/credits/hooks"
 import type { Credit, CreditPayment } from "@/features/credits/types"
+import { TRASH_NOTE } from "@/features/trash/types"
 import { formatDate } from "@/lib/datetime"
 import { formatMoney } from "@/lib/money"
 
@@ -84,6 +85,7 @@ export function CreditsPage() {
         `Долг вырастет на ${grows} — на столько было засчитано ` +
           "погашение основного долга.",
         "Расходная операция этого платежа тоже удалится.",
+        TRASH_NOTE,
       ],
       confirmLabel: "Удалить платёж",
       danger: true,

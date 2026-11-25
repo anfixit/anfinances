@@ -20,6 +20,7 @@ export const queryKeys = {
   myCurrencies: ["users", "me", "currencies"] as const,
   recurring: ["recurring"] as const,
   credits: ["credits"] as const,
+  trash: ["trash"] as const,
   creditPayments: (creditId: string) =>
     ["credits", creditId, "payments"] as const,
   transactions: (filters: Readonly<Record<string, unknown>>) =>

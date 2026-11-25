@@ -1,9 +1,11 @@
 """Какие инструменты бота видны внешним ассистентам и как.
 
 Список закрытый: в MCP попадает только то, что перечислено здесь.
-Удалений нет вовсе — ни операций, ни переводов, ни платежей.
-Ассистент в чужом приложении ошибается так же, как телеграм-бот, но
-отменить за ним нечем: истории правок у сайта нет.
+Ассистент в чужом приложении ошибается так же, как телеграм-бот,
+поэтому удалять он может только то, что возвращается: операции,
+переводы и платежи по кредиту уходят в корзину сайта (обратно —
+restore_deleted), всё с явным confirm. Бюджеты, цели, категории,
+план-минимум он не удаляет: корзины у них нет.
 
 Счета и кредиты ассистент заводит и правит сам: без этого сверку с
 банком не довести до конца (новый кредит, разделённый счёт). Ошибка
@@ -159,6 +161,26 @@ CATALOG: tuple[ToolSpec, ...] = (
         destructive=True,
     ),
     _write("restore_credit", "Вернуть кредит из архива"),
+    _write(
+        "delete_transaction",
+        "Удалить операцию в корзину",
+        method="mcp_delete_transaction",
+        destructive=True,
+    ),
+    _write(
+        "delete_transfer",
+        "Удалить перевод в корзину",
+        method="mcp_delete_transfer",
+        destructive=True,
+    ),
+    _write(
+        "delete_credit_payment",
+        "Удалить платёж по кредиту в корзину",
+        method="mcp_delete_credit_payment",
+        destructive=True,
+    ),
+    _read("list_deleted", "Корзина"),
+    _write("restore_deleted", "Вернуть из корзины"),
     _write("set_budget", "Задать план на месяц"),
     _write("move_budget", "Перенести план", idempotency=True),
     _write("set_goal", "Поставить цель"),
@@ -208,7 +230,7 @@ def describe(toolbox: McpToolBox, spec: ToolSpec) -> types.Tool:
         open_world_hint=False,
     )
     if not spec.read_only:
-        # Удаления в каталоге нет; разрушительным помечен только архив.
+        # Разрушительными помечены архив и удаление в корзину.
         # Повтор создаёт вторую операцию, поэтому не идемпотентны.
         annotations.destructive_hint = spec.destructive
         annotations.idempotent_hint = False

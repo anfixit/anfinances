@@ -118,6 +118,12 @@ export function SettingsPage() {
           </Link>
         </div>
         <div className="set-row">
+          <span className="set-label">Корзина</span>
+          <Link className="link" to="/trash">
+            Открыть
+          </Link>
+        </div>
+        <div className="set-row">
           <span className="set-label">Набор валют</span>
           <Link className="link" to="/currencies">
             Открыть

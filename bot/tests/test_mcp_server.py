@@ -132,6 +132,37 @@ class FakeBackend:
             return _ok(self.accounts)
         if path.startswith("/accounts/") and method == "PATCH":
             return _ok({"id": path.rsplit("/", 1)[-1]})
+        if method == "DELETE" and (
+            path.startswith(("/transactions/", "/transfers/"))
+            or "/payments/" in path
+        ):
+            return _ok(
+                {
+                    "status": "deleted",
+                    "trash_id": "trash-1",
+                    "summary": "Трата 431.00 RUB · Альфа · 18.11.2026",
+                }
+            )
+        if path == "/trash" and method == "GET":
+            return _ok(
+                [
+                    {
+                        "id": "trash-1",
+                        "kind": "transaction",
+                        "summary": "Трата 431.00 RUB · Альфа · 18.11.2026",
+                        "source": "ИИ: ChatGPT",
+                        "deleted_at": "2026-11-25T08:00:00Z",
+                        "restored_at": None,
+                    }
+                ]
+            )
+        if path.startswith("/trash/") and method == "POST":
+            return _ok(
+                {
+                    "id": path.split("/")[2],
+                    "summary": "Трата 431.00 RUB · Альфа · 18.11.2026",
+                }
+            )
         if path.endswith("/restore") and method == "POST":
             return _ok({"id": path.split("/")[2], "is_archived": False})
         if path.startswith(("/accounts/", "/credits/")) and (
@@ -476,10 +507,16 @@ async def test_write_token_sees_and_calls_write_tools(
     assert post.headers["authorization"] == f"Bearer {WRITE}"
 
 
-def test_catalog_has_no_delete_and_every_archive_is_reversible() -> None:
+def test_every_delete_and_archive_is_reversible() -> None:
     names = {spec.name for spec in CATALOG}
 
-    assert not any(name.startswith("delete_") for name in names)
+    deletes = {n for n in names if n.startswith("delete_")}
+    assert deletes == {
+        "delete_transaction",
+        "delete_transfer",
+        "delete_credit_payment",
+    }
+    assert "restore_deleted" in names
     archives = {n for n in names if n.startswith("archive_")}
     assert archives == {"archive_account", "archive_credit"}
     for name in archives:
@@ -498,6 +535,10 @@ ACCOUNT_AND_CREDIT_TOOLS = (
     "restore_account",
     "archive_credit",
     "restore_credit",
+    "delete_transaction",
+    "delete_transfer",
+    "delete_credit_payment",
+    "restore_deleted",
 )
 
 
@@ -735,6 +776,63 @@ async def test_paid_off_credit_is_archived_and_restored(
     )
 
 
+async def test_delete_needs_explicit_confirm(
+    mcp: httpx.AsyncClient, backend: FakeBackend
+) -> None:
+    result = await _call(
+        mcp, WRITE, "delete_transaction", transaction_id="t-1"
+    )
+
+    assert "Ничего не сделано" in _text(result)
+    assert backend.writes() == []
+
+
+async def test_deleted_goes_to_trash_and_comes_back(
+    mcp: httpx.AsyncClient, backend: FakeBackend
+) -> None:
+    deleted = await _call(
+        mcp, WRITE, "delete_transaction", transaction_id="t-1", confirm=True
+    )
+    listed = await _call(mcp, READ, "list_deleted")
+    restored = await _call(mcp, WRITE, "restore_deleted", trash_id="trash-1")
+
+    assert "Удалено в корзину: Трата 431.00 RUB" in _text(deleted)
+    assert "trash_id trash-1" in _text(deleted)
+    assert "trash-1 · 2026-11-25 · ИИ: ChatGPT" in _text(listed)
+    assert "Возвращено: Трата 431.00 RUB" in _text(restored)
+    delete, restore = backend.writes()
+    assert (delete.method, delete.url.path) == (
+        "DELETE",
+        "/api/v1/transactions/t-1",
+    )
+    assert (restore.method, restore.url.path) == (
+        "POST",
+        "/api/v1/trash/trash-1/restore",
+    )
+
+
+async def test_transfer_and_payment_deletes_hit_their_routes(
+    mcp: httpx.AsyncClient, backend: FakeBackend
+) -> None:
+    await _call(
+        mcp, WRITE, "delete_transfer", transfer_id="tr-1", confirm=True
+    )
+    await _call(
+        mcp,
+        WRITE,
+        "delete_credit_payment",
+        credit_id="cr-1",
+        payment_id="pay-1",
+        confirm=True,
+    )
+
+    paths = [(r.method, r.url.path) for r in backend.writes()]
+    assert paths == [
+        ("DELETE", "/api/v1/transfers/tr-1"),
+        ("DELETE", "/api/v1/credits/cr-1/payments/pay-1"),
+    ]
+
+
 async def test_annotations(mcp: httpx.AsyncClient) -> None:
     tools = await _tools(mcp, WRITE)
 
@@ -744,9 +842,16 @@ async def test_annotations(mcp: httpx.AsyncClient) -> None:
     assert write["readOnlyHint"] is False
     assert write["destructiveHint"] is False
     assert write["idempotentHint"] is False
-    for name in ("archive_account", "archive_credit"):
+    for name in (
+        "archive_account",
+        "archive_credit",
+        "delete_transaction",
+        "delete_transfer",
+        "delete_credit_payment",
+    ):
         assert tools[name]["annotations"]["destructiveHint"] is True
         assert "confirm" in tools[name]["inputSchema"]["properties"]
+    assert tools["list_deleted"]["annotations"]["readOnlyHint"] is True
     assert tools["restore_credit"]["annotations"]["destructiveHint"] is False
     assert (
         "idempotency_key"
@@ -769,7 +874,7 @@ async def test_unknown_tool_is_protocol_error(mcp: httpx.AsyncClient) -> None:
         mcp,
         WRITE,
         "tools/call",
-        {"name": "delete_transaction", "arguments": {"transaction_id": "t"}},
+        {"name": "delete_category", "arguments": {"path": "Еда"}},
     )
 
     assert "error" in response.json()

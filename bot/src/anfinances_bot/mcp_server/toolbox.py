@@ -324,6 +324,106 @@ class McpToolBox(ToolBox):
         )
         return f"Кредит «{match[0]['name']}» возвращён из архива."
 
+    # --- удаление в корзину ---------------------------------------
+    #
+    # Удалённое не пропадает: сайт кладёт копию в корзину, откуда
+    # restore_deleted возвращает её с теми же id. Поэтому удаление
+    # открыто, но, как и архив, только с явным confirm.
+
+    async def mcp_delete_transaction(
+        self, transaction_id: str, confirm: bool = False
+    ) -> str:
+        """Удалить ошибочную операцию — например, задвоенную покупку.
+
+        Трата, доход, возврат, кредит, корректировка. Переводы —
+        delete_transfer, платежи по кредиту — delete_credit_payment.
+        Если операцию надо поправить, а не убрать, — update_transaction.
+
+        Копия ляжет в корзину; вернуть — restore_deleted. Сверенную с
+        банком операцию удалить нельзя: это решает пользователь на
+        сайте.
+
+        Сначала назови пользователю операцию — сумму, дату, счёт — и
+        спроси, удалять ли. confirm=true — только после его прямого
+        согласия в этом разговоре.
+        """
+        if not confirm:
+            return _ask_delete("операцию")
+        data = await self._client.request(
+            "DELETE", f"/transactions/{transaction_id}"
+        )
+        return _deleted(data)
+
+    async def mcp_delete_transfer(
+        self, transfer_id: str, confirm: bool = False
+    ) -> str:
+        """Удалить перевод между своими счетами целиком — обе ноги.
+
+        Нужно, когда перевод задвоился. Если неверны дата или сумма —
+        не удаляй, а исправь: update_transfer. transfer_id — поле
+        transfer_id у любой из ног в list_transactions.
+
+        Копия ляжет в корзину; вернуть — restore_deleted. Сначала
+        назови пользователю перевод и спроси, удалять ли; confirm=true
+        — только после его прямого согласия.
+        """
+        if not confirm:
+            return _ask_delete("перевод")
+        data = await self._client.request(
+            "DELETE", f"/transfers/{transfer_id}"
+        )
+        return _deleted(data)
+
+    async def mcp_delete_credit_payment(
+        self, credit_id: str, payment_id: str, confirm: bool = False
+    ) -> str:
+        """Удалить платёж по кредиту — например, задвоенный.
+
+        Погашенное этим платежом тело вернётся в долг, а списание
+        исчезнет со счёта. payment_id — из list_credit_payments.
+
+        Копия ляжет в корзину; вернуть — restore_deleted, и тогда тело
+        снова погасится. Сначала назови пользователю платёж — сумму и
+        дату — и спроси, удалять ли; confirm=true — только после его
+        прямого согласия.
+        """
+        if not confirm:
+            return _ask_delete("платёж по кредиту")
+        data = await self._client.request(
+            "DELETE", f"/credits/{credit_id}/payments/{payment_id}"
+        )
+        return _deleted(data)
+
+    async def list_deleted(self, limit: int = 20) -> str:
+        """Корзина: что удалено, кем и когда, свежее сверху.
+
+        id каждой строки — для restore_deleted. Уже возвращённое здесь
+        не показывается.
+        """
+        rows = (
+            await self._client.request(
+                "GET", "/trash", params={"limit": limit}
+            )
+            or []
+        )
+        if not rows:
+            return "Корзина пуста."
+        return "\n".join(
+            f"{r['id']} · {str(r['deleted_at'])[:10]} · {r['source']} · "
+            f"{r['summary']}"
+            for r in rows
+        )
+
+    async def restore_deleted(self, trash_id: str) -> str:
+        """Вернуть из корзины удалённую операцию, перевод или платёж.
+
+        Возвращается ровно то, что было, с теми же id. Платёж по
+        кредиту при возврате снова гасит тело. trash_id — из ответа
+        удаления или из list_deleted.
+        """
+        data = await self._client.request("POST", f"/trash/{trash_id}/restore")
+        return f"Возвращено: {(data or {}).get('summary', trash_id)}."
+
     # --- аналитика ------------------------------------------------
 
     async def get_income_by_category(self, month: str) -> str:
@@ -405,6 +505,22 @@ def _ask_first(what: str) -> str:
         f"Ничего не сделано: убрать в архив {what} можно только с "
         "прямого согласия пользователя. Спроси его и, если он "
         "согласится, вызови снова с confirm=true."
+    )
+
+
+def _ask_delete(what: str) -> str:
+    return (
+        f"Ничего не сделано: удалить {what} можно только с прямого "
+        "согласия пользователя. Назови, что именно удаляешь, спроси его "
+        "и, если он согласится, вызови снова с confirm=true."
+    )
+
+
+def _deleted(data: Any) -> str:
+    data = data or {}
+    return (
+        f"Удалено в корзину: {data.get('summary', '')}. "
+        f"Вернуть — restore_deleted с trash_id {data.get('trash_id')}."
     )
 
 

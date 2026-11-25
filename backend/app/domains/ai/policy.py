@@ -7,12 +7,14 @@
 адресу — так правила не обойти кодированием или лишним слэшем.
 
 Принцип: ассистент может читать всё и, с правом записи, добавлять
-и править операции, бюджеты, цели, счета и кредиты. Удалять он не
-может ничего — ошибку модели, стёршую операцию, пользователь
-заметит не сразу. Исключение — архив счетов и кредитов: это мягкое
-удаление, обратимое через ``/restore``, и оба пути открыты вместе.
-Опасные случаи (счёт с остатком, кредит с долгом) роуты отсекают
-сами, по ``AiRequest``.
+и править операции, бюджеты, цели, счета и кредиты. Удалять он может
+только то, что возвращается: архив счетов и кредитов (обратно —
+``/restore``) и операции, переводы и платежи по кредиту (их копия
+ложится в корзину, обратно — ``/trash/{id}/restore``). Каждое
+открытое удаление открыто вместе со своим возвратом. Опасные случаи
+(счёт с остатком, кредит с долгом, сверенная операция) роуты и
+корзина отсекают сами, по ``AiRequest``. Остальное — бюджеты, цели,
+категории, план-минимум — ассистент не удаляет: корзины у них нет.
 Не трогает он и то, что относится к учётной записи и доступам:
 вход, профиль, импорт, полную выгрузку, свои же подключения.
 """
@@ -37,14 +39,19 @@ WRITE_METHODS = frozenset({"POST", "PUT", "PATCH"})
 # Последний сегмент пути, по которому меняется архив.
 _ARCHIVE_SEGMENTS = frozenset({"archive", "unarchive", "restore"})
 
-# Архив и возврат, открытые ассистенту: (метод, шаблон пути без
-# префикса API). DELETE у счетов и кредитов — мягкий архив.
-_OPEN_ARCHIVE = frozenset(
+# Обратимые удаления, открытые ассистенту, и их возвраты: (метод,
+# шаблон пути без префикса API). DELETE у счетов и кредитов — мягкий
+# архив; у операций, переводов и платежей — с копией в корзине.
+_OPEN_REVERSIBLE = frozenset(
     {
         ("DELETE", "/accounts/{account_id}"),
         ("POST", "/accounts/{account_id}/restore"),
         ("DELETE", "/credits/{credit_id}"),
         ("POST", "/credits/{credit_id}/restore"),
+        ("DELETE", "/transactions/{tx_id}"),
+        ("DELETE", "/transfers/{transfer_id}"),
+        ("DELETE", "/credits/{credit_id}/payments/{payment_id}"),
+        ("POST", "/trash/{record_id}/restore"),
     }
 )
 
@@ -53,10 +60,10 @@ def _under(path: str, base: str) -> bool:
     return path == base or path.startswith(base + "/")
 
 
-def _open_archive(method: str, path: str, prefix: str) -> bool:
+def _reversible(method: str, path: str, prefix: str) -> bool:
     if not path.startswith(prefix):
         return False
-    return (method, path.removeprefix(prefix)) in _OPEN_ARCHIVE
+    return (method, path.removeprefix(prefix)) in _OPEN_REVERSIBLE
 
 
 def is_protocol_path(path: str, prefix: str) -> bool:
@@ -104,12 +111,12 @@ def deny_reason(
         return "Полная выгрузка доступна только в самом приложении."
     if path == f"{prefix}/currencies/rates/refresh":
         return "Обновлять курсы валют ИИ-интеграциям нельзя."
-    archive = _open_archive(method, path, prefix)
+    reversible = _reversible(method, path, prefix)
     last_segment = path.rstrip("/").rsplit("/", 1)[-1]
-    if last_segment in _ARCHIVE_SEGMENTS and not archive:
+    if last_segment in _ARCHIVE_SEGMENTS and not reversible:
         return (
             "Через ИИ-интеграции меняется только архив счетов и "
-            "кредитов; остальное — в самом приложении."
+            "кредитов и корзина; остальное — в самом приложении."
         )
     if path.endswith("/reconcile") and method not in READ_METHODS:
         # Закрыть сверку — значит пометить операции сверенными и, при
@@ -119,16 +126,17 @@ def deny_reason(
     if _under(path, f"{prefix}/users/me") and method not in READ_METHODS:
         return "Профиль меняется только в самом приложении."
 
-    if method == "DELETE" and not archive:
+    if method == "DELETE" and not reversible:
         return (
-            "ИИ-интеграциям нельзя удалять данные. "
-            "Удалите это вручную в приложении."
+            "ИИ-интеграциям можно удалять только операции, переводы и "
+            "платежи (в корзину) и архивировать счета и кредиты. "
+            "Это удалите вручную в приложении."
         )
     if SCOPE_READ not in scopes:
         return "У токена нет права на чтение."
     if method in READ_METHODS:
         return None
-    if method in WRITE_METHODS or archive:
+    if method in WRITE_METHODS or reversible:
         if SCOPE_WRITE in scopes:
             return None
         return "Токен выдан только на чтение: менять данные нельзя."

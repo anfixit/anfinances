@@ -20,6 +20,7 @@ import type {
   Transaction,
   TransactionFilters,
 } from "@/features/transactions/types"
+import { TRASH_NOTE } from "@/features/trash/types"
 import { formatDate } from "@/lib/datetime"
 import { formatMoney } from "@/lib/money"
 import type { TransactionKind } from "@/types/enums"
@@ -276,6 +277,7 @@ export function TransactionsPage() {
           accountLine(t, rows, accById),
           "Перевод удалится целиком — обе стороны, списание и " +
             "зачисление. Балансы обоих счетов вернутся как было.",
+          TRASH_NOTE,
         ],
         confirmLabel: "Удалить перевод",
         danger: true,
@@ -290,6 +292,7 @@ export function TransactionsPage() {
       body: [
         transactionCategoryLabel(t, catById),
         "Баланс счёта изменится на эту сумму.",
+        TRASH_NOTE,
       ],
       confirmLabel: "Удалить",
       danger: true,

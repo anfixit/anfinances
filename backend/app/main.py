@@ -45,6 +45,7 @@ from app.domains.transactions.routes import (
 from app.domains.transactions.routes import (
     transfer_router,
 )
+from app.domains.trash.routes import router as trash_router
 from app.domains.users.routes import router as users_router
 
 # Конфигурируем логирование до создания приложения, чтобы стартовые
@@ -260,6 +261,7 @@ def create_app() -> FastAPI:
     app.include_router(export_router, prefix=prefix)
     app.include_router(goals_router, prefix=prefix)
     app.include_router(import_router, prefix=prefix)
+    app.include_router(trash_router, prefix=prefix)
     app.include_router(ai_router, prefix=prefix)
     # Метаданные OAuth обязаны жить в корне сайта (RFC 8414).
     app.include_router(well_known_router)

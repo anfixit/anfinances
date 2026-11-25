@@ -221,7 +221,15 @@ def test_policy_examples() -> None:
     assert deny_reason("GET", f"{p}/accounts", read, p) is None
     assert deny_reason("POST", f"{p}/transactions", write, p) is None
     assert deny_reason("POST", f"{p}/transactions", read, p)
-    assert deny_reason("DELETE", f"{p}/transactions/{{tx_id}}", write, p)
+    # Операции удаляются в корзину — записи можно, чтению нет.
+    tx = f"{p}/transactions/{{tx_id}}"
+    assert deny_reason("DELETE", tx, write, p) is None
+    assert deny_reason("DELETE", tx, read, p)
+    assert deny_reason("DELETE", f"{p}/budgets/{{budget_id}}", write, p)
+    assert (
+        deny_reason("POST", f"{p}/trash/{{record_id}}/restore", write, p)
+        is None
+    )
     assert deny_reason("GET", f"{p}/auth/me", read, p) is None
     assert deny_reason("POST", f"{p}/auth/logout", write, p)
     assert deny_reason("GET", f"{p}/auth/me/x", read, p)
@@ -240,11 +248,14 @@ def test_policy_examples() -> None:
     assert deny_reason(
         "POST", f"{p}/categories/{{category_id}}/restore", write, p
     )
-    assert deny_reason(
-        "DELETE",
-        f"{p}/credits/{{credit_id}}/payments/{{payment_id}}",
-        write,
-        p,
+    assert (
+        deny_reason(
+            "DELETE",
+            f"{p}/credits/{{credit_id}}/payments/{{payment_id}}",
+            write,
+            p,
+        )
+        is None
     )
     assert deny_reason("OPTIONS", f"{p}/accounts", write, p)
 

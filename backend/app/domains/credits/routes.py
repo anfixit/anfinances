@@ -34,6 +34,8 @@ from app.domains.currencies.providers.er_api import ErApiRatesProvider
 from app.domains.currencies.repository import SqlCurrencyRepository
 from app.domains.currencies.service import CurrencyService
 from app.domains.transactions.repository import SqlTransactionRepository
+from app.domains.trash.routes import DeleterDep, TrashServiceDep
+from app.domains.trash.schemas import DeletedResult
 
 router = APIRouter(prefix="/credits", tags=["credits"])
 
@@ -196,7 +198,7 @@ async def list_credit_payments(
 
 @router.delete(
     "/{credit_id}/payments/{payment_id}",
-    response_model=ApiResponse[dict[str, str]],
+    response_model=ApiResponse[DeletedResult],
 )
 async def delete_credit_payment(
     credit_id: uuid.UUID,
@@ -204,11 +206,22 @@ async def delete_credit_payment(
     user: CurrentUser,
     service: ServiceDep,
     db: DbSession,
-) -> ApiResponse[dict[str, str]]:
-    """Удалить платёж и вернуть погашенное тело кредита."""
+    trash: TrashServiceDep,
+    who: DeleterDep,
+) -> ApiResponse[DeletedResult]:
+    """Удалить платёж и вернуть погашенное тело кредита.
+
+    Копия платежа и его списания ляжет в корзину; возврат оттуда
+    снова погасит тело.
+    """
+    record = await trash.keep_credit_payment(
+        credit_id, payment_id, user.id, who
+    )
     await service.delete_payment(payment_id, user.id)
     await db.commit()
-    return ApiResponse(data={"status": "deleted"})
+    return ApiResponse(
+        data=DeletedResult(trash_id=record.id, summary=record.summary)
+    )
 
 
 @router.post(

@@ -26,6 +26,7 @@ from app.domains.payees import models as _payees  # noqa: F401
 from app.domains.reconciliation import models as _recon  # noqa: F401
 from app.domains.recurring import models as _recurring  # noqa: F401
 from app.domains.transactions import models as _transactions  # noqa: F401
+from app.domains.trash import models as _trash  # noqa: F401
 
 config = context.config
 
