@@ -12,6 +12,14 @@ on:
 
   workflow_dispatch:
 
+# Один прогон за раз. Без этого два пуша подряд шли параллельно: сборка
+# старого коммита могла закончиться позже и перезаписать образ, а две
+# миграции гонялись за одной ревизией. Ждём, а не отменяем: отменённый
+# посреди деплоя прогон хуже очереди.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
 env:
   REGISTRY: ghcr.io
 
@@ -212,6 +220,105 @@ jobs:
 
             Проверены unit и integration тесты backend.
 
+  # Прод — PostgreSQL, а быстрые тесты выше идут на SQLite. SQLite не
+  # проверяет внешние ключи, иначе хранит время и деньги, не знает
+  # частичных индексов — и именно так до прода доехали падающее
+  # восстановление бэкапа и миграции, ни разу не прогнанные целиком.
+  postgres:
+    needs:
+      - notify-start
+
+    runs-on: ubuntu-latest
+
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: anfinances
+          POSTGRES_PASSWORD: ci-only-password
+          POSTGRES_DB: anfinances
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U anfinances"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    defaults:
+      run:
+        working-directory: backend
+
+    env:
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: anfinances
+      POSTGRES_PASSWORD: ci-only-password
+      POSTGRES_DB: anfinances
+      SECRET_KEY: ci-only-secret-key-that-is-long-enough-0123456789
+      TEST_DATABASE_URL: postgresql+asyncpg://anfinances:ci-only-password@localhost:5432/anfinances_test
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
+        with:
+          enable-cache: true
+
+      - name: Record start time
+        id: timer
+        shell: bash
+        run: echo "started=$(date +%s)" >> "$GITHUB_OUTPUT"
+
+      - name: Install backend dependencies
+        run: uv sync --frozen
+
+      # Пустая база → head: так поднимается любой новый сервер и так
+      # проверяется каждая миграция, а не только последняя.
+      - name: Migrations on an empty database
+        run: uv run alembic upgrade head
+
+      # Модели и миграции написаны руками — check ловит расхождение.
+      - name: Models match migrations
+        run: uv run alembic check
+
+      - name: Create test database
+        shell: bash
+        run: >-
+          PGPASSWORD=ci-only-password
+          createdb -h localhost -U anfinances anfinances_test
+
+      - name: Tests on PostgreSQL
+        run: uv run pytest -q
+
+      - name: Calculate duration
+        if: always()
+        id: duration
+        shell: bash
+        run: |
+          ended=$(date +%s)
+          seconds=$((ended - ${{ steps.timer.outputs.started }}))
+          minutes=$((seconds / 60))
+          rest=$((seconds % 60))
+          echo "value=${minutes} мин ${rest} сек" >> "$GITHUB_OUTPUT"
+
+      - name: Notify Telegram
+        if: always()
+        uses: ./.github/actions/tg-notify
+        with:
+          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          chat: ${{ secrets.TELEGRAM_CHAT_ID }}
+          stage: PostgreSQL
+          status: ${{ job.status }}
+          duration: ${{ steps.duration.outputs.value }}
+          details: |
+            Выполнено:
+            • alembic upgrade head на пустой базе
+            • alembic check
+            • pytest на PostgreSQL 16
+
   bot:
     needs:
       - notify-start
@@ -389,6 +496,10 @@ jobs:
       - name: ESLint
         run: pnpm eslint .
 
+      # Тесты фронтенда были, но в CI не запускались.
+      - name: Vitest
+        run: pnpm exec vitest run
+
       - name: Calculate duration
         if: always()
         id: duration
@@ -414,6 +525,7 @@ jobs:
             • pnpm install --frozen-lockfile
             • TypeScript/Vite build
             • ESLint
+            • Vitest
 
             Node.js: <code>22</code>
             pnpm: <code>11.8.0</code>
@@ -422,6 +534,12 @@ jobs:
     needs:
       - lint
       - test
+      - postgres
+
+    # Образы и выкладка — только из main. Ручной запуск на другой ветке
+    # гоняет проверки и ничего не публикует: иначе ветка попадала бы в
+    # прод вместе со своими миграциями.
+    if: github.ref == 'refs/heads/main'
 
     runs-on: ubuntu-latest
 
@@ -498,6 +616,8 @@ jobs:
     needs:
       - frontend
 
+    if: github.ref == 'refs/heads/main'
+
     runs-on: ubuntu-latest
 
     permissions:
@@ -572,6 +692,8 @@ jobs:
   build-bot:
     needs:
       - bot
+
+    if: github.ref == 'refs/heads/main'
 
     runs-on: ubuntu-latest
 
@@ -650,7 +772,11 @@ jobs:
       - build-backend
       - build-frontend
 
+    if: github.ref == 'refs/heads/main'
+
     runs-on: ubuntu-latest
+
+    timeout-minutes: 20
 
     permissions:
       contents: read
@@ -683,24 +809,31 @@ jobs:
           BOT_QUIET_HOURS: ${{ secrets.BOT_QUIET_HOURS }}
           BOT_BUDGET_MEETING_DAY: ${{ secrets.BOT_BUDGET_MEETING_DAY }}
           BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+          DEPLOY_SHA: ${{ github.sha }}
         with:
           host: ${{ secrets.SSH_HOST }}
           username: admin
           key: ${{ secrets.SSH_KEY }}
           port: 2810
-          envs: GHCR_TOKEN,GHCR_USER,OWNER,SECRET_KEY,POSTGRES_PASSWORD,SINGLE_USER_EMAIL,SINGLE_USER_PASSWORD,TELEGRAM_BOT_TOKEN_FINANCE,TELEGRAM_ALLOWED_USER_IDS,ANTHROPIC_API_KEY,OPENAI_API_KEY,BOT_AI_ENABLED,BOT_DEFAULT_ACCOUNTS,BOT_QUIET_HOURS,BOT_BUDGET_MEETING_DAY,BACKUP_PASSPHRASE
+          command_timeout: 15m
+          envs: GHCR_TOKEN,GHCR_USER,OWNER,SECRET_KEY,POSTGRES_PASSWORD,SINGLE_USER_EMAIL,SINGLE_USER_PASSWORD,TELEGRAM_BOT_TOKEN_FINANCE,TELEGRAM_ALLOWED_USER_IDS,ANTHROPIC_API_KEY,OPENAI_API_KEY,BOT_AI_ENABLED,BOT_DEFAULT_ACCOUNTS,BOT_QUIET_HOURS,BOT_BUDGET_MEETING_DAY,BACKUP_PASSPHRASE,DEPLOY_SHA
           script: |
             set -euo pipefail
 
             cd "${{ secrets.DEPLOY_PATH }}"
 
-            git pull --ff-only
+            # Ровно коммит этого прогона, а не «что сейчас в main»:
+            # раньше git pull и образы :latest могли относиться к разным
+            # коммитам, если пуши шли подряд. Откат — тот же прогон для
+            # старого коммита: его образы лежат в GHCR под его sha.
+            git fetch --quiet origin
+            git checkout --quiet --detach "$DEPLOY_SHA"
 
             owner_lc="$(echo "$OWNER" | tr 'A-Z' 'a-z')"
 
-            export IMAGE_BACKEND="ghcr.io/${owner_lc}/anfinances-backend:latest"
-            export IMAGE_FRONTEND="ghcr.io/${owner_lc}/anfinances-frontend:latest"
-            export IMAGE_BOT="ghcr.io/${owner_lc}/anfinances-bot:latest"
+            export IMAGE_BACKEND="ghcr.io/${owner_lc}/anfinances-backend:${DEPLOY_SHA}"
+            export IMAGE_FRONTEND="ghcr.io/${owner_lc}/anfinances-frontend:${DEPLOY_SHA}"
+            export IMAGE_BOT="ghcr.io/${owner_lc}/anfinances-bot:${DEPLOY_SHA}"
             export POSTGRES_PASSWORD
 
             umask 077
@@ -755,9 +888,36 @@ jobs:
                 -u "$GHCR_USER" \
                 --password-stdin
 
+            # Только свои образы. postgres и caddy закреплены тегом в
+            # compose; общий pull молча тянул их новые сборки и
+            # пересоздавал базу посреди деплоя.
             docker compose \
               -f docker-compose.deploy.yml \
-              pull
+              pull backend bot mcp frontend
+
+            # Страховочный дамп перед миграцией: ночной бэкап может
+            # быть почти суточной давности. Хранятся последние пять.
+            docker compose \
+              -f docker-compose.deploy.yml \
+              up -d --wait postgres
+            mkdir -p backups/pre-migrate
+            dump="backups/pre-migrate/$(date -u +%Y%m%dT%H%M%SZ)-${DEPLOY_SHA:0:7}.dump"
+            docker compose \
+              -f docker-compose.deploy.yml \
+              exec -T postgres \
+              pg_dump -U anfinances -d anfinances -Fc > "$dump"
+            test -s "$dump"
+            ls -1t backups/pre-migrate/*.dump | tail -n +6 | xargs -r rm --
+
+            # Миграция — новым образом и ДО запуска нового кода. Раньше
+            # новый backend стартовал на старой схеме и до миграции
+            # отвечал 500 на всё, что трогало новые колонки. Отсюда
+            # правило: миграция обязана быть совместимой со старым кодом
+            # (добавлять сейчас, удалять — следующим релизом).
+            docker compose \
+              -f docker-compose.deploy.yml \
+              run --rm backend \
+              alembic upgrade head
 
             docker compose \
               -f docker-compose.deploy.yml \
@@ -780,11 +940,6 @@ jobs:
               [ "$attempt" = 5 ] && exit 1
               sleep 3
             done
-
-            docker compose \
-              -f docker-compose.deploy.yml \
-              run --rm backend \
-              alembic upgrade head
 
             docker compose \
               -f docker-compose.deploy.yml \
@@ -812,11 +967,12 @@ jobs:
           duration: ${{ steps.duration.outputs.value }}
           details: |
             Выполнено:
-            • git pull --ff-only
-            • docker compose pull
+            • git checkout коммита прогона
+            • docker compose pull (свои образы по sha)
+            • pg_dump перед миграцией
+            • alembic upgrade head
             • docker compose up -d
             • caddy reload
-            • alembic upgrade head
             • docker compose ps
 
             Сервер:
@@ -827,6 +983,8 @@ jobs:
       - deploy
 
     runs-on: ubuntu-latest
+
+    timeout-minutes: 10
 
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -846,7 +1004,7 @@ jobs:
           for attempt in $(seq 1 10); do
             echo "Health-check attempt ${attempt}/10"
 
-            if response="$(curl --fail --silent --show-error "$url")"; then
+            if response="$(curl --fail --silent --show-error --max-time 10 "$url")"; then
               echo "Response: $response"
               exit 0
             fi
@@ -870,14 +1028,14 @@ jobs:
           for attempt in $(seq 1 10); do
             echo "MCP metadata attempt ${attempt}/10"
 
-            if response="$(curl --fail --silent --show-error "$url")" &&
+            if response="$(curl --fail --silent --show-error --max-time 10 "$url")" &&
               echo "$response" |
                 jq -e '.resource == "https://anfinances.ru/mcp"' >/dev/null; then
               echo "Response: $response"
 
               # Без токена /mcp обязан отвечать 401 — с этого клиенты
               # начинают вход.
-              code="$(curl --silent --output /dev/null \
+              code="$(curl --silent --max-time 10 --output /dev/null \
                 --write-out '%{http_code}' \
                 -X POST https://anfinances.ru/mcp || true)"
               echo "POST /mcp without token: $code"
@@ -923,10 +1081,13 @@ jobs:
       - notify-start
       - lint
       - test
+      - postgres
       - bot
       - frontend
+      - security
       - build-backend
       - build-frontend
+      - build-bot
       - deploy
       - smoke
 
@@ -943,9 +1104,13 @@ jobs:
 
           RESULT_LINT: ${{ needs.lint.result }}
           RESULT_TEST: ${{ needs.test.result }}
+          RESULT_POSTGRES: ${{ needs.postgres.result }}
+          RESULT_BOT: ${{ needs.bot.result }}
           RESULT_FRONTEND: ${{ needs.frontend.result }}
+          RESULT_SECURITY: ${{ needs.security.result }}
           RESULT_BUILD_BACKEND: ${{ needs.build-backend.result }}
           RESULT_BUILD_FRONTEND: ${{ needs.build-frontend.result }}
+          RESULT_BUILD_BOT: ${{ needs.build-bot.result }}
           RESULT_DEPLOY: ${{ needs.deploy.result }}
           RESULT_SMOKE: ${{ needs.smoke.result }}
 
@@ -969,28 +1134,42 @@ jobs:
             esac
           }
 
-          overall_icon="✅"
-          overall_text="деплой завершён успешно"
-
+          # Итог — по тому, что действительно выкатилось: деплой и
+          # smoke оба success. Раньше «пропущен» считался успехом, и при
+          # упавших тестах бота приходило «✅ деплой завершён успешно».
+          # Проверка зависимостей (security) деплой не блокирует, её
+          # провал — отдельная пометка, а не красный итог.
+          cancelled=false
           for result in \
-            "$RESULT_LINT" \
-            "$RESULT_TEST" \
-            "$RESULT_FRONTEND" \
-            "$RESULT_BUILD_BACKEND" \
-            "$RESULT_BUILD_FRONTEND" \
-            "$RESULT_DEPLOY" \
-            "$RESULT_SMOKE"
+            "$RESULT_LINT" "$RESULT_TEST" "$RESULT_POSTGRES" \
+            "$RESULT_BOT" "$RESULT_FRONTEND" "$RESULT_BUILD_BACKEND" \
+            "$RESULT_BUILD_FRONTEND" "$RESULT_BUILD_BOT" \
+            "$RESULT_DEPLOY" "$RESULT_SMOKE"
           do
-            if [ "$result" = "failure" ]; then
-              overall_icon="❌"
-              overall_text="деплой завершён с ошибкой"
-            fi
-
             if [ "$result" = "cancelled" ]; then
-              overall_icon="🚫"
-              overall_text="деплой был отменён"
+              cancelled=true
             fi
           done
+
+          if [ "$cancelled" = true ]; then
+            overall_icon="🚫"
+            overall_text="прогон отменён"
+          elif [ "$RESULT_DEPLOY" = "success" ] && [ "$RESULT_SMOKE" = "success" ]; then
+            overall_icon="✅"
+            overall_text="выкачено"
+            if [ "$RESULT_SECURITY" != "success" ]; then
+              overall_text="выкачено, но проверка зависимостей не прошла"
+            fi
+          elif [ "$RESULT_DEPLOY" = "success" ]; then
+            overall_icon="❌"
+            overall_text="выкачено, но smoke-проверка не прошла"
+          elif [ "$RESULT_DEPLOY" = "skipped" ] && [ "$REF_NAME" != "main" ]; then
+            overall_icon="ℹ️"
+            overall_text="проверки ветки ${REF_NAME}, без выкладки"
+          else
+            overall_icon="❌"
+            overall_text="НЕ выкачено"
+          fi
 
           short_sha="${SHA:0:7}"
           run_url="${SERVER_URL}/${REPOSITORY}/actions/runs/${RUN_ID}"
@@ -1007,9 +1186,13 @@ jobs:
           <b>Результаты:</b>
           $(icon "$RESULT_LINT") Backend lint, format, mypy: <code>${RESULT_LINT}</code>
           $(icon "$RESULT_TEST") Backend tests: <code>${RESULT_TEST}</code>
+          $(icon "$RESULT_POSTGRES") PostgreSQL, миграции: <code>${RESULT_POSTGRES}</code>
+          $(icon "$RESULT_BOT") Bot checks: <code>${RESULT_BOT}</code>
           $(icon "$RESULT_FRONTEND") Frontend checks: <code>${RESULT_FRONTEND}</code>
+          $(icon "$RESULT_SECURITY") Dependency audit: <code>${RESULT_SECURITY}</code>
           $(icon "$RESULT_BUILD_BACKEND") Backend image: <code>${RESULT_BUILD_BACKEND}</code>
           $(icon "$RESULT_BUILD_FRONTEND") Frontend image: <code>${RESULT_BUILD_FRONTEND}</code>
+          $(icon "$RESULT_BUILD_BOT") Bot image: <code>${RESULT_BUILD_BOT}</code>
           $(icon "$RESULT_DEPLOY") Server deploy: <code>${RESULT_DEPLOY}</code>
           $(icon "$RESULT_SMOKE") Production smoke: <code>${RESULT_SMOKE}</code>
 

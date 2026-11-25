@@ -8,12 +8,18 @@
 # postgres наружу не публикуется; фронт, бэкенд и mcp видны только внутри
 # сети, наружу смотрит только Caddy.
 #
-# Запуск (делает CI по SSH):
-#   docker compose -f docker-compose.deploy.yml pull
+# Запуск (делает CI по SSH, .github/workflows/deploy.yml):
+#   git checkout --detach <sha прогона>
+#   docker compose -f docker-compose.deploy.yml pull backend bot mcp frontend
+#   pg_dump в backups/pre-migrate/
+#   docker compose -f docker-compose.deploy.yml run --rm backend alembic upgrade head
 #   docker compose -f docker-compose.deploy.yml up -d
-#   docker compose -f docker-compose.deploy.yml exec backend alembic upgrade head
+# Миграция идёт до up: она должна быть совместима со старым кодом.
 #
-# Переменные IMAGE_BACKEND / IMAGE_FRONTEND / IMAGE_BOT прокидывает pipeline.
+# Переменные IMAGE_BACKEND / IMAGE_FRONTEND / IMAGE_BOT прокидывает pipeline —
+# образы с тегом sha коммита. Откат: перезапустить прогон старого коммита
+# (его образы лежат в GHCR) и при необходимости восстановить дамп из
+# backups/pre-migrate/.
 # Домен задаётся в caddy/Caddyfile и в CORS_ORIGINS ниже (один sed на оба).
 
 services:
