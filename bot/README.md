@@ -21,8 +21,11 @@ Claude Code: `python -m anfinances_bot.mcp_server`, Streamable HTTP на
   `WWW-Authenticate: Bearer resource_metadata=…`, метаданные ресурса —
   на `/.well-known/oauth-protected-resource/mcp`.
 - Инструменты — из `agent/tools.py`, список в `mcp_server/catalog.py`.
-  Удалений и архивации нет. Пишущие инструменты видны и работают
-  только с правом `finance.write`.
+  Удалений и архивации нет. Счета и кредиты ассистент заводит и
+  правит сам, платежи по кредиту записывает, переводы исправляет
+  целиком (`update_transfer`); категории и получатели — только сайт и
+  бот. Пишущие инструменты видны и работают только с правом
+  `finance.write`.
 - Выписка: `preview_statement` возвращает `preview_id`, а
   `import_statement` без него не пишет. Ходов беседы, как у бота, в
   MCP нет — согласие человека даёт клиент, подтверждая пишущий вызов.

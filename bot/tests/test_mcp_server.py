@@ -6,6 +6,7 @@
 """
 
 import asyncio
+import json
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -60,6 +61,29 @@ class FakeBackend:
         self.whoami = 0
         self.created = 0
         self.down = False
+        self.accounts = [dict(a) for a in ACCOUNTS]
+        self.transfer: dict[str, Any] = {
+            "id": "tr-1",
+            "legs": [
+                {
+                    "id": "l-1",
+                    "account_id": "a-1",
+                    "amount": "-4312.04",
+                    "currency_code": "RUB",
+                    "date": "2026-11-25T07:00:00+00:00",
+                    "comment": "на Озон",
+                },
+                {
+                    "id": "l-2",
+                    "account_id": "a-2",
+                    "amount": "4312.04",
+                    "currency_code": "RUB",
+                    "date": "2026-11-25T07:00:00+00:00",
+                    "comment": "на Озон",
+                },
+            ],
+            "fee": None,
+        }
 
     def __call__(self, request: httpx.Request) -> httpx.Response:
         self.requests.append(request)
@@ -93,8 +117,22 @@ class FakeBackend:
                     "default_currency": "RUB",
                 }
             )
+        if path == "/accounts" and method == "POST":
+            return _ok({"id": "a-new"})
         if path == "/accounts":
-            return _ok(ACCOUNTS)
+            return _ok(self.accounts)
+        if path.startswith("/accounts/") and method == "PATCH":
+            return _ok({"id": path.rsplit("/", 1)[-1]})
+        if path == "/credits" and method == "POST":
+            return _ok({"id": "cr-new"})
+        if path == "/credits":
+            return _ok([{"id": "cr-1", "name": "Т-Банк"}])
+        if path.endswith("/payments") and method == "POST":
+            return _ok({"id": "pay-1"})
+        if path.startswith("/credits/") and method == "PATCH":
+            return _ok({"id": path.rsplit("/", 1)[-1]})
+        if path.startswith("/transfers/") and method in ("GET", "PATCH"):
+            return _ok(self.transfer)
         if path == "/categories":
             return _ok(CATEGORIES)
         if path == "/payees":
@@ -160,6 +198,9 @@ class FakeBackend:
 
     def writes(self) -> list[httpx.Request]:
         return [r for r in self.requests if r.method != "GET"]
+
+    def last_json(self) -> Any:
+        return json.loads(self.writes()[-1].content)
 
 
 def _ok(data: Any) -> httpx.Response:
@@ -231,7 +272,7 @@ async def _tools(client: httpx.AsyncClient, token: str) -> dict[str, Any]:
 
 
 async def _call(
-    client: httpx.AsyncClient, token: str, name: str, **arguments: Any
+    client: httpx.AsyncClient, token: str, name: str, /, **arguments: Any
 ) -> dict[str, Any]:
     response = await _rpc(
         client, token, "tools/call", {"name": name, "arguments": arguments}
@@ -424,6 +465,166 @@ def test_catalog_has_no_delete_or_archive() -> None:
         name.startswith(("delete_", "archive_", "restore_")) for name in names
     )
     assert len(names) == len(CATALOG)
+
+
+ACCOUNT_AND_CREDIT_TOOLS = (
+    "create_account",
+    "update_account",
+    "create_credit",
+    "update_credit",
+    "create_credit_payment",
+    "update_transfer",
+)
+
+
+async def test_accounts_and_credits_need_write_scope(
+    mcp: httpx.AsyncClient,
+) -> None:
+    read = await _tools(mcp, READ)
+    write = await _tools(mcp, WRITE)
+
+    for name in ACCOUNT_AND_CREDIT_TOOLS:
+        assert name not in read
+        assert name in write
+    for name in ("create_account", "create_credit", "create_credit_payment"):
+        assert "idempotency_key" in write[name]["inputSchema"]["properties"]
+
+
+async def test_new_credit_gets_id_for_the_first_payment(
+    mcp: httpx.AsyncClient, backend: FakeBackend
+) -> None:
+    created = await _call(
+        mcp,
+        WRITE,
+        "create_credit",
+        name="Т-Банк 2026",
+        principal_initial="745000",
+        annual_rate="36.5",
+        start_date="2026-11-14",
+        account_name="Альфа",
+    )
+    paid = await _call(
+        mcp,
+        WRITE,
+        "create_credit_payment",
+        credit_id="cr-new",
+        total_amount="85000",
+        principal_amount="85000",
+        account_name="Альфа",
+        when="2026-11-14",
+    )
+
+    assert "id cr-new" in _text(created)
+    assert not paid["isError"], _text(paid)
+    credit, payment = backend.writes()
+    assert credit.url.path == "/api/v1/credits"
+    assert json.loads(credit.content)["linked_account_id"] == "a-1"
+    assert payment.url.path == "/api/v1/credits/cr-new/payments"
+    assert json.loads(payment.content)["principal_amount"] == "85000"
+
+
+async def test_transfer_date_is_fixed_without_touching_the_rest(
+    mcp: httpx.AsyncClient, backend: FakeBackend
+) -> None:
+    result = await _call(
+        mcp, WRITE, "update_transfer", transfer_id="tr-1", when="2026-11-24"
+    )
+
+    assert not result["isError"], _text(result)
+    (patch,) = backend.writes()
+    assert (patch.method, patch.url.path) == (
+        "PATCH",
+        "/api/v1/transfers/tr-1",
+    )
+    # Сайт заменяет перевод целиком: всё прежнее уходит обратно.
+    assert json.loads(patch.content) == {
+        "from_account_id": "a-1",
+        "to_account_id": "a-2",
+        "amount_from": "4312.04",
+        "amount_to": "4312.04",
+        # Полдень по Ташкенту — 07:00 UTC.
+        "date": "2026-11-24T07:00:00+00:00",
+        "comment": "на Озон",
+    }
+
+
+async def test_transfer_amount_in_one_currency_needs_one_number(
+    mcp: httpx.AsyncClient, backend: FakeBackend
+) -> None:
+    await _call(
+        mcp, WRITE, "update_transfer", transfer_id="tr-1", amount_from="4300"
+    )
+
+    body = backend.last_json()
+    assert (body["amount_from"], body["amount_to"]) == ("4300", "4300")
+
+
+async def test_transfer_between_currencies_asks_for_both_amounts(
+    mcp: httpx.AsyncClient, backend: FakeBackend
+) -> None:
+    backend.transfer["legs"][1]["currency_code"] = "USD"
+
+    result = await _call(
+        mcp, WRITE, "update_transfer", transfer_id="tr-1", amount_from="4300"
+    )
+
+    assert "обе суммы" in _text(result)
+    assert backend.writes() == []
+
+
+async def test_transfer_fee_is_kept_and_can_be_removed(
+    mcp: httpx.AsyncClient, backend: FakeBackend
+) -> None:
+    backend.transfer["fee"] = {
+        "id": "l-3",
+        "amount": "-50",
+        "category_id": "c-fee",
+    }
+
+    await _call(mcp, WRITE, "update_transfer", transfer_id="tr-1", comment="")
+    kept = backend.last_json()
+    await _call(
+        mcp, WRITE, "update_transfer", transfer_id="tr-1", fee_amount="0"
+    )
+    removed = backend.last_json()
+
+    assert (kept["fee_amount"], kept["fee_category_id"]) == ("50", "c-fee")
+    assert kept["comment"] == ""
+    assert "fee_amount" not in removed
+    assert "fee_category_id" not in removed
+
+
+async def test_transfer_moves_to_another_account(
+    mcp: httpx.AsyncClient, backend: FakeBackend
+) -> None:
+    backend.accounts.append(
+        {
+            "id": "a-3",
+            "name": "Озон накопления",
+            "currency_code": "RUB",
+            "current_balance": "0",
+        }
+    )
+
+    unknown = await _call(
+        mcp,
+        WRITE,
+        "update_transfer",
+        transfer_id="tr-1",
+        to_account_name="Тинькофф",
+    )
+    moved = await _call(
+        mcp,
+        WRITE,
+        "update_transfer",
+        transfer_id="tr-1",
+        to_account_name="накопления",
+    )
+
+    assert "не найден" in _text(unknown)
+    assert not moved["isError"], _text(moved)
+    (patch,) = backend.writes()
+    assert json.loads(patch.content)["to_account_id"] == "a-3"
 
 
 async def test_annotations(mcp: httpx.AsyncClient) -> None:

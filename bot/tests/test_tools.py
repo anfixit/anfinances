@@ -30,6 +30,7 @@ class _FakeClient:
         self.credit_rows: list[dict[str, Any]] = [
             {"id": "cr-1", "name": "Альфа Кредит"}
         ]
+        self.created_credit: dict[str, Any] | None = None
         self._accounts = [
             AccountRead(
                 id="a-1",
@@ -105,6 +106,8 @@ class _FakeClient:
             return {"id": "pay-1"}
         if method == "POST" and path == "/transfers":
             return {"id": "tr-1", "legs": []}
+        if method == "POST" and path == "/credits" and self.created_credit:
+            return dict(self.created_credit)
         if path == "/credits":
             return list(self.credit_rows)
         return []
@@ -971,6 +974,32 @@ async def test_credit_terms_are_updated() -> None:
     method, path, kwargs = client.calls[-1]
     assert (method, path) == ("PATCH", "/credits/cr-1")
     assert kwargs["json"] == {"monthly_payment": "10700"}
+
+
+async def test_credit_lender_date_and_account_are_updated() -> None:
+    box, client = _toolbox()
+    await box.update_credit(
+        name="Альфа",
+        lender="Т-Банк",
+        start_date="2026-11-14",
+        account_name="Альфа",
+        comments="",
+    )
+    method, path, kwargs = client.calls[-1]
+    assert (method, path) == ("PATCH", "/credits/cr-1")
+    assert kwargs["json"] == {
+        "linked_account_id": "a-1",
+        "lender": "Т-Банк",
+        "start_date": "2026-11-14",
+        "comments": "",
+    }
+
+
+async def test_new_credit_reports_its_id() -> None:
+    box, client = _toolbox()
+    client.created_credit = {"id": "cr-9"}
+    result = await box.create_credit(name="Т-Банк", principal_initial="745000")
+    assert "id cr-9" in result
 
 
 async def test_ambiguous_credit_asks() -> None:

@@ -373,6 +373,7 @@ class ToolBox:
     ) -> str:
         """Записать платёж по кредиту.
 
+        credit_id — id кредита из get_credits.
         Платёж делится на тело, проценты и комиссию; их сумма обязана
         равняться total_amount. Разбивку надо взять у пользователя —
         она есть в приложении банка и по ней считается остаток долга.
@@ -946,7 +947,7 @@ class ToolBox:
                 f"Неизвестный тип счёта «{account_type}». "
                 f"Доступные: {', '.join(sorted(_ACCOUNT_TYPES))}."
             )
-        await self._client.request(
+        created = await self._client.request(
             "POST",
             "/accounts",
             json={
@@ -956,7 +957,7 @@ class ToolBox:
                 "initial_balance": str(initial_balance),
             },
         )
-        return f"Счёт «{name}» заведён."
+        return f"Счёт «{name}» заведён{_id_note(created)}."
 
     async def create_credit(
         self,
@@ -1003,8 +1004,8 @@ class ToolBox:
                 return f"Счёт не найден. Доступные: {names}"
             body["linked_account_id"] = account.id
 
-        await self._client.request("POST", "/credits", json=body)
-        return f"Кредит «{name}» заведён."
+        created = await self._client.request("POST", "/credits", json=body)
+        return f"Кредит «{name}» заведён{_id_note(created)}."
 
     async def add_recurring(
         self,
@@ -1285,18 +1286,44 @@ class ToolBox:
         monthly_payment: str | None = None,
         payment_day: str | None = None,
         new_name: str | None = None,
+        lender: str | None = None,
+        start_date: str | None = None,
+        account_name: str | None = None,
+        comments: str | None = None,
+        principal_initial: str | None = None,
     ) -> str:
         """Поправить условия кредита: ставку, срок, платёж, день.
 
-        Остаток долга здесь не меняется — он считается по платежам.
+        Можно также сменить банк (lender), дату выдачи (start_date,
+        YYYY-MM-DD), счёт, с которого идут платежи (account_name), и
+        заметку (comments).
+
+        Остаток долга напрямую не правится — он считается по платежам.
         Если долг разошёлся с банком, ищи лишний или недостающий
-        платёж, а не правь итог.
+        платёж, а не правь итог. principal_initial — сумма выдачи —
+        только если её с ошибкой ввели при заведении: от неё
+        пересчитывается весь остаток.
         """
         found, error = await self._find_credit(name)
         if found is None:
             return error
 
         body: dict[str, Any] = {}
+        if account_name:
+            accounts = await self._client.accounts()
+            account = _find_account(accounts, account_name)
+            if account is None:
+                names = ", ".join(a.name for a in accounts)
+                return f"Счёт не найден. Доступные: {names}"
+            body["linked_account_id"] = account.id
+        if lender:
+            body["lender"] = lender
+        if start_date:
+            body["start_date"] = start_date
+        if comments is not None:
+            body["comments"] = comments
+        if principal_initial:
+            body["principal_initial"] = str(principal_initial)
         if annual_rate:
             body["annual_rate"] = str(annual_rate)
         if term_months:
@@ -1850,6 +1877,13 @@ def _unknown_category(path: str, paths: list[Any]) -> str:
         f"Категория «{path}» не найдена. Выбери из существующих "
         f"или спроси пользователя. Доступные: {available}"
     )
+
+
+def _id_note(created: Any) -> str:
+    """« (id …)» к ответу о новой записи — чтобы сослаться на неё дальше."""
+    if isinstance(created, dict) and created.get("id"):
+        return f" (id {created['id']})"
+    return ""
 
 
 def _find_account(

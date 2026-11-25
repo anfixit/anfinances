@@ -124,7 +124,9 @@ function Consent({
               checked={write}
               onChange={(e) => setWrite(e.target.checked)}
             />
-            <span>Записывать операции, бюджеты и цели</span>
+            <span>
+              Записывать операции, бюджеты и цели, вести счета и кредиты
+            </span>
           </label>
         )}
         <p className="field-hint">

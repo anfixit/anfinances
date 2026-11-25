@@ -22,7 +22,12 @@ import json
 from decimal import Decimal, InvalidOperation
 from typing import Any, Literal
 
-from anfinances_bot.agent.tools import PendingImport, StatementRow, ToolBox
+from anfinances_bot.agent.tools import (
+    PendingImport,
+    StatementRow,
+    ToolBox,
+    _find_account,
+)
 
 __all__ = ["McpToolBox", "preview_id_of"]
 
@@ -110,6 +115,112 @@ class McpToolBox(ToolBox):
         pending.confirmed = True
         return await self.import_statement(account_name=pending.account_name)
 
+    # --- переводы -------------------------------------------------
+
+    async def update_transfer(
+        self,
+        transfer_id: str,
+        when: str | None = None,
+        amount_from: str | None = None,
+        amount_to: str | None = None,
+        from_account_name: str | None = None,
+        to_account_name: str | None = None,
+        fee_amount: str | None = None,
+        comment: str | None = None,
+    ) -> str:
+        """Исправить перевод между своими счетами: дату, суммы, счета.
+
+        Меняются только переданные поля, остальное остаётся как было.
+        Обе ноги перевода правятся вместе, поэтому ошибку в дате или
+        сумме исправляй здесь, а не новым переводом — иначе он
+        задвоится. transfer_id — поле transfer_id у любой из ног в
+        list_transactions.
+
+        Если валюты счетов совпадают, достаточно одной суммы — вторая
+        станет такой же. Если разные — нужны обе: они фиксируют
+        фактический курс. fee_amount — комиссия; "0" её убирает.
+        """
+        current = await self._client.request(
+            "GET", f"/transfers/{transfer_id}"
+        )
+        legs = (current or {}).get("legs") or []
+        source = next((x for x in legs if _num(x["amount"]) < 0), None)
+        target = next((x for x in legs if _num(x["amount"]) > 0), None)
+        if source is None or target is None:
+            return f"Перевод {transfer_id} не найден или повреждён."
+
+        body: dict[str, Any] = {
+            "from_account_id": source["account_id"],
+            "to_account_id": target["account_id"],
+            "amount_from": str(-_num(source["amount"])),
+            "amount_to": str(_num(target["amount"])),
+            "date": source["date"],
+            "comment": source.get("comment"),
+        }
+        fee = (current or {}).get("fee")
+        if fee:
+            body["fee_amount"] = str(abs(_num(fee["amount"])))
+            body["fee_category_id"] = fee.get("category_id")
+
+        names = {
+            "from_account_id": from_account_name,
+            "to_account_id": to_account_name,
+        }
+        if any(names.values()):
+            accounts = await self._client.accounts()
+            for field, name in names.items():
+                if not name:
+                    continue
+                account = _find_account(accounts, name)
+                if account is None:
+                    available = ", ".join(a.name for a in accounts)
+                    return f"Счёт «{name}» не найден. Доступные: {available}"
+                body[field] = account.id
+
+        if amount_from or amount_to:
+            moving = any(names.values())
+            currencies = {source.get("currency_code")}
+            currencies.add(target.get("currency_code"))
+            one_amount = not (amount_from and amount_to)
+            if one_amount and (moving or len(currencies) > 1):
+                return (
+                    "Нужны обе суммы: сколько ушло и сколько пришло. "
+                    "Валюты счетов разные или счета меняются — "
+                    "спроси у пользователя вторую сумму."
+                )
+            try:
+                sent = _num(amount_from or amount_to)
+                received = _num(amount_to or amount_from)
+            except InvalidOperation:
+                return "Суммы должны быть числами."
+            body["amount_from"] = str(sent)
+            body["amount_to"] = str(received)
+        if when:
+            moment = self._strict_moment(when)
+            if moment is None:
+                return f"Не понимаю дату «{when}». Нужен формат YYYY-MM-DD."
+            body["date"] = moment
+        if comment is not None:
+            body["comment"] = comment
+        if fee_amount is not None:
+            try:
+                fee_value = _num(fee_amount)
+            except InvalidOperation:
+                return "Комиссия должна быть числом."
+            if fee_value:
+                body["fee_amount"] = str(fee_value)
+            else:
+                body.pop("fee_amount", None)
+                body.pop("fee_category_id", None)
+
+        await self._client.request(
+            "PATCH", f"/transfers/{transfer_id}", json=body
+        )
+        return (
+            f"Перевод исправлен: {body['amount_from']} → "
+            f"{body['amount_to']}, дата {body['date']}."
+        )
+
     # --- аналитика ------------------------------------------------
 
     async def get_income_by_category(self, month: str) -> str:
@@ -184,6 +295,11 @@ class McpToolBox(ToolBox):
                 *_age_lines(age or {}),
             ]
         )
+
+
+def _num(value: Any) -> Decimal:
+    """Сумма из ответа сайта или от модели — Decimal, запятая как точка."""
+    return Decimal(str(value).strip().replace(",", "."))
 
 
 def _as_json(data: Any) -> str:
