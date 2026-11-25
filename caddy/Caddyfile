@@ -74,10 +74,3 @@ anfinances.ru {
 www.anfinances.ru {
 	redir https://anfinances.ru{uri} permanent
 }
-
-# Старый адрес сайта. Оставлен, чтобы уже открытые вкладки и
-# закладки не упёрлись в пустоту; уберётся вместе с публикацией
-# порта 8443 в compose.
-anfinances.ru:8443 {
-	redir https://anfinances.ru{uri} permanent
-}

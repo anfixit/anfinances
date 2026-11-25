@@ -5,7 +5,7 @@
 импорт транзакций и сводка результата восстановления.
 """
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.domains.transactions.schemas import TransactionCreate
 
@@ -13,7 +13,9 @@ __all__ = ["ImportResult", "ImportTransactions"]
 
 
 class ImportTransactions(BaseModel):
-    items: list[TransactionCreate]
+    # Выписка за месяц — сотни строк; потолок не даёт одним запросом
+    # положить базу тысячами вставок.
+    items: list[TransactionCreate] = Field(max_length=2000)
 
 
 class ImportResult(BaseModel):

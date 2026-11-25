@@ -79,9 +79,14 @@ def _denylisted(method: str, path: str) -> bool:
         for p in _DENY_ANY_METHOD_PREFIXES
     )
     if under:
-        # Единственные открытые чтения: whoami и профиль (/auth/me).
+        # Единственные открытые чтения: whoami и профиль (/auth/me);
+        # единственная открытая запись — занесение выписки.
+        if path == f"{API}/import/transactions":
+            return method != "POST"
         allowed = {f"{API}/ai/whoami", f"{API}/auth/me"}
         return path not in allowed or method != "GET"
+    if path.startswith(f"{API}/payees/") and "/merge/" in path:
+        return True
     if path in _DENY_ANY_METHOD_PATHS:
         return True
     if path.endswith(("/restore", "/archive")):

@@ -143,6 +143,12 @@ class ExportService:
         sheet.append([label for _, label in _COLUMNS])
         for record in records:
             sheet.append([_xlsx_cell(record[key]) for key, _ in _COLUMNS])
+            # openpyxl считает строку с «=» формулой и записывает её
+            # живой. Комментарий из выписки или от ассистента вида
+            # =HYPERLINK(...) сработал бы при открытии файла.
+            for cell in sheet[sheet.max_row]:
+                if cell.data_type == "f":
+                    cell.data_type = "s"
         buffer = io.BytesIO()
         workbook.save(buffer)
         return buffer.getvalue()
@@ -196,9 +202,19 @@ class ExportService:
         return records
 
 
+# С этих символов Excel и LibreOffice начинают формулу в CSV.
+_FORMULA_START = ("=", "+", "-", "@", "\t", "\r")
+
+
 def _csv_cell(value: object) -> str:
     if value is None:
         return ""
+    if isinstance(value, str) and value.startswith(_FORMULA_START):
+        # Текст, а не формула: получатель или комментарий приходят из
+        # выписок и от ассистента, и «=HYPERLINK(...)» в них не должен
+        # исполниться у того, кто откроет выгрузку. Суммы сюда не
+        # попадают — они Decimal, а не строки.
+        return "'" + value
     return str(value)
 
 

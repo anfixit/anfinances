@@ -81,10 +81,13 @@ jobs:
           7. Миграции базы данных
           8. Smoke-проверка"
 
+          # Ответ Telegram в публичный лог не пишем: в нём имя и
+          # username получателя.
           curl \
-            --fail-with-body \
+            --fail \
             --silent \
             --show-error \
+            --output /dev/null \
             -X POST \
             "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
             -d "chat_id=${TG_CHAT}" \
@@ -124,7 +127,9 @@ jobs:
         run: uv run ruff format --check .
 
       - name: Mypy
-        run: uv run mypy app
+        # scripts — тоже: seed.py месяцами падал на импорте, и ни
+        # тесты, ни проверка типов этого не видели.
+        run: uv run mypy app scripts
 
       - name: Calculate duration
         if: always()
@@ -151,7 +156,7 @@ jobs:
             • установка зависимостей через uv
             • ruff check
             • ruff format --check
-            • mypy app
+            • mypy app scripts
 
   test:
     needs:
@@ -1014,10 +1019,13 @@ jobs:
           <b>Логи:</b>
           <a href=\"${run_url}\">открыть GitHub Actions</a>"
 
+          # Ответ Telegram в публичный лог не пишем: в нём имя и
+          # username получателя.
           curl \
-            --fail-with-body \
+            --fail \
             --silent \
             --show-error \
+            --output /dev/null \
             -X POST \
             "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
             -d "chat_id=${TG_CHAT}" \

@@ -138,11 +138,11 @@ runs:
             --data-urlencode "text=${text}"
         )"
 
-        cat "$response_file"
-        echo
-
+        # Тело ответа в лог не печатаем: репозиторий публичный, а в
+        # ответе Telegram — имя, фамилия и username получателя и
+        # данные бота. При ошибке хватает её описания.
         if [ "$http_code" -lt 200 ] || [ "$http_code" -ge 300 ]; then
-          echo "::error::Telegram API returned HTTP ${http_code}"
+          echo "::error::Telegram API returned HTTP ${http_code}: $(jq -r '.description // empty' "$response_file" 2>/dev/null)"
           exit 1
         fi
 

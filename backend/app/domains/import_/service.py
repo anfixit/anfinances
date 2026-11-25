@@ -246,6 +246,9 @@ class ImportService:
                     currency_code=item.currency_code,
                     amount_rub=item.amount_rub,
                     comments=item.comments,
+                    # Без этого архивная подписка после восстановления
+                    # оживала и снова резервировалась в дневном лимите.
+                    is_archived=item.is_archived,
                 )
             )
         for currency in bundle.currencies:

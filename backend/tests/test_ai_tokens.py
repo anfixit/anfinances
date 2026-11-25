@@ -258,6 +258,13 @@ def test_policy_examples() -> None:
         is None
     )
     assert deny_reason("OPTIONS", f"{p}/accounts", write, p)
+    # Выписку заносить можно, восстанавливать бэкап — нет.
+    statement = f"{p}/import/transactions"
+    assert deny_reason("POST", statement, write, p) is None
+    assert deny_reason("POST", statement, read, p)
+    assert deny_reason("POST", f"{p}/import/all", write, p)
+    merge = f"{p}/payees/{{payee_id}}/merge/{{target_id}}"
+    assert deny_reason("POST", merge, write, p)
 
 
 def test_pkce_s256() -> None:

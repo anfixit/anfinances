@@ -5,11 +5,13 @@
 """
 
 import uuid
-from typing import Protocol
+from collections import defaultdict
+from typing import Protocol, cast
 
-from sqlalchemy import delete, select
+from sqlalchemy import Table, delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.models import Base
 from app.domains.accounts.models import Account
 from app.domains.auth.models import User
 from app.domains.budgets.models import Budget
@@ -83,8 +85,52 @@ class SqlImportRepository:
         return {row[0] for row in result.all()}
 
     async def add_all(self, objects: list[object]) -> None:
-        self._session.add_all(objects)
-        await self._session.flush()
+        """Вставить строки бэкапа в порядке внешних ключей.
+
+        В моделях нет ``relationship()``, и unit of work не знает, какая
+        таблица от какой зависит: вставляет их в порядке имён классов.
+        На PostgreSQL бюджет уходил раньше категории, операция — раньше
+        своего перевода, и восстановление падало на внешнем ключе.
+        SQLite в тестах ключи не проверяет, поэтому это не ловилось.
+        Здесь — по таблицам в порядке ``sorted_tables``, с flush после
+        каждой; категории ссылаются сами на себя, их — от корней.
+        """
+        order = {t.name: i for i, t in enumerate(Base.metadata.sorted_tables)}
+        by_table: dict[str, list[Base]] = defaultdict(list)
+        for obj in objects:
+            row = cast(Base, obj)
+            by_table[cast(Table, row.__table__).name].append(row)
+        for name in sorted(by_table, key=order.__getitem__):
+            for layer in _parents_first(by_table[name]):
+                self._session.add_all(layer)
+                await self._session.flush()
 
     async def get_user(self, user_id: uuid.UUID) -> User | None:
         return await self._session.get(User, user_id)
+
+
+def _parents_first(rows: list[Base]) -> list[list[Base]]:
+    """Разбить строки на слои: сначала без родителя в этой же пачке.
+
+    Для таблиц без ``parent_id`` — один слой как есть.
+    """
+    if not rows or not hasattr(rows[0], "parent_id"):
+        return [rows]
+    ids = {getattr(r, "id", None) for r in rows}
+    placed: set[object] = set()
+    layers: list[list[Base]] = []
+    left = rows
+    while left:
+        layer = [
+            r
+            for r in left
+            if getattr(r, "parent_id", None) not in ids
+            or getattr(r, "parent_id", None) in placed
+        ]
+        if not layer:
+            # Цикл в дереве — пусть база скажет, где именно.
+            layer = left
+        layers.append(layer)
+        placed |= {getattr(r, "id", None) for r in layer}
+        left = [r for r in left if r not in layer]
+    return layers
