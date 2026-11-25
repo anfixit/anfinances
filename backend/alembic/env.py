@@ -7,7 +7,7 @@
 import asyncio
 from logging.config import fileConfig
 
-from sqlalchemy import pool
+from sqlalchemy import Column, pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
@@ -39,6 +39,33 @@ config.set_main_option("sqlalchemy.url", str(settings.database_url))
 target_metadata = Base.metadata
 
 
+def compare_server_default(
+    context: object,
+    inspected_column: object,
+    metadata_column: Column[object],
+    inspected_default: str | None,
+    metadata_default: object,
+    rendered_metadata_default: str | None,
+) -> bool | None:
+    """Не считать расхождением ``gen_random_uuid()`` у первичного ключа.
+
+    Часть миграций (ai_*, goals, payees, reconciliations, trash) задаёт
+    ``id`` значение по умолчанию в базе, а модели — нет: id всегда
+    генерирует приложение (``UUIDMixin``). Это безвредно, и ради
+    ``alembic check`` в CI менять прод незачем. Всё остальное
+    сравнивается как обычно (``None`` — решение за alembic).
+    """
+    if (
+        metadata_column.primary_key
+        and metadata_column.name == "id"
+        and metadata_default is None
+        and inspected_default is not None
+        and "gen_random_uuid()" in inspected_default
+    ):
+        return False
+    return None
+
+
 def run_migrations_offline() -> None:
     """Offline-режим: генерирует SQL без подключения к БД."""
     url = config.get_main_option("sqlalchemy.url")
@@ -48,7 +75,7 @@ def run_migrations_offline() -> None:
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
         compare_type=True,
-        compare_server_default=True,
+        compare_server_default=compare_server_default,
         # Своя транзакция на каждую миграцию: значение enum, добавленное
         # одной миграцией, PostgreSQL не даёт использовать до коммита,
         # и на чистой базе e25 и e27 в одной транзакции падали бы.
@@ -63,7 +90,7 @@ def do_run_migrations(connection: Connection) -> None:
         connection=connection,
         target_metadata=target_metadata,
         compare_type=True,
-        compare_server_default=True,
+        compare_server_default=compare_server_default,
         # Своя транзакция на каждую миграцию: значение enum, добавленное
         # одной миграцией, PostgreSQL не даёт использовать до коммита,
         # и на чистой базе e25 и e27 в одной транзакции падали бы.
