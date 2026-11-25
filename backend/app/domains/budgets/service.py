@@ -12,7 +12,7 @@
 """
 
 import uuid
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 
 from app.core.datetime import DEFAULT_TIMEZONE, month_bounds_utc
@@ -80,14 +80,17 @@ class BudgetService:
         month_date = _month_to_date(month)
         start, end = month_bounds_utc(month_date, timezone_name)
         scopes = _build_category_scopes(
-            await self._categories.list_active(user_id)
+            await self._categories.list_all(user_id)
         )
         planned = await self._repo.planned_before(user_id, month_date)
-        spent_before = await self._repo.spent_before(user_id, start)
+        windows = await self._spent_since_envelope_start(
+            user_id, category_ids, start, timezone_name
+        )
         spent_month = await self._repo.spent_by_category(user_id, start, end)
         result: dict[uuid.UUID, Decimal] = {}
         for category_id in category_ids:
             scope = scopes.get(category_id, frozenset({category_id}))
+            spent_before = windows[category_id]
             spent = sum(
                 (
                     spent_before.get(c, Decimal(0))
@@ -279,17 +282,21 @@ class BudgetService:
         if not budgets:
             return []
         start, end = month_bounds_utc(month_date, timezone_name)
-        categories = await self._categories.list_active(user_id)
+        # Архивные тоже: подкатегорию убрали в архив, а её траты этого
+        # и прошлых месяцев из конверта родителя никуда не делись.
+        categories = await self._categories.list_all(user_id)
         category_scopes = _build_category_scopes(categories)
         spent_month = await self._repo.spent_by_category(user_id, start, end)
-        need_rollover = any(b.rollover for b in budgets)
+        rolling = [b.category_id for b in budgets if b.rollover]
         planned_before: dict[uuid.UUID, Decimal] = {}
-        spent_before: dict[uuid.UUID, Decimal] = {}
-        if need_rollover:
+        windows: dict[uuid.UUID, dict[uuid.UUID, Decimal]] = {}
+        if rolling:
             planned_before = await self._repo.planned_before(
                 user_id, month_date
             )
-            spent_before = await self._repo.spent_before(user_id, start)
+            windows = await self._spent_since_envelope_start(
+                user_id, rolling, start, timezone_name
+            )
 
         views: list[BudgetRead] = []
         for budget in budgets:
@@ -311,6 +318,7 @@ class BudgetService:
                 before_planned = planned_before.get(
                     budget.category_id, Decimal(0)
                 )
+                spent_before = windows[budget.category_id]
                 before_spent = sum(
                     (
                         spent_before.get(category_id, Decimal(0))
@@ -339,6 +347,40 @@ class BudgetService:
                 )
             )
         return views
+
+    async def _spent_since_envelope_start(
+        self,
+        user_id: uuid.UUID,
+        envelopes: list[uuid.UUID],
+        start: datetime,
+        timezone_name: str,
+    ) -> dict[uuid.UUID, dict[uuid.UUID, Decimal]]:
+        """Траты до ``start`` по категориям — с начала каждого конверта.
+
+        Конверт начинается с первого месяца, когда на его категорию
+        поставили план. Раньше сюда шли все траты с начала истории, и
+        конверт, впервые заведённый спустя год, сразу показывал
+        перерасход на всю прошлую жизнь категории. Планы и так считаются
+        только по бюджетам, теперь и траты — с той же даты.
+        """
+        firsts = await self._repo.first_budget_months(user_id)
+        by_since: dict[datetime, dict[uuid.UUID, Decimal]] = {}
+        result: dict[uuid.UUID, dict[uuid.UUID, Decimal]] = {}
+        for envelope in envelopes:
+            first = firsts.get(envelope)
+            if first is None:
+                result[envelope] = {}
+                continue
+            since, _ = month_bounds_utc(first, timezone_name)
+            if since >= start:
+                result[envelope] = {}
+                continue
+            if since not in by_since:
+                by_since[since] = await self._repo.spent_before(
+                    user_id, start, since=since
+                )
+            result[envelope] = by_since[since]
+        return result
 
 
 def _build_category_scopes(

@@ -8,9 +8,17 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_validator,
+    model_validator,
+)
 
 from app.core.enums import RequiredKind
+from app.core.money import Money
+from app.core.schemas import reject_nulls
 
 __all__ = [
     "RecurringCreate",
@@ -26,7 +34,7 @@ class RecurringCreate(BaseModel):
     required: RequiredKind = RequiredKind.REQUIRED
     category_id: uuid.UUID
     name: str = Field(min_length=1, max_length=200)
-    monthly_amount: Decimal = Field(gt=0)
+    monthly_amount: Money = Field(gt=0)
     currency_code: str = Field(default="RUB", min_length=3, max_length=3)
     comments: str | None = None
 
@@ -35,9 +43,14 @@ class RecurringUpdate(BaseModel):
     required: RequiredKind | None = None
     category_id: uuid.UUID | None = None
     name: str | None = Field(default=None, min_length=1, max_length=200)
-    monthly_amount: Decimal | None = Field(default=None, gt=0)
+    monthly_amount: Money | None = Field(default=None, gt=0)
     currency_code: str | None = Field(default=None, min_length=3, max_length=3)
     comments: str | None = None
+
+    @model_validator(mode="after")
+    def _no_nulls(self) -> "RecurringUpdate":
+        reject_nulls(self, ("category_id", "name"))
+        return self
 
 
 class RecurringGenerationProposal(BaseModel):

@@ -8,6 +8,7 @@
 Здесь — только кросс-доменный конверт ответа.
 """
 
+from collections.abc import Iterable
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -17,7 +18,23 @@ __all__ = [
     "ErrorDetail",
     "ErrorResponse",
     "PaginationMeta",
+    "reject_nulls",
 ]
+
+
+def reject_nulls(model: BaseModel, fields: Iterable[str]) -> None:
+    """Запретить явный ``null`` у обязательных полей частичной правки.
+
+    В PATCH поле можно не передать — тогда оно не меняется. Но
+    ``{"amount": null}`` раньше доходил до сервиса и падал там
+    ``TypeError`` или нарушением NOT NULL — голым 500. Вызывать из
+    ``model_validator(mode="after")`` Update-схемы.
+    """
+    for name in fields:
+        if name in model.model_fields_set and getattr(model, name) is None:
+            raise ValueError(
+                f"Поле «{name}» обязательное — его нельзя очистить."
+            )
 
 
 class PaginationMeta(BaseModel):

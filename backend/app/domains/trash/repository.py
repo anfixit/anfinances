@@ -46,7 +46,10 @@ class TrashRepository(Protocol):
     ) -> CreditPayment | None: ...
 
     async def get_credit(
-        self, credit_id: uuid.UUID, user_id: uuid.UUID
+        self,
+        credit_id: uuid.UUID,
+        user_id: uuid.UUID,
+        for_update: bool = False,
     ) -> Credit | None: ...
 
     async def exists(self, model: type[Base], row_id: Any) -> bool: ...
@@ -132,13 +135,21 @@ class SqlTrashRepository:
         return result.scalar_one_or_none()
 
     async def get_credit(
-        self, credit_id: uuid.UUID, user_id: uuid.UUID
+        self,
+        credit_id: uuid.UUID,
+        user_id: uuid.UUID,
+        for_update: bool = False,
     ) -> Credit | None:
-        result = await self._session.execute(
-            select(Credit).where(
-                Credit.id == credit_id, Credit.user_id == user_id
-            )
+        query = select(Credit).where(
+            Credit.id == credit_id, Credit.user_id == user_id
         )
+        if for_update:
+            # Возврат платежа меняет долг — как и сам платёж, под
+            # блокировкой и со свежим остатком.
+            query = query.with_for_update().execution_options(
+                populate_existing=True
+            )
+        result = await self._session.execute(query)
         return result.scalar_one_or_none()
 
     async def exists(self, model: type[Base], row_id: Any) -> bool:

@@ -9,7 +9,10 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
+
+from app.core.money import Money
+from app.core.schemas import reject_nulls
 
 __all__ = [
     "BudgetCreate",
@@ -20,26 +23,31 @@ __all__ = [
     "BudgetUpdate",
 ]
 
-_MONTH_PATTERN = r"^\d{4}-\d{2}$"
+_MONTH_PATTERN = r"^\d{4}-(0[1-9]|1[0-2])$"
 
 
 class BudgetCreate(BaseModel):
     month: str = Field(pattern=_MONTH_PATTERN)
     category_id: uuid.UUID
-    planned: Decimal = Field(ge=0)
+    planned: Money = Field(ge=0)
     notes: str | None = None
     rollover: bool = False
 
 
 class BudgetUpdate(BaseModel):
-    planned: Decimal | None = Field(default=None, ge=0)
+    planned: Money | None = Field(default=None, ge=0)
     notes: str | None = None
     rollover: bool | None = None
+
+    @model_validator(mode="after")
+    def _no_nulls(self) -> "BudgetUpdate":
+        reject_nulls(self, ("planned", "rollover"))
+        return self
 
 
 class BudgetImportItem(BaseModel):
     category_id: uuid.UUID
-    planned: Decimal = Field(ge=0)
+    planned: Money = Field(ge=0)
     notes: str | None = None
     rollover: bool = False
 
@@ -55,7 +63,7 @@ class BudgetMove(BaseModel):
     month: str = Field(pattern=_MONTH_PATTERN)
     from_category_id: uuid.UUID
     to_category_id: uuid.UUID
-    amount: Decimal = Field(gt=0)
+    amount: Money = Field(gt=0)
 
 
 class BudgetRead(BaseModel):

@@ -136,6 +136,26 @@ async def test_transfer_signs_and_balance() -> None:
     assert src_leg.amount_rub + dst_leg.amount_rub == Decimal("0")
 
 
+async def test_transfer_into_archived_account_is_refused() -> None:
+    """Архивный счёт не в капитале: перевод туда молча уменьшал итог."""
+    src = _acc("RUB")
+    dst = _acc("RUB", name="Старый Озон")
+    dst.is_archived = True
+    svc = _service([src, dst], [], {})
+
+    with pytest.raises(ValidationFailedError, match="в архиве"):
+        await svc.create_transfer(
+            USER,
+            TransferCreate(
+                from_account_id=src.id,
+                to_account_id=dst.id,
+                amount_from=Decimal("10000"),
+                amount_to=Decimal("10000"),
+                date=NOW,
+            ),
+        )
+
+
 async def test_transfer_same_currency() -> None:
     src = _acc("RUB", "A")
     dst = _acc("RUB", "B")

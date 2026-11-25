@@ -11,6 +11,17 @@
 миграциях — там они часть контракта с базой, а не решение.
 """
 
-__all__ = ["BASE_CURRENCY"]
+from decimal import Decimal
+from typing import Annotated
+
+from pydantic import Field
+
+__all__ = ["BASE_CURRENCY", "Money"]
 
 BASE_CURRENCY = "RUB"
+
+# Денежная сумма на входе API — ровно то, что помещается в
+# Numeric(18, 4) в базе. Без этого 10¹⁵ падал переполнением, а
+# 0.00004 проходил «больше нуля», округлялся базой до 0 и ронял
+# CHECK на ненулевую сумму — оба раза голым 500 вместо понятного 422.
+Money = Annotated[Decimal, Field(max_digits=18, decimal_places=4)]

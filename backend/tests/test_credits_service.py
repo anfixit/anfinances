@@ -44,6 +44,22 @@ class FakeCreditRepo:
             None,
         )
 
+    async def get_for_update(self, credit_id, user_id):
+        return await self.get(credit_id, user_id)
+
+    async def find_same_payment(self, credit_id, user_id, when, total):
+        return next(
+            (
+                p
+                for p in self.payments
+                if p.credit_id == credit_id
+                and p.user_id == user_id
+                and p.date == when
+                and p.total_amount == total
+            ),
+            None,
+        )
+
     async def get_active_by_name(self, user_id, name):
         return next(
             (
@@ -338,6 +354,22 @@ async def test_create_payment_reduces_principal_balance() -> None:
     )
 
     assert payment.principal_amount == Decimal("5415.70")
+    assert credit.principal_balance == Decimal("94584.30")
+
+
+async def test_double_submitted_payment_is_refused() -> None:
+    """Двойное нажатие: тот же платёж в ту же минуту второй раз."""
+    account = _account("RUB")
+    service, repo, tx_repo = _payment_service(accounts=[account])
+    credit = await service.create_credit(USER, _create())
+    await service.create_payment(credit.id, USER, _payment_data(account.id))
+
+    with pytest.raises(AlreadyExistsError):
+        await service.create_payment(
+            credit.id, USER, _payment_data(account.id)
+        )
+
+    assert len(repo.payments) == 1
     assert credit.principal_balance == Decimal("94584.30")
 
 

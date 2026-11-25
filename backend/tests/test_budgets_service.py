@@ -92,10 +92,20 @@ class FakeBudgetRepo:
                 )
         return out
 
-    async def spent_before(self, user_id, before):
+    async def first_budget_months(self, user_id):
+        out: dict[uuid.UUID, date] = {}
+        for b in self.budgets.values():
+            if b.user_id == user_id:
+                first = out.get(b.category_id)
+                out[b.category_id] = (
+                    b.month if first is None else min(first, b.month)
+                )
+        return out
+
+    async def spent_before(self, user_id, before, since=None):
         out: dict[uuid.UUID, Decimal] = {}
         for cat, when, amount in self.txs:
-            if when < before:
+            if when < before and (since is None or when >= since):
                 out[cat] = out.get(cat, Decimal(0)) + amount
         return out
 
@@ -112,6 +122,9 @@ class FakeCategoryRepo:
 
     async def list_active(self, user_id):
         return [c for c in self.items.values() if not c.is_archived]
+
+    async def list_all(self, user_id):
+        return list(self.items.values())
 
     async def get_active_sibling(self, user_id, parent_id, name):
         return None
@@ -272,6 +285,57 @@ async def test_rollover_overspend_goes_negative() -> None:
     assert feb.rollover_amount == Decimal("-500")
     assert feb.available == Decimal("500")
     assert feb.remaining == Decimal("500")
+
+
+async def test_spending_before_first_budget_is_not_rolled_over() -> None:
+    """Конверт начинается с первого плана, а не с начала истории.
+
+    Год трат в «Еде» без бюджета не должен превращаться в перерасход
+    конверта, заведённого только сейчас.
+    """
+    repo = FakeBudgetRepo()
+    food = _category()
+    repo.txs.append(_spend(food.id, "2025-03", "600000"))
+    repo.txs.append(_spend(food.id, "2026-10", "1000"))
+    _budget(repo, food.id, "2026-10", "50000", rollover=True)
+    _budget(repo, food.id, "2026-11", "50000", rollover=True)
+    svc = _service(repo, [food])
+
+    [october] = await svc.list_budgets(USER, "2026-10")
+    [november] = await svc.list_budgets(USER, "2026-11")
+
+    assert october.rollover_amount == Decimal("0")
+    # С октября: план 50 000, траты 1 000 — и никаких 600 000.
+    assert november.rollover_amount == Decimal("49000")
+
+
+async def test_archived_child_still_counts_in_parent_envelope() -> None:
+    repo = FakeBudgetRepo()
+    food = _category()
+    cafe = _category(parent_id=food.id, archived=True)
+    _budget(repo, food.id, "2026-10", "30000", rollover=True)
+    _budget(repo, food.id, "2026-11", "30000", rollover=True)
+    repo.txs.append(_spend(cafe.id, "2026-10", "4000"))
+    repo.txs.append(_spend(cafe.id, "2026-11", "5000"))
+    svc = _service(repo, [food, cafe])
+
+    [november] = await svc.list_budgets(USER, "2026-11")
+
+    assert november.spent == Decimal("5000")
+    assert november.rollover_amount == Decimal("26000")
+
+
+async def test_envelope_without_plan_starts_with_first_budget() -> None:
+    repo = FakeBudgetRepo()
+    trip = _category()
+    repo.txs.append(_spend(trip.id, "2025-07", "80000"))
+    _budget(repo, trip.id, "2026-09", "20000", rollover=True)
+    _budget(repo, trip.id, "2026-10", "20000", rollover=True)
+    svc = _service(repo, [trip])
+
+    envelope = await svc.envelope_without_plan(USER, "2026-11", [trip.id])
+
+    assert envelope == {trip.id: Decimal("40000")}
 
 
 async def test_rollover_survives_gap_with_spend() -> None:

@@ -244,7 +244,7 @@ class TrashService:
         self, payload: dict[str, Any], user_id: uuid.UUID
     ) -> None:
         credit = await self._repo.get_credit(
-            uuid.UUID(payload["credit_id"]), user_id
+            uuid.UUID(payload["credit_id"]), user_id, for_update=True
         )
         if credit is None:
             raise ValidationFailedError(

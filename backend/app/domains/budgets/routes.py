@@ -31,7 +31,7 @@ from app.domains.categories.repository import (
 
 router = APIRouter(prefix="/budgets", tags=["budgets"])
 
-_MONTH_PATTERN = r"^\d{4}-\d{2}$"
+_MONTH_PATTERN = r"^\d{4}-(0[1-9]|1[0-2])$"
 
 
 def get_budget_repository(db: DbSession) -> BudgetRepository:

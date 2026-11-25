@@ -6,6 +6,8 @@ from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict
 
+from app.core.money import Money
+
 __all__ = [
     "ReconciliationPreview",
     "ReconciliationRead",
@@ -16,7 +18,7 @@ __all__ = [
 class ReconcileRequest(BaseModel):
     # Остаток из банка. Может быть отрицательным: по кредитке это
     # норма, и запрещать минус значило бы сломать сверку кредиток.
-    statement_balance: Decimal
+    statement_balance: Money
     date: datetime
     # Закрыть расхождение корректирующей операцией. По умолчанию нет:
     # сначала надо поискать пропавшую или задвоенную запись, а
@@ -26,7 +28,7 @@ class ReconcileRequest(BaseModel):
     # Если к моменту записи оно другое — повторный клик, новая
     # операция между проверкой и подтверждением, — корректировать
     # нельзя: закрылась бы не та разница, которую показали.
-    expected_difference: Decimal | None = None
+    expected_difference: Money | None = None
 
 
 class ReconciliationPreview(BaseModel):

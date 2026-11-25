@@ -52,6 +52,11 @@ class _Repo:
     async def get(self, credit_id: uuid.UUID, user_id: uuid.UUID) -> _Credit:
         return self._credit
 
+    async def get_for_update(
+        self, credit_id: uuid.UUID, user_id: uuid.UUID
+    ) -> _Credit:
+        return self._credit
+
     async def get_payment(
         self, payment_id: uuid.UUID, user_id: uuid.UUID
     ) -> _Payment | None:

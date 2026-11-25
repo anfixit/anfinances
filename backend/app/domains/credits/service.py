@@ -262,6 +262,15 @@ class CreditService:
             raise NotFoundError("Кредит не найден.")
         return credit
 
+    async def _locked_credit(
+        self, credit_id: uuid.UUID, user_id: uuid.UUID
+    ) -> Credit:
+        """Кредит под блокировкой — перед любым изменением долга."""
+        credit = await self._repo.get_for_update(credit_id, user_id)
+        if credit is None:
+            raise NotFoundError("Кредит не найден.")
+        return credit
+
     async def create_credit(
         self, user_id: uuid.UUID, data: CreditCreate
     ) -> Credit:
@@ -331,9 +340,20 @@ class CreditService:
         data: CreditPaymentCreate,
     ) -> CreditPayment:
         categories, transactions, currencies = self._payment_dependencies()
-        credit = await self.get_credit(credit_id, user_id)
+        # Блокировка до конца транзакции: два одновременных платежа
+        # (двойное нажатие) иначе оба читали один остаток, и долг
+        # уменьшался один раз при двух списаниях со счёта.
+        credit = await self._locked_credit(credit_id, user_id)
         if credit.is_archived:
             raise ValidationFailedError("Архивный кредит нельзя погашать.")
+        if await self._repo.find_same_payment(
+            credit.id, user_id, data.date, data.total_amount
+        ):
+            raise AlreadyExistsError(
+                "Такой платёж уже записан — та же сумма в то же время. "
+                "Если это действительно второй платёж, укажите его "
+                "настоящее время."
+            )
 
         account = await self._validate_payment_account(
             data.payment_account_id,
@@ -401,7 +421,7 @@ class CreditService:
         if payment is None:
             raise NotFoundError("Платёж не найден.")
 
-        credit = await self.get_credit(payment.credit_id, user_id)
+        credit = await self._locked_credit(payment.credit_id, user_id)
         credit.principal_balance += payment.principal_amount
 
         if payment.transaction_id is not None:

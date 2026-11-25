@@ -4,7 +4,9 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from app.core.schemas import reject_nulls
 
 __all__ = [
     "PayeeCreate",
@@ -22,6 +24,11 @@ class PayeeCreate(BaseModel):
 class PayeeUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=200)
     varied_categories: bool | None = None
+
+    @model_validator(mode="after")
+    def _no_nulls(self) -> "PayeeUpdate":
+        reject_nulls(self, ("name", "varied_categories"))
+        return self
 
 
 class PayeeRead(BaseModel):

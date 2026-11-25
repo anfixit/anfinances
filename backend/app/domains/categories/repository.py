@@ -14,6 +14,8 @@ __all__ = ["CategoryRepository", "SqlCategoryRepository"]
 class CategoryRepository(Protocol):
     async def list_active(self, user_id: uuid.UUID) -> list[Category]: ...
 
+    async def list_all(self, user_id: uuid.UUID) -> list[Category]: ...
+
     async def get(
         self, category_id: uuid.UUID, user_id: uuid.UUID
     ) -> Category | None: ...
@@ -42,6 +44,13 @@ class SqlCategoryRepository:
                 Category.is_archived.is_(False),
             )
             .order_by(Category.sort_order, Category.name)
+        )
+        return list(result.scalars().all())
+
+    async def list_all(self, user_id: uuid.UUID) -> list[Category]:
+        """Все категории, включая архивные — для границ конвертов."""
+        result = await self._session.execute(
+            select(Category).where(Category.user_id == user_id)
         )
         return list(result.scalars().all())
 

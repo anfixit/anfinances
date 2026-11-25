@@ -7,7 +7,9 @@
 
 import uuid
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from app.core.schemas import reject_nulls
 
 __all__ = [
     "UserCurrenciesUpdate",
@@ -24,6 +26,11 @@ class UserUpdate(BaseModel):
         default=None, min_length=3, max_length=3
     )
     locale: str | None = Field(default=None, min_length=2, max_length=16)
+
+    @model_validator(mode="after")
+    def _no_nulls(self) -> "UserUpdate":
+        reject_nulls(self, ("timezone", "default_currency", "locale"))
+        return self
 
 
 class UserCurrencyItem(BaseModel):

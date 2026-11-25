@@ -55,6 +55,11 @@ class _Repo:
     async def active_recurring(self, user_id: uuid.UUID) -> list[Any]:
         return list(self._recurring)
 
+    async def category_parents(
+        self, user_id: uuid.UUID
+    ) -> dict[uuid.UUID, uuid.UUID]:
+        return {}
+
     async def spending_by_category(
         self,
         user_id: uuid.UUID,

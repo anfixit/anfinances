@@ -20,7 +20,7 @@ from app.core.datetime import (
     date_range_utc,
     month_bounds_utc,
 )
-from app.core.exceptions import NotFoundError
+from app.core.exceptions import NotFoundError, ValidationFailedError
 from app.core.money import BASE_CURRENCY
 from app.domains.currencies.service import CurrencyService
 from app.domains.recurring.models import RecurringExpense
@@ -41,6 +41,10 @@ from app.domains.summary.schemas import (
 )
 
 __all__ = ["SummaryService"]
+
+# Дальше этого дневной лимит не заглядывает: план на десятилетия —
+# не дневной лимит, а ввод с опечаткой в годе.
+_MAX_HORIZON_YEARS = 5
 
 
 @dataclass(frozen=True)
@@ -251,6 +255,12 @@ class SummaryService:
         horizon = until or _end_of_month(today)
         # Горизонт в прошлом — не повод падать: считаем на сегодня.
         horizon = max(horizon, today)
+        if horizon.year > today.year + _MAX_HORIZON_YEARS:
+            # Платежи по кредитам считаются помесячно до горизонта:
+            # 9999-12-31 выводил дату за пределы календаря и давал 500.
+            raise ValidationFailedError(
+                f"Горизонт — не дальше {_MAX_HORIZON_YEARS} лет вперёд."
+            )
         days_left = (horizon - today).days + 1
 
         liquid, missing = await self._liquid_rub(user_id)
@@ -479,11 +489,24 @@ class SummaryService:
         Резервируем только неоплаченный остаток: уже потраченное по
         категории второй раз откладывать незачем, а перерасход не
         освобождает деньги под другие обязательства.
+
+        Траты считаются вместе с подкатегориями, как у бюджета: план
+        «Дом» гасится арендой, записанной в «Дом → Аренда». Раньше
+        считались только траты в самой категории, и оплаченная аренда
+        резервировалась второй раз — дневной лимит был занижен.
         """
+        parents = await self._repo.category_parents(user_id)
         result: list[tuple[RecurringExpense, Decimal]] = []
         for item in await self._repo.active_recurring(user_id):
             planned = item.amount_rub or Decimal(0)
-            left = planned - spent.get(item.category_id, Decimal(0))
+            paid = sum(
+                (
+                    spent.get(cat, Decimal(0))
+                    for cat in _scope_of(item.category_id, parents)
+                ),
+                Decimal(0),
+            )
+            left = planned - paid
             if left > 0:
                 result.append((item, left))
         return result

@@ -56,8 +56,15 @@ class BudgetRepository(Protocol):
         self, user_id: uuid.UUID, month: date
     ) -> dict[uuid.UUID, Decimal]: ...
 
+    async def first_budget_months(
+        self, user_id: uuid.UUID
+    ) -> dict[uuid.UUID, date]: ...
+
     async def spent_before(
-        self, user_id: uuid.UUID, before: datetime
+        self,
+        user_id: uuid.UUID,
+        before: datetime,
+        since: datetime | None = None,
     ) -> dict[uuid.UUID, Decimal]: ...
 
 
@@ -166,21 +173,37 @@ class SqlBudgetRepository:
         )
         return {row[0]: row[1] for row in result.all()}
 
+    async def first_budget_months(
+        self, user_id: uuid.UUID
+    ) -> dict[uuid.UUID, date]:
+        result = await self._session.execute(
+            select(Budget.category_id, func.min(Budget.month))
+            .where(Budget.user_id == user_id)
+            .group_by(Budget.category_id)
+        )
+        return {row[0]: row[1] for row in result.all()}
+
     async def spent_before(
-        self, user_id: uuid.UUID, before: datetime
+        self,
+        user_id: uuid.UUID,
+        before: datetime,
+        since: datetime | None = None,
     ) -> dict[uuid.UUID, Decimal]:
+        conditions = [
+            Transaction.user_id == user_id,
+            Transaction.kind.in_(
+                (TransactionKind.EXPENSE, TransactionKind.REFUND)
+            ),
+            Transaction.date < before,
+        ]
+        if since is not None:
+            conditions.append(Transaction.date >= since)
         result = await self._session.execute(
             select(
                 Transaction.category_id,
                 func.coalesce(func.sum(Transaction.amount_rub), Decimal(0)),
             )
-            .where(
-                Transaction.user_id == user_id,
-                Transaction.kind.in_(
-                    (TransactionKind.EXPENSE, TransactionKind.REFUND)
-                ),
-                Transaction.date < before,
-            )
+            .where(*conditions)
             .group_by(Transaction.category_id)
         )
         spending = {
@@ -189,6 +212,7 @@ class SqlBudgetRepository:
         credit_spending = await credit_expenses_by_category_rub(
             self._session,
             user_id,
+            date_from=since,
             date_to=before,
         )
         for category_id, amount in credit_spending.items():

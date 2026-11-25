@@ -11,7 +11,9 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Any, cast
 
-from app.core.exceptions import NotFoundError
+import pytest
+
+from app.core.exceptions import NotFoundError, ValidationFailedError
 from app.domains.summary.service import SummaryService
 
 
@@ -195,6 +197,28 @@ async def test_already_paid_part_of_recurring_is_not_reserved_twice() -> None:
     assert result.safe_to_spend_rub == Decimal("60000")
 
 
+async def test_parent_recurring_is_paid_by_child_spending() -> None:
+    """План «Дом» гасится арендой, записанной в «Дом → Аренда»."""
+    home = _Recurring("Дом", Decimal("50000"))
+    rent = uuid.uuid4()
+    service = _service(
+        [_Account("Альфа", "RUB", Decimal("60000"))],
+        recurring=[home],
+        spent={rent: Decimal("-50000")},
+        parents={rent: home.category_id},
+    )
+    result = await service.daily_allowance(
+        uuid.uuid4(), "Europe/Moscow", now=_NOW
+    )
+    assert result.obligations_rub == Decimal("0")
+    assert result.safe_to_spend_rub == Decimal("60000")
+
+    upcoming = await service.upcoming_payments(
+        uuid.uuid4(), timezone_name="Europe/Moscow", now=_NOW
+    )
+    assert [p for p in upcoming if p.kind == "recurring"] == []
+
+
 async def test_overspent_recurring_does_not_become_a_bonus() -> None:
     """Потратили больше плана — это не освобождает деньги."""
     rent = _Recurring("Аренда", Decimal("19500"))
@@ -316,6 +340,17 @@ async def test_past_horizon_is_rejected() -> None:
     )
     # Горизонт в прошлом — считаем по сегодняшний день, не падаем.
     assert result.days_left == 1
+
+
+async def test_far_future_horizon_is_a_validation_error() -> None:
+    service = _service([_Account("Альфа", "RUB", Decimal("1000"))])
+    with pytest.raises(ValidationFailedError):
+        await service.daily_allowance(
+            uuid.uuid4(),
+            "Europe/Moscow",
+            until=date(9999, 12, 31),
+            now=_NOW,
+        )
 
 
 async def test_unallocated_subtracts_category_plans() -> None:

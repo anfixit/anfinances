@@ -31,6 +31,7 @@ from app.core.exceptions import (
     NotFoundError,
     ValidationFailedError,
 )
+from app.domains.accounts.models import Account
 from app.domains.accounts.repository import AccountRepository
 from app.domains.categories.repository import CategoryRepository
 from app.domains.currencies.service import CurrencyService
@@ -77,6 +78,20 @@ def _signed(amount: Decimal, kind: TransactionKind) -> Decimal:
 _INFLOW = frozenset(
     {TransactionKind.INCOME, TransactionKind.REFUND, TransactionKind.LOAN}
 )
+
+
+def _ensure_active(account: Account) -> None:
+    """Архивный счёт не принимает новых денег.
+
+    Архивный счёт не входит в капитал, поэтому трата или перевод на
+    него молча меняли итог на дашборде — а архивация счёта с остатком
+    как раз требует явного подтверждения.
+    """
+    if account.is_archived:
+        raise ValidationFailedError(
+            f"Счёт «{account.name}» в архиве — операции на нём не "
+            "записываются. Верните его из архива, если это нужно."
+        )
 
 
 def _balance_mark(tx: Transaction) -> tuple[object, ...]:
@@ -181,6 +196,7 @@ class TransactionService:
         account = await self._accounts.get(data.account_id, user_id)
         if account is None:
             raise NotFoundError("Счёт не найден.")
+        _ensure_active(account)
 
         (
             category_name_snapshot,
@@ -280,6 +296,7 @@ class TransactionService:
             account = await self._accounts.get(new_account_id, user_id)
             if account is None:
                 raise NotFoundError("Счёт не найден.")
+            _ensure_active(account)
             tx.account_id = account.id
             tx.account_name_snapshot = account.name
             if account.currency_code != tx.currency_code:
@@ -409,6 +426,8 @@ class TransferService:
         dst = await self._accounts.get(data.to_account_id, user_id)
         if dst is None:
             raise NotFoundError("Счёт-получатель не найден.")
+        _ensure_active(src)
+        _ensure_active(dst)
 
         (
             fee_category_name_snapshot,
@@ -516,6 +535,12 @@ class TransferService:
         dst = await self._accounts.get(data.to_account_id, user_id)
         if dst is None:
             raise NotFoundError("Счёт-получатель не найден.")
+        # Старый перевод на уже архивном счёте править можно (дата,
+        # комментарий); переносить перевод на архивный счёт — нет.
+        if src.id != src_leg.account_id:
+            _ensure_active(src)
+        if dst.id != dst_leg.account_id:
+            _ensure_active(dst)
 
         (
             fee_category_name_snapshot,

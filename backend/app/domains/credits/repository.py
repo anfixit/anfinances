@@ -2,6 +2,7 @@
 
 import uuid
 from datetime import datetime
+from decimal import Decimal
 from typing import Protocol
 
 from sqlalchemy import func, select
@@ -22,6 +23,18 @@ class CreditRepository(Protocol):
     async def get(
         self, credit_id: uuid.UUID, user_id: uuid.UUID
     ) -> Credit | None: ...
+
+    async def get_for_update(
+        self, credit_id: uuid.UUID, user_id: uuid.UUID
+    ) -> Credit | None: ...
+
+    async def find_same_payment(
+        self,
+        credit_id: uuid.UUID,
+        user_id: uuid.UUID,
+        when: datetime,
+        total: Decimal,
+    ) -> CreditPayment | None: ...
 
     async def get_active_by_name(
         self, user_id: uuid.UUID, name: str
@@ -88,6 +101,41 @@ class SqlCreditRepository:
                 Credit.id == credit_id,
                 Credit.user_id == user_id,
             )
+        )
+        return result.scalar_one_or_none()
+
+    async def get_for_update(
+        self, credit_id: uuid.UUID, user_id: uuid.UUID
+    ) -> Credit | None:
+        """Кредит с блокировкой строки до конца транзакции.
+
+        ``populate_existing``: если строка уже в сессии, берём свежий
+        остаток, а не тот, что прочитали до ожидания блокировки.
+        """
+        result = await self._session.execute(
+            select(Credit)
+            .where(Credit.id == credit_id, Credit.user_id == user_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        return result.scalar_one_or_none()
+
+    async def find_same_payment(
+        self,
+        credit_id: uuid.UUID,
+        user_id: uuid.UUID,
+        when: datetime,
+        total: Decimal,
+    ) -> CreditPayment | None:
+        result = await self._session.execute(
+            select(CreditPayment)
+            .where(
+                CreditPayment.credit_id == credit_id,
+                CreditPayment.user_id == user_id,
+                CreditPayment.date == when,
+                CreditPayment.total_amount == total,
+            )
+            .limit(1)
         )
         return result.scalar_one_or_none()
 

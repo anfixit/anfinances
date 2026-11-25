@@ -18,6 +18,8 @@ from pydantic import (
 )
 
 from app.core.enums import RequiredKind, TransactionKind
+from app.core.money import Money
+from app.core.schemas import reject_nulls
 
 __all__ = [
     "TransactionCreate",
@@ -43,7 +45,7 @@ class TransactionCreate(BaseModel):
     kind: OrdinaryKind
     # Знак ставит сервис по типу. Исключение — корректировка: у неё
     # направление и есть смысл, поэтому сумма приходит со знаком.
-    amount: Decimal
+    amount: Money
     date: datetime
     category_id: uuid.UUID | None = None
     required: RequiredKind | None = None
@@ -72,12 +74,17 @@ class TransactionUpdate(BaseModel):
     # Сумма и дата при этом не трогаются, меняется только смысл.
     kind: OrdinaryKind | None = None
     account_id: uuid.UUID | None = None
-    amount: Decimal | None = Field(default=None, gt=0)
+    amount: Money | None = Field(default=None, gt=0)
     date: datetime | None = None
     category_id: uuid.UUID | None = None
     required: RequiredKind | None = None
     comment: str | None = None
     payee: str | None = Field(default=None, max_length=200)
+
+    @model_validator(mode="after")
+    def _no_nulls(self) -> "TransactionUpdate":
+        reject_nulls(self, ("kind", "account_id", "amount", "date"))
+        return self
 
 
 class TransactionRead(BaseModel):
@@ -108,11 +115,11 @@ class TransactionRead(BaseModel):
 class TransferCreate(BaseModel):
     from_account_id: uuid.UUID
     to_account_id: uuid.UUID
-    amount_from: Decimal = Field(gt=0)
-    amount_to: Decimal = Field(gt=0)
+    amount_from: Money = Field(gt=0)
+    amount_to: Money = Field(gt=0)
     date: datetime
     comment: str | None = None
-    fee_amount: Decimal | None = Field(default=None, ge=0)
+    fee_amount: Money | None = Field(default=None, ge=0)
     fee_category_id: uuid.UUID | None = None
 
     @model_validator(mode="after")

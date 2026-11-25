@@ -7,6 +7,7 @@ from decimal import Decimal
 from pydantic import BaseModel, Field, model_validator
 
 from app.core.enums import GoalKind
+from app.core.money import Money
 
 __all__ = ["GoalRead", "GoalUpsert"]
 
@@ -14,7 +15,7 @@ __all__ = ["GoalRead", "GoalUpsert"]
 class GoalUpsert(BaseModel):
     category_id: uuid.UUID
     kind: GoalKind
-    amount: Decimal = Field(gt=0)
+    amount: Money = Field(gt=0)
     target_date: date | None = None
 
     @model_validator(mode="after")

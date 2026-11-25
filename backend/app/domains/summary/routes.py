@@ -105,7 +105,7 @@ async def cashflow(
 async def by_category(
     user: CurrentUser,
     service: ServiceDep,
-    month: Annotated[str, Query(pattern=r"^\d{4}-\d{2}$")],
+    month: Annotated[str, Query(pattern=r"^\d{4}-(0[1-9]|1[0-2])$")],
 ) -> ApiResponse[ByCategoryResult]:
     result = await service.by_category(user.id, month, user.timezone)
     return ApiResponse(data=result)
@@ -118,7 +118,7 @@ async def by_category(
 async def income_by_category(
     user: CurrentUser,
     service: ServiceDep,
-    month: Annotated[str, Query(pattern=r"^\d{4}-\d{2}$")],
+    month: Annotated[str, Query(pattern=r"^\d{4}-(0[1-9]|1[0-2])$")],
 ) -> ApiResponse[IncomeByCategoryResult]:
     """Заработанное за месяц по категориям, без кредитов и возвратов."""
     result = await service.income_by_category(user.id, month, user.timezone)

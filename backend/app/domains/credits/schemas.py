@@ -7,6 +7,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.core.money import Money
+from app.core.schemas import reject_nulls
 from app.domains.credits.payoff import PayoffStrategy
 
 __all__ = [
@@ -28,10 +30,10 @@ class CreditCreate(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     lender: str | None = Field(default=None, max_length=200)
     currency_code: str = Field(min_length=3, max_length=3)
-    principal_initial: Decimal = Field(gt=0)
+    principal_initial: Money = Field(gt=0)
     annual_rate: Decimal | None = Field(default=None, ge=0)
     term_months: int | None = Field(default=None, gt=0)
-    monthly_payment: Decimal | None = Field(default=None, gt=0)
+    monthly_payment: Money | None = Field(default=None, gt=0)
     start_date: date | None = None
     payment_day: int | None = Field(default=None, ge=1, le=31)
     linked_account_id: uuid.UUID | None = None
@@ -41,14 +43,19 @@ class CreditCreate(BaseModel):
 class CreditUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=200)
     lender: str | None = Field(default=None, max_length=200)
-    principal_initial: Decimal | None = Field(default=None, gt=0)
+    principal_initial: Money | None = Field(default=None, gt=0)
     annual_rate: Decimal | None = Field(default=None, ge=0)
     term_months: int | None = Field(default=None, gt=0)
-    monthly_payment: Decimal | None = Field(default=None, gt=0)
+    monthly_payment: Money | None = Field(default=None, gt=0)
     start_date: date | None = None
     payment_day: int | None = Field(default=None, ge=1, le=31)
     linked_account_id: uuid.UUID | None = None
     comments: str | None = None
+
+    @model_validator(mode="after")
+    def _no_nulls(self) -> "CreditUpdate":
+        reject_nulls(self, ("name", "principal_initial"))
+        return self
 
 
 class CreditRead(BaseModel):
@@ -75,10 +82,10 @@ class CreditRead(BaseModel):
 class CreditPaymentCreate(BaseModel):
     payment_account_id: uuid.UUID
     date: datetime
-    total_amount: Decimal = Field(gt=0)
-    principal_amount: Decimal = Field(ge=0)
-    interest_amount: Decimal = Field(default=Decimal("0"), ge=0)
-    fee_amount: Decimal = Field(default=Decimal("0"), ge=0)
+    total_amount: Money = Field(gt=0)
+    principal_amount: Money = Field(ge=0)
+    interest_amount: Money = Field(default=Decimal("0"), ge=0)
+    fee_amount: Money = Field(default=Decimal("0"), ge=0)
     interest_category_id: uuid.UUID | None = None
     fee_category_id: uuid.UUID | None = None
     comment: str | None = None

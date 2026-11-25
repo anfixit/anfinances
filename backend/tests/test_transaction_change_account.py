@@ -30,10 +30,13 @@ ALIEN_ACCOUNT = uuid.uuid4()
 
 
 class _Account:
-    def __init__(self, id_: uuid.UUID, name: str, code: str) -> None:
+    def __init__(
+        self, id_: uuid.UUID, name: str, code: str, archived: bool = False
+    ) -> None:
         self.id = id_
         self.name = name
         self.currency_code = code
+        self.is_archived = archived
 
 
 class _Tx:
@@ -97,6 +100,21 @@ async def test_account_can_be_changed() -> None:
     )
     assert tx.account_id == UZS_ACCOUNT
     assert tx.account_name_snapshot == "Наличные сумы"
+
+
+async def test_cannot_move_to_archived_account() -> None:
+    """Архивный счёт не в капитале: перенос туда молча менял итог."""
+    service, tx = _service()
+    archived = uuid.uuid4()
+    service._accounts._rows[archived] = _Account(  # type: ignore[attr-defined]
+        archived, "Старая карта", "RUB", archived=True
+    )
+
+    with pytest.raises(ValidationFailedError, match="в архиве"):
+        await service.update_transaction(
+            tx.id, USER, TransactionUpdate(account_id=archived)
+        )
+    assert tx.account_id == RUB_ACCOUNT
 
 
 async def test_currency_and_rate_follow_the_new_account() -> None:

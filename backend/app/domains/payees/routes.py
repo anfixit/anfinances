@@ -63,7 +63,7 @@ async def list_new_payees(
 async def spending_by_payee(
     user: CurrentUser,
     repo: RepoDep,
-    month: Annotated[str, Query(pattern=r"^\d{4}-\d{2}$")],
+    month: Annotated[str, Query(pattern=r"^\d{4}-(0[1-9]|1[0-2])$")],
 ) -> ApiResponse[SpendingByPayee]:
     """Кому ушли деньги за месяц. Категория говорит на что, этот — кому."""
     year, mon = (int(part) for part in month.split("-"))

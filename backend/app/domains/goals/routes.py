@@ -17,7 +17,7 @@ from app.domains.goals.service import GoalService
 
 router = APIRouter(prefix="/goals", tags=["goals"])
 
-_MONTH_PATTERN = r"^\d{4}-\d{2}$"
+_MONTH_PATTERN = r"^\d{4}-(0[1-9]|1[0-2])$"
 
 
 def get_service(db: DbSession) -> GoalService:

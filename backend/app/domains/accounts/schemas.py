@@ -5,9 +5,11 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Self
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.core.enums import AccountType
+from app.core.money import Money
+from app.core.schemas import reject_nulls
 from app.domains.accounts.models import Account
 
 __all__ = [
@@ -21,8 +23,8 @@ class AccountCreate(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     type: AccountType
     currency_code: str = Field(min_length=3, max_length=3)
-    initial_balance: Decimal = Decimal("0")
-    credit_limit: Decimal | None = None
+    initial_balance: Money = Decimal("0")
+    credit_limit: Money | None = None
     color: str | None = Field(default=None, max_length=32)
     sort_order: int = 0
     comments: str | None = None
@@ -31,11 +33,16 @@ class AccountCreate(BaseModel):
 class AccountUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=200)
     type: AccountType | None = None
-    initial_balance: Decimal | None = None
-    credit_limit: Decimal | None = None
+    initial_balance: Money | None = None
+    credit_limit: Money | None = None
     color: str | None = Field(default=None, max_length=32)
     sort_order: int | None = None
     comments: str | None = None
+
+    @model_validator(mode="after")
+    def _no_nulls(self) -> "AccountUpdate":
+        reject_nulls(self, ("name", "type", "initial_balance", "sort_order"))
+        return self
 
 
 class AccountRead(BaseModel):

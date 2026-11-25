@@ -9,17 +9,21 @@
     }
 """
 
+import logging
 from typing import Any
 
 from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from slowapi.errors import RateLimitExceeded
+from sqlalchemy.exc import DataError, IntegrityError
 from starlette.exceptions import (
     HTTPException as StarletteHTTPException,
 )
 
 from app.core.schemas import ErrorDetail, ErrorResponse
+
+logger = logging.getLogger("anfinances")
 
 
 class AppException(Exception):
@@ -137,6 +141,45 @@ def register_exception_handlers(app: FastAPI) -> None:
             "RATE_LIMITED",
             "Слишком много запросов. Попробуйте позже.",
             status.HTTP_429_TOO_MANY_REQUESTS,
+        )
+
+    # Ошибки базы, до которых не дошла проверка в сервисе: гонка двух
+    # одинаковых запросов на уникальный индекс, явный null в NOT NULL,
+    # число вне диапазона колонки. Раньше это был голый 500 в чужом
+    # формате. В лог — только тип и имя ограничения: в тексте ошибки
+    # SQLAlchemy лежат параметры запроса, то есть суммы и комментарии.
+    @app.exception_handler(IntegrityError)
+    async def _integrity_handler(
+        request: Request, exc: IntegrityError
+    ) -> JSONResponse:
+        logger.warning(
+            "integrity error on %s %s: %s %s",
+            request.method,
+            request.url.path,
+            type(exc.orig).__name__,
+            getattr(exc.orig, "constraint_name", "") or "",
+        )
+        return _error_response(
+            "CONFLICT",
+            "Запись противоречит уже сохранённым данным: такая уже есть "
+            "или не заполнено обязательное поле.",
+            status.HTTP_409_CONFLICT,
+        )
+
+    @app.exception_handler(DataError)
+    async def _data_error_handler(
+        request: Request, exc: DataError
+    ) -> JSONResponse:
+        logger.warning(
+            "data error on %s %s: %s",
+            request.method,
+            request.url.path,
+            type(exc.orig).__name__,
+        )
+        return _error_response(
+            "VALIDATION_ERROR",
+            "Значение не помещается в допустимый диапазон.",
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
         )
 
     @app.exception_handler(StarletteHTTPException)
