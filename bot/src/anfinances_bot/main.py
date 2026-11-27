@@ -28,6 +28,7 @@ from anfinances_bot.documents import (
     read_spreadsheet,
     read_statement,
 )
+from anfinances_bot.health import health_path, run_health_loop
 from anfinances_bot.proactive_loop import run_proactive_loop
 from anfinances_bot.speech import SpeechUnavailableError, transcribe
 from anfinances_bot.spend import SpendLog
@@ -303,13 +304,20 @@ async def main() -> None:
     proactive = asyncio.create_task(
         run_proactive_loop(bot, deps, settings, profile.timezone, state)
     )
+    # Отметка для healthcheck контейнера: живой процесс ещё не значит
+    # работающий бот (после смены пароля на сайте вход перестаёт
+    # проходить, а опрос телеграма продолжается). См. health.py.
+    heartbeat = asyncio.create_task(
+        run_health_loop(client, health_path(settings.bot_state_path))
+    )
     logger.info("Бот запущен, часовой пояс %s", profile.timezone)
     try:
         await dispatcher.start_polling(bot)
     finally:
-        proactive.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await proactive
+        for task in (proactive, heartbeat):
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
         await client.aclose()
         await bot.session.close()
 

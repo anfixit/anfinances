@@ -10,17 +10,19 @@ from fastapi import APIRouter, Depends, status
 
 from app.core.dependencies import CurrentUser, DbSession, SettingsDep
 from app.core.schemas import ApiResponse
-from app.domains.accounts.repository import SqlAccountRepository
-from app.domains.categories.repository import SqlCategoryRepository
 from app.domains.currencies.providers.er_api import ErApiRatesProvider
 from app.domains.currencies.repository import SqlCurrencyRepository
-from app.domains.currencies.service import CurrencyService
 from app.domains.export.schemas import ExportBundle
+from app.domains.import_.caching import (
+    CachedAccountRepository,
+    CachedCategoryRepository,
+    CachedCurrencyService,
+    CachedPayeeService,
+)
 from app.domains.import_.repository import SqlImportRepository
 from app.domains.import_.schemas import ImportResult, ImportTransactions
 from app.domains.import_.service import ImportService
 from app.domains.payees.repository import SqlPayeeRepository
-from app.domains.payees.service import PayeeService
 from app.domains.transactions.repository import SqlTransactionRepository
 from app.domains.transactions.service import TransactionService
 
@@ -28,16 +30,19 @@ router = APIRouter(prefix="/import", tags=["import"])
 
 
 def get_import_service(db: DbSession, settings: SettingsDep) -> ImportService:
-    currencies = CurrencyService(
+    # Репозитории и сервисы с памятью на один запрос: выписка в тысячу
+    # строк иначе тысячу раз спрашивает у базы один и тот же счёт,
+    # категорию, получателя и курс. См. caching.py.
+    currencies = CachedCurrencyService(
         SqlCurrencyRepository(db),
         ErApiRatesProvider(settings),
     )
     transactions = TransactionService(
         SqlTransactionRepository(db),
-        SqlAccountRepository(db),
-        SqlCategoryRepository(db),
+        CachedAccountRepository(db),
+        CachedCategoryRepository(db),
         currencies,
-        PayeeService(SqlPayeeRepository(db)),
+        CachedPayeeService(SqlPayeeRepository(db)),
     )
     return ImportService(SqlImportRepository(db), transactions)
 

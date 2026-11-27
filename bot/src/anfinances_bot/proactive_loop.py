@@ -66,9 +66,11 @@ async def run_proactive_loop(
     """
     chat_id = next(iter(settings.telegram_allowed_user_ids))
     zone = ZoneInfo(timezone_name)
-    # Готовый текст совещания, который не удалось отправить. Без него
-    # каждая попытка через 15 минут заново гоняла модель — и платила.
-    unsent_meeting: str | None = None
+    # Куски совещания, которые ещё не ушли. Храним списком, а не одним
+    # текстом: модель за совещание платная, поэтому её ответ не теряем,
+    # а отправленную часть забываем сразу — иначе сорвавшаяся отправка
+    # второй части через 15 минут присылала первую ещё раз.
+    unsent_parts: list[str] | None = None
 
     while True:
         try:
@@ -81,13 +83,16 @@ async def run_proactive_loop(
                     settings.bot_budget_meeting_day,
                     state.get("last_meeting_at"),
                 ):
-                    if unsent_meeting is None:
+                    if unsent_parts is None:
                         reply = await deps.resolve(MEETING_PROMPT, [])
-                        unsent_meeting = reply.text
-                    for part in split_message(unsent_meeting):
-                        await bot.send_message(chat_id, to_telegram_html(part))
+                        unsent_parts = split_message(reply.text)
+                    while unsent_parts:
+                        await bot.send_message(
+                            chat_id, to_telegram_html(unsent_parts[0])
+                        )
+                        unsent_parts.pop(0)
                     state.set("last_meeting_at", now)
-                    unsent_meeting = None
+                    unsent_parts = None
                 elif should_remind(
                     await _last_transaction_at(deps),
                     state.get("last_reminder_at"),
