@@ -19,7 +19,7 @@ from app.domains.categories.models import Category
 from app.domains.credits.models import Credit, CreditPayment
 from app.domains.currencies.models import Currency, UserCurrency
 from app.domains.goals.models import CategoryGoal
-from app.domains.payees.models import Payee
+from app.domains.payees.models import Payee, PayeeCandidate
 from app.domains.reconciliation.models import Reconciliation
 from app.domains.recurring.models import RecurringExpense
 from app.domains.transactions.models import Transaction, Transfer
@@ -74,6 +74,12 @@ class SqlImportRepository:
         # транзакций/бюджетов/плана, ссылающихся на категории.
         await self._session.execute(
             delete(UserCurrency).where(UserCurrency.user_id == user_id)
+        )
+        # Отклонённые имена из интерфейса не удаляются, и в «пустом»
+        # аккаунте они могли остаться: бэкап принесёт свои, терять
+        # нечего, а старые упёрлись бы в уникальный индекс.
+        await self._session.execute(
+            delete(PayeeCandidate).where(PayeeCandidate.user_id == user_id)
         )
         await self._session.execute(
             delete(Category).where(Category.user_id == user_id)

@@ -374,7 +374,7 @@ def _check_integrity(bundle: ExportBundle) -> None:
     # записи.
     candidate_keys = [payee_key(c.name) for c in bundle.payee_candidates]
     if len(candidate_keys) != len(set(candidate_keys)):
-        raise ValidationFailedError(_BROKEN)
+        raise ValidationFailedError(_DUPLICATE_CANDIDATES)
     for goal in bundle.goals:
         need(goal.category_id, categories)
     for reconciliation in bundle.reconciliations:
@@ -383,3 +383,6 @@ def _check_integrity(bundle: ExportBundle) -> None:
 
 
 _BROKEN = "Повреждённый бэкап: ссылка на несуществующую запись."
+_DUPLICATE_CANDIDATES = (
+    "Повреждённый бэкап: в очереди получателей два одинаковых имени."
+)

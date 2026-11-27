@@ -42,6 +42,11 @@ from app.domains.transactions.models import Transaction, Transfer
 WHEN = datetime(2026, 9, 10, 12, 0, tzinfo=UTC)
 
 
+def _utc(value: datetime) -> datetime:
+    # SQLite отдаёт даты без пояса; на проде пояс на месте.
+    return value if value.tzinfo else value.replace(tzinfo=UTC)
+
+
 def _tx(
     ledger: dict[str, uuid.UUID],
     kind: TransactionKind,
@@ -277,7 +282,10 @@ async def test_restore_rebuilds_every_link_for_the_new_owner(
     candidates = {c.name: c for c in await one(PayeeCandidate)}
     assert candidates["TAKSOPOLIS"].status == "rejected"
     assert candidates["TAKSOPOLIS"].times_seen == 3
-    assert candidates["TAKSOPOLIS"].first_seen_at is not None
+    # Конкретные даты, а не «не None»: server_default подставил бы
+    # дату восстановления, и «последний раз виден» врал бы.
+    assert _utc(candidates["TAKSOPOLIS"].first_seen_at) == WHEN
+    assert _utc(candidates["TAKSOPOLIS"].last_seen_at) == WHEN
     assert candidates["Новая лавка"].status == "pending"
 
     # Операция: получатель, подписи и отметка сверки на месте.
@@ -501,5 +509,43 @@ async def test_restore_refuses_duplicate_candidate_names(
     bundle.payee_candidates.append(bundle.payee_candidates[0].model_copy())
     owner = await _second_user(db_session)
 
-    with pytest.raises(ValidationFailedError):
+    with pytest.raises(ValidationFailedError, match="одинаков"):
         await _service(db_session).restore_all(owner, bundle)
+
+
+async def test_restore_clears_leftover_candidates_of_an_empty_account(
+    db_session: AsyncSession, ledger: dict[str, uuid.UUID]
+) -> None:
+    """Отклонённые имена из интерфейса не удаляются: аккаунт без счетов
+    и операций, где они остались, считается пустым и не должен падать
+    на уникальном индексе."""
+    await _fill(db_session, ledger)
+    bundle = await ExportService(SqlExportRepository(db_session)).build_backup(
+        ledger["user"]
+    )
+    owner = await _second_user(db_session)
+    db_session.add(
+        PayeeCandidate(
+            user_id=owner,
+            name="TAKSOPOLIS",
+            name_key="taksopolis",
+            status="rejected",
+            first_seen_at=datetime(2020, 1, 1, tzinfo=UTC),
+            last_seen_at=datetime(2020, 1, 1, tzinfo=UTC),
+        )
+    )
+    await db_session.flush()
+
+    result = await _service(db_session).restore_all(owner, bundle)
+
+    assert result.payee_candidates == 2
+    rows = (
+        (
+            await db_session.execute(
+                select(PayeeCandidate).where(PayeeCandidate.user_id == owner)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert _utc({r.name: r.last_seen_at for r in rows}["TAKSOPOLIS"]) == WHEN
