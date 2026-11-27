@@ -281,9 +281,22 @@ class SqlPayeeRepository:
         """Сколько имён ждут разбора и сколько по ним потрачено за период.
 
         Тот же период и те же виды операций, что у spending_by_payee.
-        Имён считаем по свёрнутому ключу, а не по операциям, поэтому
-        свёртка в питоне, как в candidate_totals.
+        Считаются только имена, ждущие в очереди (кандидаты со статусом
+        pending): число обязано совпадать с длиной очереди, иначе
+        отклонённые имена, чьи операции навсегда остаются без
+        получателя, держали бы на дашборде строку, которую нечем
+        убрать. Имён считаем по свёрнутому ключу, а не по операциям,
+        поэтому свёртка в питоне, как в candidate_totals.
         """
+        pending_result = await self._session.execute(
+            select(PayeeCandidate.name_key).where(
+                PayeeCandidate.user_id == user_id,
+                PayeeCandidate.status == "pending",
+            )
+        )
+        pending_keys = set(pending_result.scalars().all())
+        if not pending_keys:
+            return 0, Decimal(0)
         result = await self._session.execute(
             select(
                 Transaction.payee_name_snapshot, Transaction.amount_rub
@@ -302,6 +315,9 @@ class SqlPayeeRepository:
         keys: set[str] = set()
         total = Decimal(0)
         for snapshot, amount_rub in result.all():
-            keys.add(payee_key(snapshot))
+            key = payee_key(snapshot)
+            if key not in pending_keys:
+                continue
+            keys.add(key)
             total -= amount_rub
         return len(keys), total

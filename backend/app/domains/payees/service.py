@@ -175,15 +175,19 @@ class PayeeService:
         очередь, оно уходит в отклонённые.
         """
         payee = await self.get_payee(payee_id, user_id)
+        # Поля забираем до удаления: get_candidate() сбрасывает сессию,
+        # и после DELETE на объект полагаться нельзя.
+        name = payee.name
+        name_key = payee.name_key
         await self._repo.delete(payee)
-        candidate = await self._repo.get_candidate(user_id, payee.name_key)
+        candidate = await self._repo.get_candidate(user_id, name_key)
         if candidate is None:
             now = datetime.now(UTC)
             await self._repo.add_candidate(
                 PayeeCandidate(
                     user_id=user_id,
-                    name=payee.name,
-                    name_key=payee.name_key,
+                    name=name,
+                    name_key=name_key,
                     status="rejected",
                     first_seen_at=now,
                     last_seen_at=now,

@@ -15,7 +15,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.enums import CategoryKind, TransactionKind
 from app.core.exceptions import AlreadyExistsError, NotFoundError
 from app.domains.categories.models import Category
-from app.domains.payees.models import Payee
+from app.domains.payees.keys import payee_key
+from app.domains.payees.models import Payee, PayeeCandidate
 from app.domains.payees.repository import SqlPayeeRepository
 from app.domains.payees.schemas import PayeeCreate
 from app.domains.payees.service import PayeeService
@@ -44,6 +45,26 @@ async def _category(
     db_session.add(category)
     await db_session.flush()
     return category
+
+
+async def _candidate(
+    db_session: AsyncSession,
+    ledger: dict[str, uuid.UUID],
+    name: str,
+    status: str,
+) -> PayeeCandidate:
+    now = datetime.now(UTC)
+    candidate = PayeeCandidate(
+        user_id=ledger["user"],
+        name=name,
+        name_key=payee_key(name),
+        status=status,
+        first_seen_at=now,
+        last_seen_at=now,
+    )
+    db_session.add(candidate)
+    await db_session.flush()
+    return candidate
 
 
 async def _spend(
@@ -209,6 +230,8 @@ async def test_spending_counts_unsorted_names_separately(
         snapshot="Заказчик",
     )
     await _spend(db_session, ledger, None, Decimal("5"), snapshot="")
+    for name in ("Кофейня", "Аптека", "Старое"):
+        await _candidate(db_session, ledger, name, "pending")
 
     rows = await repo.spending_by_payee(ledger["user"], MONTH_FROM, MONTH_TO)
     assert [row[1] for row in rows] == ["Пятёрочка"]
@@ -218,6 +241,41 @@ async def test_spending_counts_unsorted_names_separately(
     )
     assert names == 2
     assert amount == Decimal("1100")
+
+
+async def test_unsorted_spending_skips_rejected_and_unknown_names(
+    db_session: AsyncSession, ledger: dict[str, uuid.UUID]
+) -> None:
+    """Число равно очереди: отклонённые и безкандидатные не в счёте."""
+    repo = SqlPayeeRepository(db_session)
+    await _candidate(db_session, ledger, "Кофейня", "pending")
+    await _candidate(db_session, ledger, "Злата", "rejected")
+    await _spend(db_session, ledger, None, Decimal("300"), snapshot="Кофейня")
+    await _spend(db_session, ledger, None, Decimal("5000"), snapshot="Злата")
+    await _spend(db_session, ledger, None, Decimal("70"), snapshot=" ЗЛАТА ")
+    await _spend(db_session, ledger, None, Decimal("800"), snapshot="Нигде")
+
+    names, amount = await repo.unsorted_spending(
+        ledger["user"], MONTH_FROM, MONTH_TO
+    )
+    assert names == 1
+    assert amount == Decimal("300")
+
+
+async def test_delete_payee_rejects_its_name(
+    db_session: AsyncSession, ledger: dict[str, uuid.UUID]
+) -> None:
+    service = _service(db_session)
+    repo = SqlPayeeRepository(db_session)
+    payee = await _confirmed(service, ledger, "Злата")
+    key = payee.name_key
+
+    await service.delete_payee(payee.id, ledger["user"])
+
+    candidate = await repo.get_candidate(ledger["user"], key)
+    assert candidate is not None
+    assert candidate.status == "rejected"
+    assert candidate.name == "Злата"
 
 
 async def test_income_does_not_land_in_payee_spending(

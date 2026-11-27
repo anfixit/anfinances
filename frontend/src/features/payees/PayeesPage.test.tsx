@@ -14,8 +14,9 @@ import type { Candidate, Payee } from "@/features/payees/types"
 vi.mock("@/features/categories/hooks", () => ({
   useCategories: () => ({ data: [], isPending: false }),
 }))
+const confirmMock = vi.fn()
 vi.mock("@/components/confirm-context", () => ({
-  useConfirm: () => ({ confirm: () => Promise.resolve(true) }),
+  useConfirm: () => ({ confirm: confirmMock }),
 }))
 
 const accept = vi.fn()
@@ -24,6 +25,8 @@ const unreject = vi.fn()
 const removePayee = vi.fn()
 
 let pending: Candidate[]
+let queueError = false
+let rejectedError = false
 let rejected: Candidate[]
 let payees: Payee[]
 
@@ -34,6 +37,7 @@ vi.mock("@/features/payees/hooks", () => ({
   useCandidates: (status: string) => ({
     data: status === "pending" ? pending : rejected,
     isPending: false,
+    isError: status === "pending" ? queueError : rejectedError,
   }),
   useAcceptCandidate: () => ({ mutate: accept, isPending: false }),
   useRejectCandidate: () => ({ mutate: reject, isPending: false }),
@@ -59,6 +63,10 @@ function cand(id: string, name: string, times: number, amount: string) {
 }
 
 beforeEach(() => {
+  confirmMock.mockReset()
+  confirmMock.mockResolvedValue(true)
+  queueError = false
+  rejectedError = false
   accept.mockReset()
   reject.mockReset()
   unreject.mockReset()
@@ -100,16 +108,50 @@ describe("очередь разбора получателей", () => {
     )
   })
 
-  it("«это тот же, что…» клеит к существующему", () => {
+  it("«это тот же, что…» клеит к существующему после подтверждения", async () => {
     render(<PayeesPage />)
     const row = screen.getByText("Кофейня").closest("li") as HTMLElement
     fireEvent.change(within(row).getByRole("combobox"), {
       target: { value: "p1" },
     })
-    expect(accept).toHaveBeenCalledWith(
-      { id: "c1", payeeId: "p1" },
-      expect.anything(),
-    )
+    await vi.waitFor(() => {
+      expect(accept).toHaveBeenCalledWith(
+        { id: "c1", payeeId: "p1" },
+        expect.anything(),
+      )
+    })
+    expect(confirmMock).toHaveBeenCalledTimes(1)
+  })
+
+  it("«это тот же, что…» без подтверждения ничего не клеит", async () => {
+    confirmMock.mockResolvedValue(false)
+    render(<PayeesPage />)
+    const row = screen.getByText("Кофейня").closest("li") as HTMLElement
+    fireEvent.change(within(row).getByRole("combobox"), {
+      target: { value: "p1" },
+    })
+    await vi.waitFor(() => {
+      expect(confirmMock).toHaveBeenCalledTimes(1)
+    })
+    expect(accept).not.toHaveBeenCalled()
+  })
+
+  it("ошибка загрузки очереди видна, а не выглядит как пустая очередь", () => {
+    queueError = true
+    pending = undefined as unknown as Candidate[]
+    render(<PayeesPage />)
+    expect(
+      screen.getByText("Не удалось загрузить очередь разбора"),
+    ).toBeInTheDocument()
+  })
+
+  it("ошибка загрузки отклонённых видна", () => {
+    rejectedError = true
+    rejected = undefined as unknown as Candidate[]
+    render(<PayeesPage />)
+    expect(
+      screen.getByText(/не удалось загрузить список «не магазины»/i),
+    ).toBeInTheDocument()
   })
 
   it("«Не магазин» отклоняет кандидата", () => {

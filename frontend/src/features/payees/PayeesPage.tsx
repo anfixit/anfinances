@@ -45,10 +45,16 @@ export function PayeesPage() {
         Wildberries и Яндекс Маркет отмечаются сами.
       </p>
 
+      {queue.isError && (
+        <p className="error">Не удалось загрузить очередь разбора</p>
+      )}
       {queue.data && queue.data.length > 0 && (
         <CandidateQueue items={queue.data} payees={payees.data} />
       )}
 
+      {rejected.isError && (
+        <p className="error">Не удалось загрузить список «Не магазины»</p>
+      )}
       {rejected.data && rejected.data.length > 0 && (
         <RejectedList items={rejected.data} />
       )}
@@ -270,7 +276,27 @@ function CandidateRow({
 }) {
   const accept = useAcceptCandidate()
   const reject = useRejectCandidate()
+  const { confirm } = useConfirm()
   const busy = accept.isPending || reject.isPending
+
+  const onSame = async (target: Payee) => {
+    const ok = await confirm({
+      title: `«${candidate.name}» — это «${target.name}»?`,
+      body: [
+        "Все операции с этим именем уйдут к получателю " +
+          `«${target.name}», а имя исчезнет из очереди.`,
+        "Отменить одним действием не получится.",
+      ],
+      confirmLabel: "Склеить",
+      danger: true,
+    })
+    if (ok) {
+      accept.mutate(
+        { id: candidate.id, payeeId: target.id },
+        { onError: reportError },
+      )
+    }
+  }
 
   return (
     <span className="row payee-row">
@@ -289,11 +315,9 @@ function CandidateRow({
         value=""
         disabled={busy}
         onChange={(e) => {
-          if (e.target.value !== "") {
-            accept.mutate(
-              { id: candidate.id, payeeId: e.target.value },
-              { onError: reportError },
-            )
+          const target = payees.find((p) => p.id === e.target.value)
+          if (target !== undefined) {
+            void onSame(target)
           }
         }}
       >
