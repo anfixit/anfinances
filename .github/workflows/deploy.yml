@@ -1005,6 +1005,22 @@ jobs:
             # этим же файлом входит сам деплой.
             sudo chmod 755 backups 2>/dev/null || true
             sudo find backups -name 'anfinances_*.dump.gpg' -exec chmod 644 {} + 2>/dev/null || true
+
+            # 27.11.2026: в образе сервера нет rsync, а rrsync приходит
+            # только вместе с ним — ключ не вписался, и домашний сервер
+            # не мог забрать ни одного архива. Доставляем пакет сами.
+            # Если apt не отработал (нет сети, ограничен sudo) — только
+            # предупреждение: сайт из-за второй копии бэкапа не падает.
+            if ! command -v rrsync >/dev/null; then
+              if sudo DEBIAN_FRONTEND=noninteractive apt-get update -qq &&
+                 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq rsync
+              then
+                hash -r
+              else
+                echo "::warning::не удалось поставить rsync"
+              fi
+            fi
+
             if command -v rrsync >/dev/null; then
               pull_key="$(cat scripts/backup-pull.pub)"
               mkdir -p ~/.ssh
