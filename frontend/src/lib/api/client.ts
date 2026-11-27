@@ -27,6 +27,17 @@ interface RetriableConfig extends InternalAxiosRequestConfig {
   _retried?: boolean
 }
 
+// Адреса, которые нельзя чинить обновлением сессии. 401 от них значит
+// «неверный пароль» или «сессии нет», а не «токен протух»: обновлять
+// нечего, а повторять — тем более. Повтор входа стоил второй попытки
+// из лимита (10 в минуту), и пять опечаток подряд давали 429 вместо
+// внятного «неверный email или пароль».
+const NO_REFRESH_RETRY = ["/auth/login", "/auth/refresh"] as const
+
+function skipsRefresh(url: string | undefined): boolean {
+  return NO_REFRESH_RETRY.some((path) => url?.endsWith(path) ?? false)
+}
+
 function toError(error: AxiosError): AppError | AxiosError {
   const body = error.response?.data
   return isApiErrorBody(body) ? new AppError(body) : error
@@ -41,9 +52,13 @@ api.interceptors.response.use(
     if (status !== 401 || !config || config._retried) {
       return Promise.reject(toError(error))
     }
-    // /auth/refresh сам отдал 401 — сессии нет, не зацикливаемся.
-    if (config.url?.endsWith("/auth/refresh")) {
-      notifyAuthExpired()
+    if (skipsRefresh(config.url)) {
+      // Refresh ответил 401 — сессии нет, уводим на /login. Для самого
+      // входа этого делать нельзя: человек как раз пытается войти, и
+      // чистка состояния посреди попытки выглядит как поломка сайта.
+      if (config.url?.endsWith("/auth/refresh")) {
+        notifyAuthExpired()
+      }
       return Promise.reject(toError(error))
     }
 
