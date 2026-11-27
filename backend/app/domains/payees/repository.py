@@ -9,7 +9,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.enums import TransactionKind
-from app.domains.payees.models import Payee
+from app.domains.payees.models import Payee, PayeeCandidate
 from app.domains.transactions.models import Transaction
 
 __all__ = ["PayeeRepository", "SqlPayeeRepository"]
@@ -29,6 +29,18 @@ class PayeeRepository(Protocol):
     async def add(self, payee: Payee) -> Payee: ...
 
     async def delete(self, payee: Payee) -> None: ...
+
+    async def get_candidate(
+        self, user_id: uuid.UUID, name_key: str
+    ) -> PayeeCandidate | None: ...
+
+    async def add_candidate(
+        self, candidate: PayeeCandidate
+    ) -> PayeeCandidate: ...
+
+    async def list_candidates(
+        self, user_id: uuid.UUID, status: str
+    ) -> list[PayeeCandidate]: ...
 
     async def reassign(
         self, from_payee_id: uuid.UUID, to_payee_id: uuid.UUID
@@ -87,6 +99,35 @@ class SqlPayeeRepository:
 
     async def delete(self, payee: Payee) -> None:
         await self._session.delete(payee)
+
+    async def get_candidate(
+        self, user_id: uuid.UUID, name_key: str
+    ) -> PayeeCandidate | None:
+        result = await self._session.execute(
+            select(PayeeCandidate).where(
+                PayeeCandidate.user_id == user_id,
+                PayeeCandidate.name_key == name_key,
+            )
+        )
+        return result.scalar_one_or_none()
+
+    async def add_candidate(self, candidate: PayeeCandidate) -> PayeeCandidate:
+        self._session.add(candidate)
+        await self._session.flush()
+        return candidate
+
+    async def list_candidates(
+        self, user_id: uuid.UUID, status: str
+    ) -> list[PayeeCandidate]:
+        result = await self._session.execute(
+            select(PayeeCandidate)
+            .where(
+                PayeeCandidate.user_id == user_id,
+                PayeeCandidate.status == status,
+            )
+            .order_by(PayeeCandidate.name_key)
+        )
+        return list(result.scalars().all())
 
     async def reassign(
         self, from_payee_id: uuid.UUID, to_payee_id: uuid.UUID
