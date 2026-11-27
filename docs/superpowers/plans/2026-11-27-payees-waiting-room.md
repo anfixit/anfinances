@@ -159,7 +159,7 @@ git commit -am "feat(payees): невиданное имя ждёт подтве�
 **Interfaces:**
 - Consumes: `remember()` из задачи 2, `PayeeRepository.list_candidates`.
 - Produces:
-  - `PayeeRepository.reassign_orphans(user_id, name_key, payee_id) -> int` — перевешивает операции с пустым `payee_id`, чей `payee_name_snapshot` сворачивается в `name_key`. Свёртка в Python: выбрать операции пользователя с `payee_id IS NULL` и непустым снимком, отобрать совпадающие, обновить разом.
+  - `PayeeRepository.reassign_orphans(user_id, name_key, payee_id) -> tuple[int, uuid.UUID | None]` — число перевешенных операций и категория самой свежей из них (ею засевается память); перевешивает операции с пустым `payee_id`, чей `payee_name_snapshot` сворачивается в `name_key`. Свёртка в Python: выбрать операции пользователя с `payee_id IS NULL` и непустым снимком, отобрать совпадающие, обновить разом.
   - `PayeeService.accept_candidate(candidate_id, user_id, payee_id: uuid.UUID | None) -> Payee`
   - `PayeeService.reject_candidate(candidate_id, user_id) -> None`
   - `PayeeService.unreject_candidate(candidate_id, user_id) -> None`
@@ -214,7 +214,8 @@ git commit -am "feat(payees): очередь разбора — подтверд
 
 **Files:**
 - Modify: `backend/app/domains/payees/{repository,schemas,routes}.py`
-- Test: `backend/tests/test_payees.py`
+- Modify: `frontend/src/features/payees/{payeesApi.ts,hooks.ts}` (типы ответа), `frontend/src/features/summary/DashboardPage.tsx` (отчёт по получателям рисуется здесь, `useSpendingByPayee` на строке 111)
+- Test: `backend/tests/test_payees.py`, `frontend/src/features/summary/DashboardPage.test.tsx`
 
 **Interfaces:**
 - Produces: в ответе `GET /payees/spending` появляются `unsorted_names: int` и `unsorted_amount: Decimal` — число неразобранных имён и сумма трат по ним за тот же период (операции с `payee_id IS NULL` и непустым снимком).
@@ -223,7 +224,8 @@ git commit -am "feat(payees): очередь разбора — подтверд
 - [ ] **Шаг 2: Убедиться, что падает.** Run: `cd backend && uv run pytest tests/test_payees.py -q`
 - [ ] **Шаг 3: Считать в том же запросе периода, что и отчёт.**
 - [ ] **Шаг 4: Тесты зелёные.** Run: `cd backend && uv run pytest -q`
-- [ ] **Шаг 5: Коммит** — `feat(payees): в отчёте видно, сколько не разобрано`
+- [ ] **Шаг 5: Тест и строка на дашборде** — под таблицей «кому уходят деньги» строка «не разобрано: N имён на X ₽» со ссылкой на `/payees`; при `unsorted_names == 0` строки нет. Run: `cd frontend && pnpm vitest run DashboardPage`
+- [ ] **Шаг 6: Коммит** — `feat(payees): в отчёте видно, сколько не разобрано`
 
 ---
 
