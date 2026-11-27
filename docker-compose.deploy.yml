@@ -113,6 +113,20 @@ services:
     container_name: anfinances-bot
     restart: always
     logging: *logging
+    # Живой процесс — ещё не работающий бот. Он входит в сайт по
+    # SINGLE_USER_PASSWORD, и после смены пароля вход перестаёт
+    # проходить, а опрос телеграма продолжается: перезапускать нечего,
+    # docker доволен, молчание бота видно только по переписке. Поэтому
+    # бот раз в минуту отмечается в /data/health.txt, пока сайт его
+    # пускает, а проверка смотрит только на возраст отметки — лишний
+    # вход стоил бы Argon2 на каждом тике. См. bot/.../health.py.
+    healthcheck:
+      test: ["CMD", "/app/.venv/bin/python", "-m", "anfinances_bot.health"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      # Первая отметка появляется после первого удачного /auth/me.
+      start_period: 120s
     depends_on:
       - backend
     # Бот ходит в сайт по внутренней сети и наружу не публикуется:
