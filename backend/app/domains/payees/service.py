@@ -14,38 +14,16 @@
 """
 
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
+from decimal import Decimal
 
 from app.core.exceptions import AlreadyExistsError, NotFoundError
+from app.domains.payees.keys import payee_key
 from app.domains.payees.models import Payee, PayeeCandidate
 from app.domains.payees.repository import PayeeRepository
 from app.domains.payees.schemas import PayeeCreate, PayeeUpdate
 
-__all__ = ["NEW_PAYEE_WINDOW", "PayeeService", "payee_key"]
-
-# Сколько получатель считается новым. Месяц: за меньший срок
-# подписка не успеет списаться второй раз и не будет замечена.
-NEW_PAYEE_WINDOW = timedelta(days=31)
-
-
-def payee_key(name: str) -> str:
-    """Свёрнутое имя, по которому получатели считаются одним.
-
-    casefold, а не lower: он единственный правильно сворачивает
-    регистр во всех алфавитах. Внутренние пробелы схлопываются —
-    в выписках между словами то один пробел, то три.
-    """
-    return " ".join(name.split()).casefold()
-
-
-def _aware(value: datetime) -> datetime:
-    """Дата из БД в UTC-осознанном виде.
-
-    PostgreSQL отдаёт время с зоной, SQLite в тестах — без. Сравнивать
-    их напрямую нельзя, а падать из-за профиля базы — тем более.
-    """
-    return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
-
+__all__ = ["PayeeService", "is_marketplace", "payee_key"]
 
 # Маркетплейсы продают всё подряд — категория у них зависит от товара,
 # а не от магазина. Помечаются «разными категориями» сами, при первой
@@ -190,24 +168,98 @@ class PayeeService:
     async def delete_payee(
         self, payee_id: uuid.UUID, user_id: uuid.UUID
     ) -> None:
+        """Удалить получателя и отклонить его имя.
+
+        Имя на операциях остаётся (снимок), а чтобы следующая выписка
+        не завела того же получателя заново и не вернула имя в
+        очередь, оно уходит в отклонённые.
+        """
         payee = await self.get_payee(payee_id, user_id)
         await self._repo.delete(payee)
+        candidate = await self._repo.get_candidate(user_id, payee.name_key)
+        if candidate is None:
+            now = datetime.now(UTC)
+            await self._repo.add_candidate(
+                PayeeCandidate(
+                    user_id=user_id,
+                    name=payee.name,
+                    name_key=payee.name_key,
+                    status="rejected",
+                    first_seen_at=now,
+                    last_seen_at=now,
+                )
+            )
+        else:
+            candidate.status = "rejected"
 
-    async def new_payees(
-        self, user_id: uuid.UUID, now: datetime
-    ) -> list[tuple[Payee, datetime]]:
-        """Получатели, впервые встретившиеся за последний месяц.
-
-        Считаем по дате первой операции, а не по дате заведения
-        записи: выписку заносят задним числом, и запись появляется
-        сегодня для траты трёхлетней давности.
-        """
-        seen = await self._repo.first_seen(user_id)
-        since = now - NEW_PAYEE_WINDOW
-        rows = [
-            (payee, _aware(seen[payee.id]))
-            for payee in await self._repo.list_all(user_id)
-            if payee.id in seen and _aware(seen[payee.id]) >= since
-        ]
+    async def list_candidates(
+        self, user_id: uuid.UUID, status: str
+    ) -> list[tuple[PayeeCandidate, Decimal]]:
+        """Очередь разбора: имя и сумма трат под ним, крупное первым."""
+        candidates = await self._repo.list_candidates(user_id, status)
+        totals = await self._repo.candidate_totals(
+            user_id, [c.name_key for c in candidates]
+        )
+        rows = [(c, totals.get(c.name_key, Decimal(0))) for c in candidates]
         rows.sort(key=lambda row: row[1], reverse=True)
         return rows
+
+    async def _get_candidate(
+        self, candidate_id: uuid.UUID, user_id: uuid.UUID
+    ) -> PayeeCandidate:
+        candidate = await self._repo.get_candidate_by_id(candidate_id, user_id)
+        if candidate is None:
+            raise NotFoundError("Имя не найдено в очереди.")
+        return candidate
+
+    async def accept_candidate(
+        self,
+        candidate_id: uuid.UUID,
+        user_id: uuid.UUID,
+        payee_id: uuid.UUID | None,
+    ) -> Payee:
+        """Принять имя: завести получателя или влить в существующего.
+
+        Прежние операции с этим именем перевешиваются на получателя.
+        Память категории нового получателя засевается самой свежей из
+        них, кроме маркетплейса: у него категория от товара зависит.
+        """
+        candidate = await self._get_candidate(candidate_id, user_id)
+        if payee_id is None:
+            taken = await self._repo.get_by_key(user_id, candidate.name_key)
+            if taken is not None:
+                raise AlreadyExistsError(
+                    f"Получатель «{candidate.name}» уже есть."
+                )
+            payee = await self._repo.add(
+                Payee(
+                    user_id=user_id,
+                    name=candidate.name,
+                    name_key=candidate.name_key,
+                    varied_categories=is_marketplace(candidate.name),
+                )
+            )
+            _, category_id = await self._repo.reassign_orphans(
+                user_id, candidate.name_key, payee.id
+            )
+            if not payee.varied_categories:
+                payee.last_category_id = category_id
+        else:
+            payee = await self.get_payee(payee_id, user_id)
+            await self._repo.reassign_orphans(
+                user_id, candidate.name_key, payee.id
+            )
+        await self._repo.delete_candidate(candidate)
+        return payee
+
+    async def reject_candidate(
+        self, candidate_id: uuid.UUID, user_id: uuid.UUID
+    ) -> None:
+        candidate = await self._get_candidate(candidate_id, user_id)
+        candidate.status = "rejected"
+
+    async def unreject_candidate(
+        self, candidate_id: uuid.UUID, user_id: uuid.UUID
+    ) -> None:
+        candidate = await self._get_candidate(candidate_id, user_id)
+        candidate.status = "pending"

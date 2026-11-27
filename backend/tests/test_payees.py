@@ -6,7 +6,7 @@
 """
 
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
@@ -191,45 +191,6 @@ async def test_income_does_not_land_in_payee_spending(
     )
 
     rows = await repo.spending_by_payee(ledger["user"], MONTH_FROM, MONTH_TO)
-    assert rows == []
-
-
-async def test_new_payees_are_judged_by_the_first_operation(
-    db_session: AsyncSession, ledger: dict[str, uuid.UUID]
-) -> None:
-    """Выписку заносят задним числом: запись сегодня, трата — нет."""
-    service = _service(db_session)
-    now = datetime(2026, 8, 22, tzinfo=UTC)
-    fresh = await _confirmed(service, ledger, "Новый сервис")
-    old = await _confirmed(service, ledger, "Старый магазин")
-    await _spend(
-        db_session,
-        ledger,
-        fresh.id,
-        Decimal("100"),
-        when=now - timedelta(days=3),
-    )
-    await _spend(
-        db_session,
-        ledger,
-        old.id,
-        Decimal("100"),
-        when=now - timedelta(days=400),
-    )
-
-    names = [p.name for p, _ in await service.new_payees(ledger["user"], now)]
-    assert names == ["Новый сервис"]
-
-
-async def test_payee_without_operations_is_not_new(
-    db_session: AsyncSession, ledger: dict[str, uuid.UUID]
-) -> None:
-    """Заведённый вручную и ни разу не использованный — не событие."""
-    service = _service(db_session)
-    await _confirmed(service, ledger, "Просто запись")
-    rows = await service.new_payees(
-        ledger["user"], datetime(2026, 8, 22, tzinfo=UTC)
-    )
     assert rows == []
 
 

@@ -9,6 +9,8 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from app.core.schemas import reject_nulls
 
 __all__ = [
+    "CandidateAccept",
+    "PayeeCandidateRead",
     "PayeeCreate",
     "PayeeRead",
     "PayeeSpending",
@@ -40,6 +42,27 @@ class PayeeRead(BaseModel):
     varied_categories: bool
     created_at: datetime
     updated_at: datetime
+
+
+class PayeeCandidateRead(BaseModel):
+    """Имя в очереди разбора. ``amount`` считается на лету по операциям.
+
+    В таблице не хранится: имя разбирают один раз, а лишнее поле
+    пришлось бы держать в согласии с операциями.
+    """
+
+    id: uuid.UUID
+    name: str
+    times_seen: int
+    amount: Decimal
+    first_seen_at: datetime
+    last_seen_at: datetime
+    status: str
+
+
+class CandidateAccept(BaseModel):
+    # None — завести нового получателя; id — влить имя в существующего.
+    payee_id: uuid.UUID | None = None
 
 
 class PayeeSpending(BaseModel):
