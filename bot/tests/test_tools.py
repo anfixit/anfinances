@@ -1376,7 +1376,7 @@ async def test_list_payee_candidates_reads_the_queue() -> None:
 
 
 async def test_list_payee_candidates_when_queue_is_empty() -> None:
-    box, client = _toolbox()
+    box, _ = _toolbox()
     result = await box.list_payee_candidates()
     assert "нет" in result.lower()
 
@@ -1385,7 +1385,7 @@ def test_prompts_keep_people_out_of_payee() -> None:
     """Во всех подсказках payee — только организация."""
     import inspect
 
-    from anfinances_bot.agent.prompt import SYSTEM_PROMPT  # noqa: F401
+    from anfinances_bot.agent.prompt import SYSTEM_PROMPT
 
     texts = [
         SYSTEM_PROMPT,
