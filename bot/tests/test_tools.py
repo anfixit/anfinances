@@ -20,6 +20,7 @@ class _FakeClient:
         self.recurring: list[dict[str, Any]] = []
         self.account_rows: list[dict[str, Any]] = []
         self.payees: list[dict[str, Any]] = []
+        self.candidates: list[dict[str, Any]] = []
         self.goals: list[dict[str, Any]] = []
         self.reconcile_preview: dict[str, Any] = {
             "computed_balance": "-300",
@@ -83,6 +84,8 @@ class _FakeClient:
             return [r for r in self.account_rows if not r.get("is_archived")]
         if method == "GET" and path == "/payees":
             return list(self.payees)
+        if method == "GET" and path == "/payees/candidates":
+            return list(self.candidates)
         if method == "GET" and path == "/goals":
             return list(self.goals)
         if path.endswith("/reconcile/preview"):
@@ -495,7 +498,7 @@ async def test_toolbox_exposes_all_tools() -> None:
         "delete_goal",
         "check_account_balance",
         "list_payees",
-        "list_new_payees",
+        "list_payee_candidates",
         "get_by_payee",
         "rename_payee",
         "merge_payees",
@@ -1353,3 +1356,48 @@ async def test_method_reference_is_available_on_demand() -> None:
     text = await box.get_method_reference()
     assert "Дайте деньгам созреть" in text
     assert client.calls == []
+
+
+async def test_list_payee_candidates_reads_the_queue() -> None:
+    """Очередь разбора: имена с числом встреч и суммой, только чтение."""
+    box, client = _toolbox()
+    client.candidates = [
+        {"id": "k-1", "name": "Кофемания", "times_seen": 3,
+         "amount": "1250.50", "status": "pending"},
+        {"id": "k-2", "name": "Злата", "times_seen": 1,
+         "amount": "300", "status": "pending"},
+    ]
+    result = await box.list_payee_candidates()
+    method, path, kwargs = client.calls[-1]
+    assert (method, path) == ("GET", "/payees/candidates")
+    assert kwargs["params"] == {"status": "pending"}
+    assert "Кофемания" in result and "3" in result and "1250.50" in result
+    assert "Злата" in result
+
+
+async def test_list_payee_candidates_when_queue_is_empty() -> None:
+    box, client = _toolbox()
+    result = await box.list_payee_candidates()
+    assert "нет" in result.lower()
+
+
+def test_prompts_keep_people_out_of_payee() -> None:
+    """Во всех подсказках payee — только организация."""
+    import inspect
+
+    from anfinances_bot.agent.prompt import SYSTEM_PROMPT  # noqa: F401
+
+    texts = [
+        SYSTEM_PROMPT,
+        inspect.getdoc(ToolBox.create_expense),
+        inspect.getdoc(ToolBox.create_income),
+        inspect.getdoc(ToolBox.preview_statement),
+    ]
+    from anfinances_bot.mcp_server.toolbox import McpToolBox
+
+    texts.append(inspect.getdoc(McpToolBox.mcp_preview_statement))
+    for text in texts:
+        assert "Ставь всегда" not in text
+        assert "везде, где он назван" not in text
+        assert "кому платили («Пятёрочка»" not in text
+        assert "организац" in text
