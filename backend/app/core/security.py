@@ -64,6 +64,10 @@ def _create_token(
         "type": token_type,
         "jti": uuid.uuid4().hex,
         "iat": now,
+        # iat в JWT — целые секунды. Отзыв сессий сравнивает точнее:
+        # старый токен и новая пара после смены пароля бывают выпущены
+        # в одну и ту же секунду.
+        "iat_us": int(now.timestamp() * 1_000_000),
         "exp": now + expires_delta,
     }
     return jwt.encode(
@@ -104,6 +108,20 @@ def decode_token(
         TokenError: токен просрочен, повреждён, либо его тип
             не совпадает с expected_type.
     """
+    subject, _ = decode_token_with_issued_at(token, settings, expected_type)
+    return subject
+
+
+def decode_token_with_issued_at(
+    token: str,
+    settings: Settings,
+    expected_type: TokenType,
+) -> tuple[uuid.UUID, datetime]:
+    """То же, что decode_token, плюс момент выпуска (iat).
+
+    Нужен, чтобы не принимать токены, выпущенные до того, как
+    пользователь завершил все сессии.
+    """
     try:
         payload = jwt.decode(
             token,
@@ -121,6 +139,19 @@ def decode_token(
         raise TokenError("В токене отсутствует subject.")
 
     try:
-        return uuid.UUID(subject)
+        user_id = uuid.UUID(subject)
     except (ValueError, TypeError) as exc:
         raise TokenError("Некорректный subject.") from exc
+
+    precise = payload.get("iat_us")
+    if isinstance(precise, int):
+        return user_id, datetime.fromtimestamp(precise / 1_000_000, UTC)
+    issued = payload.get("iat")
+    if not isinstance(issued, int | float):
+        raise TokenError("В токене нет времени выпуска.")
+    # Токен без точного времени (выпущен до 27.11.2026) считаем
+    # выпущенным в конце своей секунды: в спорной секунде — в пользу
+    # токена, как было до появления отзыва сессий.
+    return user_id, datetime.fromtimestamp(issued, UTC) + timedelta(
+        microseconds=999_999
+    )

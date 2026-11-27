@@ -24,7 +24,7 @@ from app.core.exceptions import (
     UnauthorizedError,
 )
 from app.core.pwned import HibpChecker, PwnedChecker
-from app.core.security import TokenError, decode_token
+from app.core.security import TokenError, decode_token_with_issued_at
 from app.database import get_db
 from app.domains.ai.policy import deny_reason, is_protocol_path
 from app.domains.ai.ratelimit import connection_limiter
@@ -191,6 +191,7 @@ async def get_current_user(
         raise UnauthorizedError("Требуется авторизация.")
 
     user_id: uuid.UUID
+    issued_at: datetime | None = None
     if is_ai_token(credentials.credentials):
         principal = await _authenticate_ai(
             request, credentials.credentials, settings, db
@@ -198,14 +199,39 @@ async def get_current_user(
         user_id = principal.user_id
     else:
         try:
-            user_id = decode_token(credentials.credentials, settings, "access")
+            user_id, issued_at = decode_token_with_issued_at(
+                credentials.credentials, settings, "access"
+            )
         except TokenError as exc:
             raise UnauthorizedError("Невалидный токен.") from exc
 
     user = await repo.get_user_by_id(user_id)
     if user is None or not user.is_active:
         raise UnauthorizedError("Пользователь недоступен.")
+    if issued_at is not None and issued_before_revocation(
+        issued_at, user.sessions_revoked_at
+    ):
+        # «Выйти везде» и смена пароля гасят и уже выданные access-
+        # токены, а не только refresh: иначе украденный токен жил бы
+        # ещё до 15 минут.
+        raise UnauthorizedError("Сессия завершена. Войдите снова.")
     return user
+
+
+def issued_before_revocation(
+    issued_at: datetime, revoked_at: datetime | None
+) -> bool:
+    """Выпущен ли токен раньше, чем завершили все сессии.
+
+    Время выпуска — с точностью до микросекунды (``iat_us``): новая пара
+    после смены пароля выпущена позже отзыва и годна, старый токен той
+    же секунды — нет.
+    """
+    if revoked_at is None:
+        return False
+    if revoked_at.tzinfo is None:
+        revoked_at = revoked_at.replace(tzinfo=UTC)
+    return issued_at < revoked_at
 
 
 CurrentUser = Annotated[User, Depends(get_current_user)]

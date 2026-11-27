@@ -19,7 +19,7 @@ const refreshClient = axios.create({
 
 let inflight: Promise<string> | null = null
 
-async function doRefresh(): Promise<string> {
+async function postRefresh(): Promise<string> {
   const res =
     await refreshClient.post<ApiResponse<AccessTokenData>>("/auth/refresh")
   const token = res.data.data.access_token
@@ -27,8 +27,19 @@ async function doRefresh(): Promise<string> {
   return token
 }
 
-// Single-flight: параллельные 401 ждут один общий refresh, иначе
-// ротация refresh-токена сломается.
+// Между вкладками — по очереди. Cookie у всех вкладок одна, и две
+// вкладки, обновлявшие сессию одновременно, предъявляли один и тот же
+// токен; сервер принимал вторую за кражу и разлогинивал все устройства.
+// Вкладка, дождавшаяся замка, идёт уже с новой cookie.
+function doRefresh(): Promise<string> {
+  if (typeof navigator !== "undefined" && "locks" in navigator) {
+    return navigator.locks.request("anfinances-refresh", postRefresh)
+  }
+  return postRefresh()
+}
+
+// Single-flight внутри вкладки: параллельные 401 ждут один общий
+// refresh, иначе ротация refresh-токена сломается.
 export function refreshAccessToken(): Promise<string> {
   inflight ??= doRefresh().finally(() => {
     inflight = null

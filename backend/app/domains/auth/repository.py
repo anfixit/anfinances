@@ -8,7 +8,7 @@ import uuid
 from datetime import datetime
 from typing import Protocol
 
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domains.auth.models import RefreshToken, User
@@ -79,13 +79,16 @@ class SqlAuthRepository:
     async def revoke_all_for_user(
         self, user_id: uuid.UUID, now: datetime
     ) -> None:
+        # Все токены: и живые, и уже ротированные. У ротированных
+        # снимается rotated_at — иначе в окне для второй вкладки старый
+        # токен ещё выдал бы новую пару после «выйти везде».
         await self._session.execute(
             update(RefreshToken)
-            .where(
-                RefreshToken.user_id == user_id,
-                RefreshToken.revoked_at.is_(None),
+            .where(RefreshToken.user_id == user_id)
+            .values(
+                revoked_at=func.coalesce(RefreshToken.revoked_at, now),
+                rotated_at=None,
             )
-            .values(revoked_at=now)
             .execution_options(synchronize_session=False)
         )
 

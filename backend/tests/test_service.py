@@ -50,9 +50,13 @@ class FakeRepo:
         return self.tokens.get(token_hash)
 
     async def revoke_all_for_user(self, user_id: uuid.UUID, now) -> None:
+        # Как SqlAuthRepository: отзываем живые и гасим окно второй
+        # вкладки у уже ротированных.
         for token in self.tokens.values():
-            if token.user_id == user_id and token.revoked_at is None:
-                token.revoked_at = now
+            if token.user_id == user_id:
+                if token.revoked_at is None:
+                    token.revoked_at = now
+                token.rotated_at = None
 
     async def delete_expired_tokens(self, now) -> None:
         for h in [h for h, t in self.tokens.items() if t.expires_at < now]:
@@ -202,9 +206,100 @@ async def test_refresh_revoked_rejected(
     _, tokens = await svc.register("a@b.com", STRONG)
 
     await svc.refresh(tokens.refresh_token)
+    _age_rotation(repo, tokens.refresh_token)
 
     with pytest.raises(UnauthorizedError):
         await svc.refresh(tokens.refresh_token)
+
+
+def _age_rotation(repo: FakeRepo, token: str, seconds: int = 60) -> None:
+    """Сдвинуть момент ротации в прошлое — за окно второй вкладки."""
+    stored = repo.tokens[_hash_token(token)]
+    assert stored.rotated_at is not None
+    stored.rotated_at -= timedelta(seconds=seconds)
+
+
+async def test_second_tab_right_after_rotation_is_not_theft(
+    settings: Settings,
+) -> None:
+    """Две вкладки шлют refresh с одной cookie почти одновременно."""
+    repo = FakeRepo()
+    svc = _service(settings, repo)
+    _, first = await svc.register("a@b.com", STRONG)
+    _, phone = await svc.login("a@b.com", STRONG)
+
+    tab_a = await svc.refresh(first.refresh_token)
+    tab_b = await svc.refresh(first.refresh_token)
+
+    assert tab_b.refresh_token != tab_a.refresh_token
+    # Ни одна сессия не отозвана — ни соседняя вкладка, ни телефон.
+    assert repo.tokens[_hash_token(tab_a.refresh_token)].revoked_at is None
+    assert repo.tokens[_hash_token(phone.refresh_token)].revoked_at is None
+
+
+async def test_logout_everywhere_closes_the_second_tab_window(
+    settings: Settings,
+) -> None:
+    repo = FakeRepo()
+    svc = _service(settings, repo)
+    user, first = await svc.register("a@b.com", STRONG)
+    await svc.refresh(first.refresh_token)
+
+    await svc.logout_everywhere(user)
+
+    with pytest.raises(UnauthorizedError):
+        await svc.refresh(first.refresh_token)
+    assert user.sessions_revoked_at is not None
+
+
+async def test_change_password_needs_the_current_one(
+    settings: Settings,
+) -> None:
+    repo = FakeRepo()
+    svc = _service(settings, repo)
+    user, _ = await svc.register("a@b.com", STRONG)
+
+    with pytest.raises(ValidationFailedError, match="Текущий"):
+        await svc.change_password(user, "wrong" + STRONG, STRONG + "x")
+
+
+async def test_change_password_signs_out_other_devices(
+    settings: Settings,
+) -> None:
+    repo = FakeRepo()
+    svc = _service(settings, repo)
+    user, laptop = await svc.register("a@b.com", STRONG)
+    new = "другой-длинный-пароль-для-проверки-2026"
+
+    here = await svc.change_password(user, STRONG, new)
+
+    assert repo.tokens[_hash_token(laptop.refresh_token)].revoked_at
+    assert repo.tokens[_hash_token(here.refresh_token)].revoked_at is None
+    assert user.sessions_revoked_at is not None
+    with pytest.raises(UnauthorizedError):
+        await svc.login("a@b.com", STRONG)
+    await svc.login("a@b.com", new)
+
+
+async def test_unknown_email_still_checks_a_password(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Время ответа не должно выдавать, есть ли такой email."""
+    import app.domains.auth.service as auth_service  # noqa: PLC0415
+
+    checked: list[str] = []
+    real = auth_service.verify_password
+
+    def spy(hashed: str, plain: str, s: Settings) -> bool:
+        checked.append(hashed)
+        return real(hashed, plain, s)
+
+    monkeypatch.setattr(auth_service, "verify_password", spy)
+    svc = _service(settings, FakeRepo())
+
+    with pytest.raises(UnauthorizedError):
+        await svc.login("nobody@b.com", STRONG)
+    assert len(checked) == 1
 
 
 async def test_logout_revokes(
@@ -232,8 +327,9 @@ async def test_refresh_reuse_revokes_whole_session(
 
     # Легитимная ротация первого токена.
     rotated = await svc.refresh(first.refresh_token)
+    _age_rotation(repo, first.refresh_token)
 
-    # Повторное предъявление уже отозванного first — признак кражи:
+    # Повторное предъявление давно отозванного first — признак кражи:
     # должно отозвать ВСЕ живые токены юзера (и second, и rotated).
     with pytest.raises(UnauthorizedError):
         await svc.refresh(first.refresh_token)

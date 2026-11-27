@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 __all__ = [
     "AccessToken",
+    "ChangePasswordRequest",
     "LoginRequest",
     "RegisterRequest",
     "TokenPair",
@@ -22,9 +23,19 @@ class RegisterRequest(BaseModel):
     name: str | None = Field(default=None, max_length=200)
 
 
+# Длиннее пароля не бывает; без потолка многомегабайтная строка шла в
+# NFKC и Argon2 на каждый вход.
+_PASSWORD_MAX = 1024
+
+
 class LoginRequest(BaseModel):
     email: EmailStr
-    password: str
+    password: str = Field(max_length=_PASSWORD_MAX)
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str = Field(max_length=_PASSWORD_MAX)
+    new_password: str = Field(max_length=_PASSWORD_MAX)
 
 
 class TokenPair(BaseModel):

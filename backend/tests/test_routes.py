@@ -4,6 +4,8 @@ Refresh-токен ходит в HttpOnly-cookie, поэтому base_url — ht
 (иначе httpx не отдаёт Secure-cookie обратно).
 """
 
+from datetime import timedelta
+
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import (
@@ -111,7 +113,11 @@ async def test_login_wrong_password(client_factory) -> None:
         assert r.status_code == 401
 
 
-async def test_refresh_rotation_flow(client_factory) -> None:
+async def test_refresh_rotation_flow(client_factory, monkeypatch) -> None:
+    # Окно второй вкладки обнулено: повтор старого токена — сразу кража.
+    monkeypatch.setattr(
+        "app.domains.auth.service.ROTATION_GRACE", timedelta(0)
+    )
     async with client_factory(_settings()) as ac:
         reg = await ac.post(
             "/api/v1/auth/register",
@@ -133,6 +139,69 @@ async def test_refresh_rotation_flow(client_factory) -> None:
             headers={"Cookie": f"refresh_token={old}"},
         )
         assert r3.status_code == 401
+
+        # И повтор отозвал всё — отзыв сохранён, а не откатился вместе
+        # с ответом-ошибкой: новый токен тоже больше не работает.
+        r4 = await ac.post(
+            "/api/v1/auth/refresh",
+            headers={"Cookie": f"refresh_token={new}"},
+        )
+        assert r4.status_code == 401
+
+
+async def test_logout_all_kills_access_tokens_too(client_factory) -> None:
+    async with client_factory(_settings()) as ac:
+        reg = await ac.post(
+            "/api/v1/auth/register",
+            json={"email": "a@b.com", "password": STRONG},
+        )
+        access = reg.json()["data"]["access_token"]
+        auth = {"Authorization": f"Bearer {access}"}
+        assert (
+            await ac.get("/api/v1/auth/me", headers=auth)
+        ).status_code == 200
+
+        r = await ac.post("/api/v1/auth/logout-all", headers=auth)
+        assert r.status_code == 200, r.text
+
+        # Access-токен ещё не истёк, но выпущен до «выйти везде».
+        assert (
+            await ac.get("/api/v1/auth/me", headers=auth)
+        ).status_code == 401
+        assert (await ac.post("/api/v1/auth/refresh")).status_code == 401
+
+
+async def test_change_password_keeps_this_device(client_factory) -> None:
+    new_password = "другой-длинный-пароль-для-проверки-2026"
+    async with client_factory(_settings()) as ac:
+        reg = await ac.post(
+            "/api/v1/auth/register",
+            json={"email": "a@b.com", "password": STRONG},
+        )
+        old_access = reg.json()["data"]["access_token"]
+
+        r = await ac.post(
+            "/api/v1/auth/password",
+            json={"current_password": STRONG, "new_password": new_password},
+            headers={"Authorization": f"Bearer {old_access}"},
+        )
+        assert r.status_code == 200, r.text
+        fresh = r.json()["data"]["access_token"]
+
+        me = await ac.get(
+            "/api/v1/auth/me", headers={"Authorization": f"Bearer {fresh}"}
+        )
+        assert me.status_code == 200
+        stale = await ac.get(
+            "/api/v1/auth/me",
+            headers={"Authorization": f"Bearer {old_access}"},
+        )
+        assert stale.status_code == 401
+        login = await ac.post(
+            "/api/v1/auth/login",
+            json={"email": "a@b.com", "password": new_password},
+        )
+        assert login.status_code == 200
 
 
 async def test_refresh_without_cookie(client_factory) -> None:

@@ -46,6 +46,11 @@ class User(UUIDMixin, TimestampMixin, Base):
     is_verified: Mapped[bool] = mapped_column(
         default=False, server_default="false", nullable=False
     )
+    # Когда завершены все сессии (смена пароля, «выйти везде»).
+    # Access-токены, выпущенные раньше, больше не принимаются.
+    sessions_revoked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
 
 
 class RefreshToken(UUIDMixin, Base):
@@ -64,6 +69,11 @@ class RefreshToken(UUIDMixin, Base):
         DateTime(timezone=True), nullable=False
     )
     revoked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
+    # Когда токен заменён новым при обновлении сессии. Только у
+    # ротированных: выход и «выйти везде» его не ставят (и сбрасывают).
+    rotated_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True)
     )
     user_agent: Mapped[str | None] = mapped_column(String)

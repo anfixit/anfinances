@@ -24,10 +24,12 @@ from app.core.rate_limit import limiter, login_limit, register_limit
 from app.core.schemas import ApiResponse
 from app.domains.auth.schemas import (
     AccessToken,
+    ChangePasswordRequest,
     LoginRequest,
     RegisterRequest,
     UserRead,
 )
+from app.domains.auth.service import RefreshReuseError
 from app.domains.categories.defaults import (
     DEFAULT_EXPENSE_TREE,
     DEFAULT_INCOME,
@@ -133,10 +135,56 @@ async def refresh(
     if refresh_token is None:
         raise UnauthorizedError("Нет refresh-токена.")
 
-    tokens = await service.refresh(refresh_token)
+    try:
+        tokens = await service.refresh(refresh_token)
+    except RefreshReuseError:
+        # Отзыв всех сессий при повторе токена — ради этого он и
+        # нужен. Раньше ошибка пролетала мимо commit, и отзыв
+        # откатывался вместе с запросом: украденный токен жил дальше.
+        await db.commit()
+        raise
     await db.commit()
     _set_refresh_cookie(response, settings, tokens.refresh_token)
     return ApiResponse(data=AccessToken(access_token=tokens.access_token))
+
+
+@router.post("/password", response_model=ApiResponse[AccessToken])
+@limiter.limit(login_limit)
+async def change_password(
+    request: Request,
+    data: ChangePasswordRequest,
+    user: CurrentUser,
+    service: AuthServiceDep,
+    settings: SettingsDep,
+    db: DbSession,
+    response: Response,
+) -> ApiResponse[AccessToken]:
+    """Сменить пароль. Остальные устройства выходят, это — остаётся."""
+    tokens = await service.change_password(
+        user, data.current_password, data.new_password
+    )
+    await db.commit()
+    _set_refresh_cookie(response, settings, tokens.refresh_token)
+    return ApiResponse(data=AccessToken(access_token=tokens.access_token))
+
+
+@router.post(
+    "/logout-all",
+    status_code=status.HTTP_200_OK,
+    response_model=ApiResponse[dict[str, str]],
+)
+async def logout_all(
+    user: CurrentUser,
+    service: AuthServiceDep,
+    settings: SettingsDep,
+    db: DbSession,
+    response: Response,
+) -> ApiResponse[dict[str, str]]:
+    """Выйти на всех устройствах, включая это."""
+    await service.logout_everywhere(user)
+    await db.commit()
+    _clear_refresh_cookie(response, settings)
+    return ApiResponse(data={"status": "logged_out_everywhere"})
 
 
 @router.post(

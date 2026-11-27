@@ -4,6 +4,7 @@ import { Link } from "react-router-dom"
 import { useAuth } from "@/auth/useAuth"
 import { ThemeToggle } from "@/components/ThemeToggle"
 import { AiIntegrations } from "@/features/ai/AiIntegrations"
+import { SessionSecurity } from "@/features/settings/SessionSecurity"
 import { useCurrencies } from "@/features/currencies/hooks"
 import { useUpdateProfile } from "@/features/users/hooks"
 import { AppError } from "@/lib/api/errors"
@@ -130,6 +131,8 @@ export function SettingsPage() {
           </Link>
         </div>
       </div>
+
+      <SessionSecurity />
 
       <AiIntegrations />
     </>
