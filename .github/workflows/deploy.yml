@@ -998,6 +998,25 @@ jobs:
               sudo systemctl start --no-block anfinances-backup.service
             fi
 
+            # Вторая копия бэкапа: домашний сервер (anfiserver) каждую
+            # ночь забирает зашифрованные архивы. Его ключ может только
+            # читать backups/ — rrsync -ro, без shell и пробросов. Ключ
+            # дописывается, если его ещё нет; чужие строки не трогаем:
+            # этим же файлом входит сам деплой.
+            sudo chmod 755 backups 2>/dev/null || true
+            sudo find backups -name 'anfinances_*.dump.gpg' -exec chmod 644 {} + 2>/dev/null || true
+            if command -v rrsync >/dev/null; then
+              pull_key="$(cat scripts/backup-pull.pub)"
+              mkdir -p ~/.ssh
+              touch ~/.ssh/authorized_keys
+              if ! grep -qF "$pull_key" ~/.ssh/authorized_keys; then
+                printf 'restrict,command="rrsync -ro %s/backups/" %s\n' \
+                  "$PWD" "$pull_key" >> ~/.ssh/authorized_keys
+              fi
+            else
+              echo "::warning::rrsync не найден — домашний сервер не сможет забирать бэкапы"
+            fi
+
             docker compose \
               -f docker-compose.deploy.yml \
               ps
@@ -1031,6 +1050,7 @@ jobs:
             • docker compose up -d --wait (healthcheck)
             • caddy reload
             • удаление старых образов
+            • ключ домашнего сервера для копий бэкапа
             • docker compose ps
 
             Сервер:

@@ -97,7 +97,11 @@ printf '%s' "$BACKUP_PASSPHRASE" | gpg --batch --quiet --yes \
 # же копию забирает домашний сервер.
 
 mkdir -p "$STORE"
-cp "$archive" "$STORE/"
+# Читаемы для пользователя деплоя: через него копии забирает домашний
+# сервер (ключ только на чтение этого каталога, см. deploy.yml).
+# Архивы зашифрованы, без BACKUP_PASSPHRASE они бесполезны.
+chmod 755 "$STORE"
+install -m 644 "$archive" "$STORE/"
 find "$STORE" -name 'anfinances_*.dump.gpg' -mtime "+${KEEP_DAYS}" -delete
 
 # --- 5. Отправка -------------------------------------------------
