@@ -68,6 +68,13 @@ class PayeeRepository(Protocol):
         date_to: datetime,
     ) -> list[tuple[uuid.UUID, str, Decimal, int]]: ...
 
+    async def unsorted_spending(
+        self,
+        user_id: uuid.UUID,
+        date_from: datetime,
+        date_to: datetime,
+    ) -> tuple[int, Decimal]: ...
+
 
 class SqlPayeeRepository:
     def __init__(self, session: AsyncSession) -> None:
@@ -264,3 +271,37 @@ class SqlPayeeRepository:
             (row[0], row[1], -(row[2] or Decimal(0)), row[3])
             for row in result.all()
         ]
+
+    async def unsorted_spending(
+        self,
+        user_id: uuid.UUID,
+        date_from: datetime,
+        date_to: datetime,
+    ) -> tuple[int, Decimal]:
+        """Сколько имён ждут разбора и сколько по ним потрачено за период.
+
+        Тот же период и те же виды операций, что у spending_by_payee.
+        Имён считаем по свёрнутому ключу, а не по операциям, поэтому
+        свёртка в питоне, как в candidate_totals.
+        """
+        result = await self._session.execute(
+            select(
+                Transaction.payee_name_snapshot, Transaction.amount_rub
+            ).where(
+                Transaction.user_id == user_id,
+                Transaction.payee_id.is_(None),
+                Transaction.payee_name_snapshot.is_not(None),
+                Transaction.payee_name_snapshot != "",
+                Transaction.kind.in_(
+                    (TransactionKind.EXPENSE, TransactionKind.REFUND)
+                ),
+                Transaction.date >= date_from,
+                Transaction.date < date_to,
+            )
+        )
+        keys: set[str] = set()
+        total = Decimal(0)
+        for snapshot, amount_rub in result.all():
+            keys.add(payee_key(snapshot))
+            total -= amount_rub
+        return len(keys), total

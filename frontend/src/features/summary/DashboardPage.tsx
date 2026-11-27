@@ -97,6 +97,19 @@ function monthLabel(month: string): string {
   return text.charAt(0).toUpperCase() + text.slice(1)
 }
 
+// 1 имя, 2 имени, 5 имён.
+function nameWord(n: number): string {
+  const last = n % 10
+  const tens = n % 100
+  if (tens >= 11 && tens <= 14) {
+    return "имён"
+  }
+  if (last === 1) {
+    return "имя"
+  }
+  return last >= 2 && last <= 4 ? "имени" : "имён"
+}
+
 export function DashboardPage() {
   const [month, setMonth] = useState<string>(() => currentMonth())
   const bounds = monthBounds(month)
@@ -500,26 +513,38 @@ export function DashboardPage() {
 
       {/* Категория говорит, на что ушли деньги; получатель — кому.
           Без второго «Продукты 12 340» не подсказывает, что делать. */}
-      {payeesQ.data && payeesQ.data.items.length > 0 && (
-        <div className="card">
-          <h2>Кому ушли деньги</h2>
-          <table className="data-table">
-            <tbody>
-              {payeesQ.data.items.slice(0, 12).map((p) => (
-                <tr key={p.payee_id}>
-                  <td>{p.name}</td>
-                  <td className="num data-share">
-                    {p.operations} оп.
-                  </td>
-                  <td className="num">
-                    {formatMoney(p.amount_rub, "RUB")}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+      {payeesQ.data &&
+        (payeesQ.data.items.length > 0 || payeesQ.data.unsorted_names > 0) && (
+          <div className="card">
+            <h2>Кому ушли деньги</h2>
+            {payeesQ.data.items.length > 0 && (
+              <table className="data-table">
+                <tbody>
+                  {payeesQ.data.items.slice(0, 12).map((p) => (
+                    <tr key={p.payee_id}>
+                      <td>{p.name}</td>
+                      <td className="num data-share">{p.operations} оп.</td>
+                      <td className="num">
+                        {formatMoney(p.amount_rub, "RUB")}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+            {/* Невиданные имена ждут подтверждения и в отчёт не входят;
+                молча терять по ним траты нельзя. */}
+            {payeesQ.data.unsorted_names > 0 && (
+              <p className="data-share">
+                <Link to="/payees">
+                  не разобрано: {payeesQ.data.unsorted_names}{" "}
+                  {nameWord(payeesQ.data.unsorted_names)} на{" "}
+                  {formatMoney(payeesQ.data.unsorted_amount, "RUB")}
+                </Link>
+              </p>
+            )}
+          </div>
+        )}
 
       <div className="card">
         <h2>Расходы по категориям</h2>

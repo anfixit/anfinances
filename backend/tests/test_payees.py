@@ -53,6 +53,7 @@ async def _spend(
     amount: Decimal,
     when: datetime = WHEN,
     kind: TransactionKind = TransactionKind.EXPENSE,
+    snapshot: str | None = None,
 ) -> Transaction:
     signed = -abs(amount) if kind == TransactionKind.EXPENSE else abs(amount)
     tx = Transaction(
@@ -65,6 +66,7 @@ async def _spend(
         exchange_rate=Decimal(1),
         date=when,
         payee_id=payee_id,
+        payee_name_snapshot=snapshot,
     )
     db_session.add(tx)
     await db_session.flush()
@@ -173,6 +175,49 @@ async def test_spending_groups_by_payee(
     by_name = {row[1]: (row[2], row[3]) for row in rows}
     assert by_name["Пятёрочка"] == (Decimal("800"), 2)
     assert by_name["Яндекс Go"] == (Decimal("250"), 1)
+
+
+async def test_spending_counts_unsorted_names_separately(
+    db_session: AsyncSession, ledger: dict[str, uuid.UUID]
+) -> None:
+    """Ждущие имена не в строках отчёта, но их число и сумма видны."""
+    service = _service(db_session)
+    repo = SqlPayeeRepository(db_session)
+    shop = await _confirmed(service, ledger, "Пятёрочка")
+    await _spend(db_session, ledger, shop.id, Decimal("500"))
+    await _spend(db_session, ledger, None, Decimal("300"), snapshot="Кофейня")
+    # То же имя в другом написании и вторая операция: имя одно.
+    await _spend(
+        db_session, ledger, None, Decimal("100"), snapshot="  КОФЕЙНЯ "
+    )
+    await _spend(db_session, ledger, None, Decimal("700"), snapshot="Аптека")
+    # Не считаются: другой месяц, доход, пустой снимок.
+    await _spend(
+        db_session,
+        ledger,
+        None,
+        Decimal("9"),
+        when=datetime(2026, 7, 15, tzinfo=UTC),
+        snapshot="Старое",
+    )
+    await _spend(
+        db_session,
+        ledger,
+        None,
+        Decimal("9000"),
+        kind=TransactionKind.INCOME,
+        snapshot="Заказчик",
+    )
+    await _spend(db_session, ledger, None, Decimal("5"), snapshot="")
+
+    rows = await repo.spending_by_payee(ledger["user"], MONTH_FROM, MONTH_TO)
+    assert [row[1] for row in rows] == ["Пятёрочка"]
+
+    names, amount = await repo.unsorted_spending(
+        ledger["user"], MONTH_FROM, MONTH_TO
+    )
+    assert names == 2
+    assert amount == Decimal("1100")
 
 
 async def test_income_does_not_land_in_payee_spending(

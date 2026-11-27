@@ -141,9 +141,14 @@ async def spending_by_payee(
         )
         for row in rows
     ]
+    unsorted_names, unsorted_amount = await repo.unsorted_spending(
+        user.id, start, end
+    )
     return ApiResponse(
         data=SpendingByPayee(
             month=month,
+            unsorted_names=unsorted_names,
+            unsorted_amount=unsorted_amount,
             items=items,
             total_rub=sum(
                 (i.amount_rub for i in items), start=items[0].amount_rub * 0

@@ -76,3 +76,7 @@ class SpendingByPayee(BaseModel):
     month: str
     items: list[PayeeSpending]
     total_rub: Decimal
+    # Имена, что ждут подтверждения: в items их нет, а деньги по ним
+    # уходили. Строка под отчётом ведёт в очередь разбора.
+    unsorted_names: int
+    unsorted_amount: Decimal

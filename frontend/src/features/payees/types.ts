@@ -22,4 +22,7 @@ export interface SpendingByPayee {
   month: string
   items: PayeeSpending[]
   total_rub: Money
+  // Имена, что ждут подтверждения: в items их нет.
+  unsorted_names: number
+  unsorted_amount: Money
 }
