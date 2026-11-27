@@ -2,14 +2,18 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import type { QueryClient } from "@tanstack/react-query"
 
 import {
+  acceptCandidate,
   deletePayee,
-  listNewPayees,
+  listCandidates,
   listPayees,
   mergePayees,
+  rejectCandidate,
   renamePayee,
   setPayeeVaried,
   spendingByPayee,
+  unrejectCandidate,
 } from "@/features/payees/payeesApi"
+import type { CandidateStatus } from "@/features/payees/types"
 import { queryKeys } from "@/lib/query/keys"
 
 function invalidate(qc: QueryClient): void {
@@ -23,8 +27,27 @@ export function usePayees() {
   return useQuery({ queryKey: queryKeys.payees, queryFn: listPayees })
 }
 
-export function useNewPayees() {
-  return useQuery({ queryKey: queryKeys.newPayees, queryFn: listNewPayees })
+export function useCandidates(status: CandidateStatus) {
+  return useQuery({
+    queryKey: queryKeys.payeeCandidates(status),
+    queryFn: () => listCandidates(status),
+  })
+}
+
+// Обновление данных после мутаций делает глобальный MutationCache.
+export function useAcceptCandidate() {
+  return useMutation({
+    mutationFn: (vars: { id: string; payeeId: string | null }) =>
+      acceptCandidate(vars.id, vars.payeeId),
+  })
+}
+
+export function useRejectCandidate() {
+  return useMutation({ mutationFn: (id: string) => rejectCandidate(id) })
+}
+
+export function useUnrejectCandidate() {
+  return useMutation({ mutationFn: (id: string) => unrejectCandidate(id) })
 }
 
 export function useSpendingByPayee(month: string) {

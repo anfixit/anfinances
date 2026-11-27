@@ -92,3 +92,9 @@
 .payee-varied input {
   margin: 0;
 }
+
+/* Свёрнутый список отклонённых имён: служебный, не главное на экране. */
+.payee-rejected summary {
+  cursor: pointer;
+  color: var(--on-surface-variant);
+}
