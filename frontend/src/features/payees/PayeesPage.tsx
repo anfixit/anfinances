@@ -116,28 +116,14 @@ function PayeeRow({
     }
   }
 
-  const onDelete = async () => {
-    const ok = await confirm({
-      title: `Удалить получателя «${payee.name}»?`,
-      body: [
-        "Операции останутся, но потеряют ссылку на него — и вместе с " +
-          "ней запомненную категорию.",
-      ],
-      confirmLabel: "Удалить",
-      danger: true,
-    })
-    if (ok) {
-      remove.mutate(payee.id, { onError: reportError })
-    }
-  }
-
   const onNotShop = async () => {
     const ok = await confirm({
       title: `«${payee.name}» — не магазин?`,
       body: [
-        "Получатель удалится из справочника, а имя попадёт в «Не " +
-          "магазины»: больше оно в очередь не вернётся. Имя на " +
-          "операциях останется как есть.",
+        "Получатель исчезнет из справочника, имя на операциях " +
+          "останется, и в очередь оно больше не попадёт. Если " +
+          "понадобится, вернёте его кнопкой «вернуть в очередь» " +
+          "в списке «Не магазины».",
       ],
       confirmLabel: "Не магазин",
       danger: true,
@@ -243,16 +229,6 @@ function PayeeRow({
           }}
         >
           Не магазин
-        </button>
-        <button
-          type="button"
-          className="link danger"
-          disabled={remove.isPending}
-          onClick={() => {
-            void onDelete()
-          }}
-        >
-          Удалить
         </button>
       </span>
     </span>

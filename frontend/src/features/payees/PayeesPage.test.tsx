@@ -137,6 +137,9 @@ describe("очередь разбора получателей", () => {
   it("«Не магазин» у записи справочника удаляет получателя", async () => {
     pending = []
     render(<PayeesPage />)
+    expect(
+      screen.queryByRole("button", { name: "Удалить" }),
+    ).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole("button", { name: "Не магазин" }))
     await vi.waitFor(() => {
       expect(removePayee).toHaveBeenCalledWith("p1", expect.anything())
