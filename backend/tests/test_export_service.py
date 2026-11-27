@@ -82,6 +82,9 @@ class FakeExportRepo:
     async def list_payees(self, user_id):
         return []
 
+    async def list_payee_candidates(self, user_id):
+        return []
+
     async def list_goals(self, user_id):
         return []
 
@@ -182,8 +185,9 @@ async def test_build_backup_structure() -> None:
         )
     ]
     bundle = await svc.build_backup(USER)
-    # Версия 2: в бэкап вошли кредиты, получатели, цели и сверки.
-    assert bundle.version == 2
+    # Версия 3: к кредитам, получателям, целям и сверкам добавились
+    # кандидаты в получатели.
+    assert bundle.version == 3
     assert bundle.user.email == "a@b.com"
     assert len(bundle.accounts) == 1
     assert len(bundle.transactions) == 1

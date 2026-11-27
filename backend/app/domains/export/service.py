@@ -24,6 +24,7 @@ from app.domains.export.schemas import (
     ExportCreditPayment,
     ExportGoal,
     ExportPayee,
+    ExportPayeeCandidate,
     ExportReconciliation,
     ExportRecurring,
     ExportTransaction,
@@ -33,7 +34,7 @@ from app.domains.export.schemas import (
 )
 
 # Текущая версия формата бэкапа: что в ней появилось — в ExportBundle.
-BACKUP_VERSION = 2
+BACKUP_VERSION = 3
 
 __all__ = ["ExportService"]
 
@@ -83,6 +84,7 @@ class ExportService:
         credits = await self._repo.list_credits(user_id)
         payments = await self._repo.list_credit_payments(user_id)
         payees = await self._repo.list_payees(user_id)
+        candidates = await self._repo.list_payee_candidates(user_id)
         goals = await self._repo.list_goals(user_id)
         reconciliations = await self._repo.list_reconciliations(user_id)
         return ExportBundle(
@@ -105,6 +107,9 @@ class ExportService:
                 ExportCreditPayment.model_validate(p) for p in payments
             ],
             payees=[ExportPayee.model_validate(p) for p in payees],
+            payee_candidates=[
+                ExportPayeeCandidate.model_validate(c) for c in candidates
+            ],
             goals=[ExportGoal.model_validate(g) for g in goals],
             reconciliations=[
                 ExportReconciliation.model_validate(r) for r in reconciliations

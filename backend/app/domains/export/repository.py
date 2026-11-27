@@ -20,7 +20,7 @@ from app.domains.categories.models import Category
 from app.domains.credits.models import Credit, CreditPayment
 from app.domains.currencies.models import UserCurrency
 from app.domains.goals.models import CategoryGoal
-from app.domains.payees.models import Payee
+from app.domains.payees.models import Payee, PayeeCandidate
 from app.domains.reconciliation.models import Reconciliation
 from app.domains.recurring.models import RecurringExpense
 from app.domains.transactions.models import Transaction, Transfer
@@ -61,6 +61,10 @@ class ExportRepository(Protocol):
     ) -> list[CreditPayment]: ...
 
     async def list_payees(self, user_id: uuid.UUID) -> list[Payee]: ...
+
+    async def list_payee_candidates(
+        self, user_id: uuid.UUID
+    ) -> list[PayeeCandidate]: ...
 
     async def list_goals(self, user_id: uuid.UUID) -> list[CategoryGoal]: ...
 
@@ -164,6 +168,16 @@ class SqlExportRepository:
             select(Payee)
             .where(Payee.user_id == user_id)
             .order_by(Payee.name_key)
+        )
+        return list(result.scalars().all())
+
+    async def list_payee_candidates(
+        self, user_id: uuid.UUID
+    ) -> list[PayeeCandidate]:
+        result = await self._session.execute(
+            select(PayeeCandidate)
+            .where(PayeeCandidate.user_id == user_id)
+            .order_by(PayeeCandidate.name_key)
         )
         return list(result.scalars().all())
 

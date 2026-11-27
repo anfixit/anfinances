@@ -32,5 +32,7 @@ class ImportResult(BaseModel):
     credits: int = 0
     credit_payments: int = 0
     payees: int = 0
+    # Появились в бэкапе версии 3.
+    payee_candidates: int = 0
     goals: int = 0
     reconciliations: int = 0
