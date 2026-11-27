@@ -10,6 +10,15 @@ on:
     branches:
       - main
 
+  # Пул-реквест проверяется сам. Раньше на ветке не запускалось ничего,
+  # и сломанный коммит обнаруживался уже в main (выкатить его деплой не
+  # давал, но main оставался красным). Сборка и выкладка сюда не
+  # попадают: они под `if: github.ref == 'refs/heads/main'`, а на
+  # пул-реквесте ref — refs/pull/<N>/merge.
+  pull_request:
+    branches:
+      - main
+
   workflow_dispatch:
 
 # Один прогон за раз. Без этого два пуша подряд шли параллельно: сборка
@@ -42,8 +51,18 @@ jobs:
           RUN_NUMBER: ${{ github.run_number }}
           SERVER_URL: ${{ github.server_url }}
           COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+          EVENT_NAME: ${{ github.event_name }}
         run: |
           set -euo pipefail
+
+          # Пул-реквест — это проверки, а не выкатка: в телеграм о нём
+          # не пишем. Шаг не падает, иначе за ним не пошли бы все
+          # остальные job'ы (они его `needs`), и у пул-реквестов с
+          # форка, где секретов нет, прогон падал бы целиком.
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            echo "Пул-реквест: проверки идут, уведомление не шлём."
+            exit 0
+          fi
 
           if [ -z "$TG_TOKEN" ]; then
             echo "::error::TELEGRAM_BOT_TOKEN is empty"
@@ -1215,8 +1234,15 @@ jobs:
           RUN_ID: ${{ github.run_id }}
           RUN_NUMBER: ${{ github.run_number }}
           SERVER_URL: ${{ github.server_url }}
+          EVENT_NAME: ${{ github.event_name }}
         run: |
           set -euo pipefail
+
+          # Итог пул-реквеста виден на самом пул-реквесте.
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            echo "Пул-реквест: итог в телеграм не шлём."
+            exit 0
+          fi
 
           icon() {
             case "$1" in

@@ -43,15 +43,6 @@ def verify_password(hashed: str, plain: str, settings: Settings) -> bool:
         return False
 
 
-def needs_rehash(hashed: str, settings: Settings) -> bool:
-    """True, если хеш создан со старыми параметрами Argon2id.
-
-    Позволяет прозрачно переусиливать пароль при логине, когда
-    параметры в настройках изменились.
-    """
-    return _hasher(settings).check_needs_rehash(hashed)
-
-
 def _create_token(
     subject: uuid.UUID,
     token_type: TokenType,
