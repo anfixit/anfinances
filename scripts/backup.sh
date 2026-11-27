@@ -90,7 +90,17 @@ printf '%s' "$BACKUP_PASSPHRASE" | gpg --batch --quiet --yes \
     --output "$archive" "$dump"
 [ -s "$archive" ] || fail "шифрование не дало файла"
 
-# --- 4. Отправка -------------------------------------------------
+# --- 4. Локальная копия и ротация --------------------------------
+#
+# До отправки: раньше при сбое телеграма скрипт выходил раньше, чем
+# копия ложилась на диск, и от этой ночи не оставалось ничего. Отсюда
+# же копию забирает домашний сервер.
+
+mkdir -p "$STORE"
+cp "$archive" "$STORE/"
+find "$STORE" -name 'anfinances_*.dump.gpg' -mtime "+${KEEP_DAYS}" -delete
+
+# --- 5. Отправка -------------------------------------------------
 
 size="$(du -h "$archive" | cut -f1)"
 caption="🗄 Бэкап anfinances от ${stamp}
@@ -104,12 +114,21 @@ http_code="$(curl -sS --max-time 300 -o /dev/null -w '%{http_code}' \
     -F "document=@${archive}" \
     -F "caption=${caption}")"
 
-[ "$http_code" = "200" ] || fail "телеграм ответил ${http_code}"
+[ "$http_code" = "200" ] || fail "телеграм ответил ${http_code} (копия на сервере сохранена)"
 
-# --- 5. Локальная копия и ротация --------------------------------
+# --- 6. Отметка для мониторинга ----------------------------------
+#
+# Только после полного успеха. Caddy отдаёт файл по /status/backup,
+# Prometheus на kb тревожит, если он старше суток: так видно и сбой,
+# о котором скрипт сам сообщить не смог (таймер не сработал, сервер
+# лежал, сломалась отправка тревоги). Пишем во временный файл и
+# переименовываем — читатель не увидит половину файла.
 
-mkdir -p "$STORE"
-cp "$archive" "$STORE/"
-find "$STORE" -name 'anfinances_*.dump.gpg' -mtime "+${KEEP_DAYS}" -delete
+status_dir="${ROOT}/backup-status"
+mkdir -p "$status_dir"
+chmod 755 "$status_dir"
+date -u +%Y-%m-%dT%H:%M:%SZ > "${status_dir}/last-success.txt.tmp"
+chmod 644 "${status_dir}/last-success.txt.tmp"
+mv -f "${status_dir}/last-success.txt.tmp" "${status_dir}/last-success.txt"
 
 echo "Бэкап ${stamp} отправлен: ${live_rows} операций, ${size}"

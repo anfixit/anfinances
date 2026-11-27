@@ -143,6 +143,26 @@ jobs:
         # тесты, ни проверка типов этого не видели.
         run: uv run mypy app scripts
 
+      - name: Server configs
+        # Конфиги, которые иначе впервые проверил бы прод: сломанный
+        # nginx.conf уронил бы фронтенд, Caddyfile — caddy reload посреди
+        # деплоя. backend в nginx подставлен адресом: nginx -t резолвит
+        # upstream и без этого падает. .env — пустые: compose требует,
+        # чтобы env_file существовали.
+        working-directory: .
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm --add-host backend:127.0.0.1 \
+            -v "$PWD/frontend/docker/nginx.conf:/etc/nginx/conf.d/default.conf:ro" \
+            nginx:1.27-alpine nginx -t
+          docker run --rm -v "$PWD/caddy:/etc/caddy:ro" caddy:2-alpine \
+            caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+          touch backend/.env bot/.env bot/mcp.env
+          IMAGE_BACKEND=x IMAGE_FRONTEND=x IMAGE_BOT=x POSTGRES_PASSWORD=x \
+            docker compose -f docker-compose.deploy.yml config --quiet
+          shellcheck scripts/backup.sh
+
       - name: Calculate duration
         if: always()
         id: duration
@@ -169,6 +189,7 @@ jobs:
             • ruff check
             • ruff format --check
             • mypy app scripts
+            • nginx -t, caddy validate, compose config, shellcheck
 
   test:
     needs:
@@ -927,9 +948,12 @@ jobs:
               run --rm backend \
               alembic upgrade head
 
+            # --wait: прогон ждёт, пока контейнеры с healthcheck станут
+            # healthy. Backend, упавший при старте, красит деплой здесь,
+            # а не только smoke-проверку минутой позже.
             docker compose \
               -f docker-compose.deploy.yml \
-              up -d
+              up -d --wait --wait-timeout 180
 
             # Caddy читает конфиг только при старте, а compose не
             # пересоздаёт контейнер из-за правки Caddyfile. Без reload
@@ -948,6 +972,31 @@ jobs:
               [ "$attempt" = 5 ] && exit 1
               sleep 3
             done
+
+            # Старые образы. Каждый деплой тянет образы под своим sha, и
+            # никто их не удалял: 26.11.2026 за день ушло 4 ГБ из 30, а
+            # кончится место — встанет и база. Оставляем текущий и один
+            # предыдущий (быстрый откат); остальные при откате и так
+            # скачаются из GHCR. Список docker отдаёт от новых к старым.
+            for name in backend frontend bot; do
+              repo="ghcr.io/${owner_lc}/anfinances-${name}"
+              docker image ls "$repo" --format '{{.Tag}}' |
+                { grep -vxE "${DEPLOY_SHA}|<none>" || true; } |
+                tail -n +2 |
+                while read -r tag; do
+                  docker image rm "${repo}:${tag}" >/dev/null || true
+                done
+            done
+            docker image prune -f >/dev/null
+            df -h /
+
+            # Отметки о бэкапе ещё нет (первый деплой с мониторингом или
+            # её потеряли) — снимаем бэкап сейчас, не дожидаясь ночи,
+            # иначе мониторинг до утра тревожил бы зря. --no-block: прогон
+            # не ждёт дампа и отправки.
+            if [ ! -s backup-status/last-success.txt ]; then
+              sudo systemctl start --no-block anfinances-backup.service
+            fi
 
             docker compose \
               -f docker-compose.deploy.yml \
@@ -979,8 +1028,9 @@ jobs:
             • docker compose pull (свои образы по sha)
             • pg_dump перед миграцией
             • alembic upgrade head
-            • docker compose up -d
+            • docker compose up -d --wait (healthcheck)
             • caddy reload
+            • удаление старых образов
             • docker compose ps
 
             Сервер:

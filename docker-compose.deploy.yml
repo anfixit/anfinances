@@ -22,11 +22,20 @@
 # ~/anfinances-pre-migrate/.
 # Домен задаётся в caddy/Caddyfile и в CORS_ORIGINS ниже (один sed на оба).
 
+# Логи контейнеров — не больше 3×10 МБ на сервис. По умолчанию docker
+# пишет их без предела, а на сервере 30 ГБ диска на всё, включая базу.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   postgres:
     image: postgres:16-alpine
     container_name: anfinances-postgres
     restart: always
+    logging: *logging
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-anfinances}
       # Без дефолта: если секрет не дорендерился — compose упадёт громко,
@@ -49,6 +58,22 @@ services:
     image: ${IMAGE_BACKEND}
     container_name: anfinances-backend
     restart: always
+    logging: *logging
+    # Живость процесса, без базы: базу проверяет healthcheck postgres.
+    # Деплой ждёт healthy (up --wait), так что backend, упавший при
+    # старте, красит прогон, а не только smoke минутой позже.
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health/live', timeout=3)",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
     depends_on:
       postgres:
         condition: service_healthy
@@ -87,6 +112,7 @@ services:
     image: ${IMAGE_BOT}
     container_name: anfinances-bot
     restart: always
+    logging: *logging
     depends_on:
       - backend
     # Бот ходит в сайт по внутренней сети и наружу не публикуется:
@@ -108,6 +134,21 @@ services:
     image: ${IMAGE_BOT}
     container_name: anfinances-mcp
     restart: always
+    logging: *logging
+    # Порт принимает соединения — сервер поднялся. HTTP-запрос сюда
+    # без токена всё равно получил бы 401.
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import socket; socket.create_connection(('127.0.0.1', 8100), 3).close()",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
     depends_on:
       - backend
     command:
@@ -127,6 +168,15 @@ services:
     image: ${IMAGE_FRONTEND}
     container_name: anfinances-frontend
     restart: always
+    logging: *logging
+    healthcheck:
+      # 127.0.0.1, а не localhost: в alpine localhost сперва идёт в ::1,
+      # где nginx не слушает.
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     depends_on:
       - backend
     # Наружу не публикуется: трафик приходит только через Caddy.
@@ -137,6 +187,7 @@ services:
     image: caddy:2-alpine
     container_name: anfinances-caddy
     restart: always
+    logging: *logging
     depends_on:
       - frontend
       - mcp
@@ -157,6 +208,10 @@ services:
       # смонтированный по одному файлу контейнер продолжал бы видеть
       # старый. С каталогом деплою хватает `caddy reload`.
       - ./caddy:/etc/caddy:ro
+      # Отметка последнего удачного ночного бэкапа (пишет
+      # scripts/backup.sh). Caddy отдаёт её по /status/backup, мониторинг
+      # смотрит на Last-Modified и тревожит, если бэкапа не было сутки.
+      - ./backup-status:/srv/backup-status:ro
       # Персистентность сертификатов между деплоями — иначе LE rate-limit.
       - caddy_data:/data
       - caddy_config:/config

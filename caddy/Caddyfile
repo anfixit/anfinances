@@ -65,6 +65,17 @@ anfinances.ru {
 		reverse_proxy backend:8000
 	}
 
+	# Когда последний раз удался ночной бэкап. Для мониторинга на kb:
+	# Prometheus (blackbox) смотрит на Last-Modified и тревожит, если
+	# файлу больше суток. Внутри только время — ни сумм, ни числа
+	# операций. Нет файла — 404, и это тоже тревога.
+	handle /status/backup {
+		root * /srv/backup-status
+		rewrite * /last-success.txt
+		header Cache-Control "no-store"
+		file_server
+	}
+
 	handle {
 		encode zstd gzip
 		reverse_proxy frontend:80
