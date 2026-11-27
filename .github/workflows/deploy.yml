@@ -25,9 +25,18 @@ on:
 # старого коммита могла закончиться позже и перезаписать образ, а две
 # миграции гонялись за одной ревизией. Ждём, а не отменяем: отменённый
 # посреди деплоя прогон хуже очереди.
+#
+# У пул-реквеста своя группа, по его номеру. В общей он занимал бы
+# очередь выкладки: отменять её нельзя (cancel-in-progress: false), и
+# деплой main ждал бы, пока доедут чужие проверки, хотя выкатить
+# пул-реквест всё равно не может. В своей группе, наоборот, отменяем:
+# новый пуш в ветку делает прошлый прогон ненужным.
 concurrency:
-  group: deploy-production
-  cancel-in-progress: false
+  group: >-
+    ${{ github.event_name == 'pull_request'
+    && format('pr-{0}', github.event.number)
+    || 'deploy-production' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   REGISTRY: ghcr.io

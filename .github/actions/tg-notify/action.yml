@@ -49,8 +49,17 @@ runs:
         RUN_ID: ${{ github.run_id }}
         RUN_NUMBER: ${{ github.run_number }}
         SERVER_URL: ${{ github.server_url }}
+        EVENT_NAME: ${{ github.event_name }}
       run: |
         set -euo pipefail
+
+        # Пул-реквест — это проверки, а не выкатка: в чат деплоя о нём
+        # не пишем. Проверка здесь, а не в одиннадцати вызовах: новый
+        # job получит её сам, и о нём не придётся вспоминать.
+        if [ "$EVENT_NAME" = "pull_request" ]; then
+          echo "Пул-реквест: уведомление не шлём."
+          exit 0
+        fi
 
         # Уведомление — не часть проверки. Сбой Telegram (25.11.2026:
         # curl 35, TLS не установился) ронял job с зелёными тестами, а
