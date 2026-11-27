@@ -49,7 +49,7 @@
 
 ---
 
-### Задача 1: таблица кандидатов
+### Task 1: таблица кандидатов
 
 **Files:**
 - Modify: `backend/app/domains/payees/models.py`
@@ -101,7 +101,7 @@ git commit -m "feat(payees): таблица кандидатов"
 
 ---
 
-### Задача 2: имя больше не попадает в справочник само
+### Task 2: имя больше не попадает в справочник само
 
 **Files:**
 - Modify: `backend/app/domains/payees/service.py`
@@ -150,7 +150,7 @@ git commit -am "feat(payees): невиданное имя ждёт подтве�
 
 ---
 
-### Задача 3: разбор очереди
+### Task 3: разбор очереди
 
 **Files:**
 - Modify: `backend/app/domains/payees/{service,repository,schemas,routes}.py`
@@ -210,7 +210,7 @@ git commit -am "feat(payees): очередь разбора — подтверд
 
 ---
 
-### Задача 4: строка «не разобрано»
+### Task 4: строка «не разобрано»
 
 **Files:**
 - Modify: `backend/app/domains/payees/{repository,schemas,routes}.py`
@@ -229,7 +229,7 @@ git commit -am "feat(payees): очередь разбора — подтверд
 
 ---
 
-### Задача 5: экран
+### Task 5: экран
 
 **Files:**
 - Modify: `frontend/src/features/payees/{payeesApi.ts,hooks.ts,PayeesPage.tsx,payees.css}`
@@ -249,7 +249,7 @@ git commit -am "feat(payees): очередь разбора — подтверд
 
 ---
 
-### Задача 6: бэкап и права ИИ
+### Task 6: бэкап и права ИИ
 
 **Files:**
 - Modify: `backend/app/domains/export/{schemas.py,service.py}`, `backend/app/domains/import_/service.py`
@@ -268,7 +268,7 @@ git commit -am "feat(payees): очередь разбора — подтверд
 
 ---
 
-### Задача 7: бот и MCP
+### Task 7: бот и MCP
 
 **Files:**
 - Modify: `bot/src/anfinances_bot/agent/prompt.py:106`, `bot/src/anfinances_bot/agent/tools.py:209,237,515`
