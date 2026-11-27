@@ -3,9 +3,9 @@
 Правила:
 - Имя уникально без учёта регистра: «Пятёрочка» и «ПЯТЕРОЧКА» —
   один получатель, потому что в выписках регистр пляшет.
-- Получатель заводится сам, как только имя впервые встретилось в
-  операции: заставлять заводить его вручную — верный способ, чтобы
-  им никогда не пользовались.
+- Невиданное имя в справочник само не попадает: оно ждёт в списке
+  кандидатов, пока владелица не подтвердит его. Иначе справочник
+  заполняют люди из переводов и слова из назначения платежа.
 - Категория последней операции запоминается и подставляется в
   следующий раз. Это и есть смысл всей затеи: выписку разносит
   таблица, а не модель.
@@ -17,7 +17,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 
 from app.core.exceptions import AlreadyExistsError, NotFoundError
-from app.domains.payees.models import Payee
+from app.domains.payees.models import Payee, PayeeCandidate
 from app.domains.payees.repository import PayeeRepository
 from app.domains.payees.schemas import PayeeCreate, PayeeUpdate
 
@@ -96,26 +96,48 @@ class PayeeService:
             Payee(user_id=user_id, name=name, name_key=payee_key(name))
         )
 
-    async def ensure(self, user_id: uuid.UUID, name: str) -> Payee:
-        """Найти получателя по имени или завести нового.
+    async def remember(
+        self, user_id: uuid.UUID, name: str
+    ) -> tuple[Payee | None, str]:
+        """Сопоставить имя из операции со справочником.
 
-        Вызывается при записи операции: имя приходит из выписки или
-        из фразы, и требовать, чтобы получатель уже существовал,
-        значило бы ронять запись из-за справочника.
+        Возвращает подтверждённого получателя (или None) и очищенное
+        имя для снимка в операции. Новый получатель здесь не
+        заводится: имя из выписки бывает человеком из перевода или
+        словом из назначения платежа, и справочник, куда попадает всё
+        подряд, перестаёт быть справочником. Невиданное имя копится
+        как кандидат и ждёт, пока владелица его подтвердит.
         """
         cleaned = " ".join(name.split())
+        if not cleaned:
+            # Пустое имя — «получателя тут нет»: ни запись, ни
+            # кандидат из него не получатся.
+            return None, ""
         key = payee_key(cleaned)
         existing = await self._repo.get_by_key(user_id, key)
         if existing is not None:
-            return existing
-        return await self._repo.add(
-            Payee(
-                user_id=user_id,
-                name=cleaned,
-                name_key=key,
-                varied_categories=is_marketplace(cleaned),
+            return existing, existing.name
+        candidate = await self._repo.get_candidate(user_id, key)
+        now = datetime.now(UTC)
+        if candidate is None:
+            # Обе даты передаём явно: у колонок есть только
+            # server_default, и без значения после flush обращение к
+            # ним в async-сессии падает с MissingGreenlet.
+            await self._repo.add_candidate(
+                PayeeCandidate(
+                    user_id=user_id,
+                    name=cleaned,
+                    name_key=key,
+                    first_seen_at=now,
+                    last_seen_at=now,
+                )
             )
-        )
+        elif candidate.status != "rejected":
+            # Отклонённое имя не трогаем совсем: оно не должно ни
+            # возвращаться в очередь, ни расти счётчиком.
+            candidate.times_seen += 1
+            candidate.last_seen_at = now
+        return None, cleaned
 
     async def update_payee(
         self, payee_id: uuid.UUID, user_id: uuid.UUID, data: PayeeUpdate

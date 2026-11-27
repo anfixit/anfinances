@@ -203,13 +203,18 @@ class TransactionService:
             subcategory_name_snapshot,
         ) = await self._validate_category(user_id, data.category_id, data.kind)
 
-        payee = None
-        if data.payee:
-            payee = await self._payees.ensure(user_id, data.payee)
-            # Категория запоминается за получателем: следующая
-            # выписка разнесётся по таблице, а не по догадке модели.
-            if data.category_id is not None and not payee.varied_categories:
-                payee.last_category_id = data.category_id
+        payee, payee_name = await self._payees.remember(
+            user_id, data.payee or ""
+        )
+        # Категория запоминается за подтверждённым получателем:
+        # следующая выписка разнесётся по таблице, а не по догадке
+        # модели. У кандидата памяти нет — он ещё не получатель.
+        if (
+            payee is not None
+            and data.category_id is not None
+            and not payee.varied_categories
+        ):
+            payee.last_category_id = data.category_id
 
         rate = await self._currencies.rate_to_rub(account.currency_code)
         amount = _signed(data.amount, data.kind)
@@ -224,8 +229,8 @@ class TransactionService:
             amount_rub=amount_rub,
             exchange_rate=rate,
             category_id=data.category_id,
-            payee_id=None if payee is None else payee.id,
-            payee_name_snapshot=None if payee is None else payee.name,
+            payee_id=payee.id if payee else None,
+            payee_name_snapshot=payee_name or None,
             category_name_snapshot=category_name_snapshot,
             subcategory_name_snapshot=subcategory_name_snapshot,
             account_name_snapshot=account.name,
@@ -259,15 +264,11 @@ class TransactionService:
         # идентификатором, а приходит именем.
         payee_name = fields.pop("payee", None)
         if payee_name is not None:
-            if payee_name.strip():
-                payee = await self._payees.ensure(user_id, payee_name)
-                tx.payee_id = payee.id
-                tx.payee_name_snapshot = payee.name
-            else:
-                # Пустая строка — «получателя тут нет», а не имя.
-                payee = None
-                tx.payee_id = None
-                tx.payee_name_snapshot = None
+            # Пустая строка — «получателя тут нет», а не имя: remember
+            # вернёт (None, ""), и связь снимется сама.
+            payee, cleaned = await self._payees.remember(user_id, payee_name)
+            tx.payee_id = payee.id if payee else None
+            tx.payee_name_snapshot = cleaned or None
         else:
             payee = None
 

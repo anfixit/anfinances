@@ -15,7 +15,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.enums import CategoryKind, TransactionKind
 from app.core.exceptions import AlreadyExistsError, NotFoundError
 from app.domains.categories.models import Category
+from app.domains.payees.models import Payee
 from app.domains.payees.repository import SqlPayeeRepository
+from app.domains.payees.schemas import PayeeCreate
 from app.domains.payees.service import PayeeService
 from app.domains.transactions.models import Transaction
 
@@ -26,6 +28,13 @@ MONTH_TO = datetime(2026, 9, 1, tzinfo=UTC)
 
 def _service(db_session: AsyncSession) -> PayeeService:
     return PayeeService(SqlPayeeRepository(db_session))
+
+
+async def _confirmed(
+    service: PayeeService, ledger: dict[str, uuid.UUID], name: str
+) -> Payee:
+    """Подтверждённый получатель: сам из операции он больше не заводится."""
+    return await service.create_payee(ledger["user"], PayeeCreate(name=name))
 
 
 async def _category(
@@ -67,11 +76,12 @@ async def test_same_name_in_another_case_is_one_payee(
 ) -> None:
     """В выписках регистр пляшет, а магазин один."""
     service = _service(db_session)
-    first = await service.ensure(ledger["user"], "Пятёрочка")
-    second = await service.ensure(ledger["user"], "ПЯТЕРОЧКА")
-    assert first.id != second.id, "«е» и «ё» — разные буквы, это разные имена"
+    first = await _confirmed(service, ledger, "Пятёрочка")
+    other, _ = await service.remember(ledger["user"], "ПЯТЕРОЧКА")
+    assert other is None, "«е» и «ё» — разные буквы, это разные имена"
 
-    third = await service.ensure(ledger["user"], "пятёрочка")
+    third, _ = await service.remember(ledger["user"], "пятёрочка")
+    assert third is not None
     assert third.id == first.id
 
 
@@ -79,17 +89,18 @@ async def test_surrounding_spaces_do_not_make_a_new_payee(
     db_session: AsyncSession, ledger: dict[str, uuid.UUID]
 ) -> None:
     service = _service(db_session)
-    first = await service.ensure(ledger["user"], "Лента")
-    again = await service.ensure(ledger["user"], "  Лента  ")
+    first = await _confirmed(service, ledger, "Лента")
+    again, name = await service.remember(ledger["user"], "  Лента  ")
+    assert again is not None
     assert again.id == first.id
-    assert again.name == "Лента"
+    assert name == "Лента"
 
 
 async def test_duplicate_name_is_refused_on_explicit_create(
     db_session: AsyncSession, ledger: dict[str, uuid.UUID]
 ) -> None:
     service = _service(db_session)
-    await service.ensure(ledger["user"], "Озон")
+    await _confirmed(service, ledger, "Озон")
     with pytest.raises(AlreadyExistsError):
         await service.create_payee(ledger["user"], _create("ОЗОН"))
 
@@ -107,8 +118,8 @@ async def test_rename_onto_an_existing_name_is_refused(
     from app.domains.payees.schemas import PayeeUpdate  # noqa: PLC0415
 
     service = _service(db_session)
-    await service.ensure(ledger["user"], "Wildberries")
-    other = await service.ensure(ledger["user"], "WB")
+    await _confirmed(service, ledger, "Wildberries")
+    other = await _confirmed(service, ledger, "WB")
     with pytest.raises(AlreadyExistsError):
         await service.update_payee(
             other.id, ledger["user"], PayeeUpdate(name="wildberries")
@@ -120,8 +131,8 @@ async def test_merge_moves_transactions_and_drops_the_source(
 ) -> None:
     """Один магазин под двумя именами из разных выписок."""
     service = _service(db_session)
-    source = await service.ensure(ledger["user"], "WILDBERRIES RU")
-    target = await service.ensure(ledger["user"], "Wildberries")
+    source = await _confirmed(service, ledger, "WILDBERRIES RU")
+    target = await _confirmed(service, ledger, "Wildberries")
     tx = await _spend(db_session, ledger, source.id, Decimal("1200"))
 
     moved = await service.merge_payees(source.id, target.id, ledger["user"])
@@ -139,9 +150,9 @@ async def test_merge_carries_the_category_hint_when_target_has_none(
 ) -> None:
     service = _service(db_session)
     category = await _category(db_session, ledger["user"], "Одежда")
-    source = await service.ensure(ledger["user"], "WB RU")
+    source = await _confirmed(service, ledger, "WB RU")
     source.last_category_id = category.id
-    target = await service.ensure(ledger["user"], "WB")
+    target = await _confirmed(service, ledger, "WB")
 
     await service.merge_payees(source.id, target.id, ledger["user"])
     assert target.last_category_id == category.id
@@ -152,8 +163,8 @@ async def test_spending_groups_by_payee(
 ) -> None:
     service = _service(db_session)
     repo = SqlPayeeRepository(db_session)
-    shop = await service.ensure(ledger["user"], "Пятёрочка")
-    taxi = await service.ensure(ledger["user"], "Яндекс Go")
+    shop = await _confirmed(service, ledger, "Пятёрочка")
+    taxi = await _confirmed(service, ledger, "Яндекс Go")
     await _spend(db_session, ledger, shop.id, Decimal("500"))
     await _spend(db_session, ledger, shop.id, Decimal("300"))
     await _spend(db_session, ledger, taxi.id, Decimal("250"))
@@ -170,7 +181,7 @@ async def test_income_does_not_land_in_payee_spending(
     """Отчёт про то, кому ушли деньги, а не про то, кто их принёс."""
     service = _service(db_session)
     repo = SqlPayeeRepository(db_session)
-    payer = await service.ensure(ledger["user"], "Заказчик")
+    payer = await _confirmed(service, ledger, "Заказчик")
     await _spend(
         db_session,
         ledger,
@@ -189,8 +200,8 @@ async def test_new_payees_are_judged_by_the_first_operation(
     """Выписку заносят задним числом: запись сегодня, трата — нет."""
     service = _service(db_session)
     now = datetime(2026, 8, 22, tzinfo=UTC)
-    fresh = await service.ensure(ledger["user"], "Новый сервис")
-    old = await service.ensure(ledger["user"], "Старый магазин")
+    fresh = await _confirmed(service, ledger, "Новый сервис")
+    old = await _confirmed(service, ledger, "Старый магазин")
     await _spend(
         db_session,
         ledger,
@@ -215,7 +226,7 @@ async def test_payee_without_operations_is_not_new(
 ) -> None:
     """Заведённый вручную и ни разу не использованный — не событие."""
     service = _service(db_session)
-    await service.ensure(ledger["user"], "Просто запись")
+    await _confirmed(service, ledger, "Просто запись")
     rows = await service.new_payees(
         ledger["user"], datetime(2026, 8, 22, tzinfo=UTC)
     )
