@@ -94,7 +94,7 @@ async def test_deleted_transaction_returns_as_it_was() -> None:
         (item,) = listed["data"]
         assert item["id"] == trash_id
         assert item["source"] == "Сайт"
-        assert "Трата 431.00 RUB" in item["summary"]
+        assert "Трата 431,00 ₽" in item["summary"]
         assert "«чехол»" in item["summary"]
 
         r = await env.client.post(
@@ -185,7 +185,7 @@ async def test_transfer_goes_to_trash_whole_and_comes_back_whole() -> None:
         )
         assert r.status_code == 200, r.text
         summary = r.json()["data"]["summary"]
-        assert "Перевод Альфа → Озон: 4312.04 RUB" in summary
+        assert "Перевод Альфа → Озон: 4 312,04 ₽" in summary
         assert await _get(env, Transfer, transfer.id) is None
         assert await _get(env, Transaction, into.id) is None
 

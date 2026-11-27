@@ -13,6 +13,7 @@ import type { RecurringGenerationProposal } from "@/features/recurring/recurring
 import type { Recurring } from "@/features/recurring/types"
 import { Sheet } from "@/components/Sheet"
 import { useConfirm } from "@/components/confirm-context"
+import { reportError } from "@/lib/errors/reportError"
 import { formatMoney } from "@/lib/money"
 
 export function RecurringPage() {
@@ -58,7 +59,7 @@ export function RecurringPage() {
       danger: true,
     })
     if (ok) {
-      archive.mutate(item.id)
+      archive.mutate(item.id, { onError: reportError })
     }
   }
 
@@ -67,6 +68,7 @@ export function RecurringPage() {
       onSuccess: (proposals) => {
         void proposeAndGenerate(proposals)
       },
+      onError: reportError,
     })
   }
 
@@ -106,6 +108,7 @@ export function RecurringPage() {
             body: "Проверьте суммы — план считается по прошлым тратам.",
           })
         },
+        onError: reportError,
       },
     )
   }

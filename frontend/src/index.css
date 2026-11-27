@@ -4,12 +4,15 @@
    Цифр на экран влезает больше — ради этого всё и затевалось.
    Светлая + тёмная темы. Шрифты: Inter + JetBrains Mono. */
 
-@import url("https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400;14..32,500;14..32,600;14..32,700&family=JetBrains+Mono:wght@400;500;600&display=swap");
+/* Google Fonts убраны 25.11.2026: CSP сайта (font-src/style-src 'self')
+   всегда их блокировала, так что в проде и так шли системные шрифты
+   из стека ниже. Внешний вид не меняется, уходят ошибка CSP в консоли
+   и запрос в Google с адресом пользователя. */
 
 /* ── Токены: светлая тема ───────────────────────────────────── */
 :root {
   /* Primary — хабровский синий */
-  --primary: #4c8eda;
+  --primary: #2f6ba8; /* WCAG AA: белый на кнопке 5.5:1 (было 3.4) */
   --on-primary: #ffffff;
   --primary-container: #dcebfa;
   --on-primary-container: #123a63;
@@ -38,7 +41,7 @@
   --surface: #ffffff;
   --on-surface: #333333;
   --surface-variant: #eceef1;
-  --on-surface-variant: #6c7378;
+  --on-surface-variant: #5d6469; /* 5.2:1 на surface-variant (было 4.1) */
 
   --surface-container-lowest: #ffffff;
   --surface-container-low: #ffffff;
@@ -54,7 +57,7 @@
   --inverse-on-surface: #f5f6f8;
 
   /* Семантика финансов */
-  --income: #3f8f4a;
+  --income: #2e7a39; /* 5.3:1 на белом (было 4.0) */
   --on-income-container: #123a19;
   --income-container: #ddf0df;
   --expense: #d0453b;

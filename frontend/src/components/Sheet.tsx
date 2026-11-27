@@ -20,6 +20,16 @@ const FOCUSABLE = [
 export function Sheet({ open, title, onClose, children }: SheetProps) {
   const panel = useRef<HTMLElement | null>(null)
   const returnTo = useRef<HTMLElement | null>(null)
+  const pressedOnScrim = useRef(false)
+
+  // onClose у вызывающих — новая функция на каждый рендер. Пока она
+  // стояла в зависимостях эффекта ниже, любой перерендер родителя
+  // (пришёл список, обновился остаток) переоткрывал лист: фокус прыгал
+  // на «Закрыть», и на телефоне закрывалась клавиатура посреди ввода.
+  const onCloseRef = useRef(onClose)
+  useEffect(() => {
+    onCloseRef.current = onClose
+  })
 
   useEffect(() => {
     if (!open) {
@@ -39,7 +49,7 @@ export function Sheet({ open, title, onClose, children }: SheetProps) {
 
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
-        onClose()
+        onCloseRef.current()
         return
       }
       if (e.key !== "Tab" || panel.current === null) {
@@ -74,14 +84,28 @@ export function Sheet({ open, title, onClose, children }: SheetProps) {
       document.body.style.overflow = previousOverflow
       returnTo.current?.focus()
     }
-  }, [open, onClose])
+  }, [open])
 
   if (!open) {
     return null
   }
 
   return (
-    <div className="sheet-scrim" onClick={onClose}>
+    <div
+      className="sheet-scrim"
+      // Закрываем, только если нажали и отпустили на самой подложке.
+      // Иначе выделение текста в поле с отпусканием мыши за краем
+      // панели закрывало лист вместе со всем введённым.
+      onPointerDown={(e) => {
+        pressedOnScrim.current = e.target === e.currentTarget
+      }}
+      onClick={(e) => {
+        if (pressedOnScrim.current && e.target === e.currentTarget) {
+          onClose()
+        }
+        pressedOnScrim.current = false
+      }}
+    >
       <aside
         ref={panel}
         className="sheet"

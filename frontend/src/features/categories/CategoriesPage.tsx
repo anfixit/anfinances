@@ -10,6 +10,7 @@ import {
   useUpdateCategory,
 } from "@/features/categories/hooks"
 import type { Category } from "@/features/categories/types"
+import { reportError } from "@/lib/errors/reportError"
 import { AppError } from "@/lib/api/errors"
 
 const KINDS = ["expense", "income"] as const
@@ -129,7 +130,7 @@ function CategoryRow({
       danger: true,
     })
     if (ok) {
-      archive.mutate(category.id)
+      archive.mutate(category.id, { onError: reportError })
     }
   }
 
@@ -142,7 +143,7 @@ function CategoryRow({
           onClick={() =>
             update.mutate(
               { id: category.id, input: { name } },
-              { onSuccess: () => setEditing(false) },
+              { onSuccess: () => setEditing(false), onError: reportError },
             )
           }
           disabled={update.isPending}

@@ -12,6 +12,7 @@ import {
 } from "@/features/payees/hooks"
 import type { Payee } from "@/features/payees/types"
 import { categoryPath } from "@/features/categories/path"
+import { reportError } from "@/lib/errors/reportError"
 
 export function PayeesPage() {
   const payees = usePayees()
@@ -112,7 +113,10 @@ function PayeeRow({
       danger: true,
     })
     if (ok) {
-      merge.mutate({ sourceId: payee.id, targetId: target.id })
+      merge.mutate(
+        { sourceId: payee.id, targetId: target.id },
+        { onError: reportError },
+      )
     }
   }
 
@@ -127,7 +131,7 @@ function PayeeRow({
       danger: true,
     })
     if (ok) {
-      remove.mutate(payee.id)
+      remove.mutate(payee.id, { onError: reportError })
     }
   }
 
@@ -145,7 +149,7 @@ function PayeeRow({
           onClick={() =>
             rename.mutate(
               { id: payee.id, name },
-              { onSuccess: () => setEditing(false) },
+              { onSuccess: () => setEditing(false), onError: reportError },
             )
           }
         >
@@ -180,7 +184,10 @@ function PayeeRow({
             checked={payee.varied_categories}
             disabled={varied.isPending}
             onChange={(e) => {
-              varied.mutate({ id: payee.id, varied: e.target.checked })
+              varied.mutate(
+                { id: payee.id, varied: e.target.checked },
+                { onError: reportError },
+              )
             }}
           />
           разные категории

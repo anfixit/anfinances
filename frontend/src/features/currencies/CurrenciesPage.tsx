@@ -11,6 +11,7 @@ import {
   useSetMyCurrencies,
 } from "@/features/currencies/hooks"
 import { useUpdateProfile } from "@/features/users/hooks"
+import { reportError } from "@/lib/errors/reportError"
 import { AppError } from "@/lib/api/errors"
 import { formatDate } from "@/lib/datetime"
 
@@ -42,7 +43,9 @@ export function CurrenciesPage() {
       <p>
         <button
           type="button"
-          onClick={() => refresh.mutate()}
+          onClick={() => {
+            refresh.mutate(undefined, { onError: reportError })
+          }}
           disabled={refresh.isPending}
         >
           {refresh.isPending ? "Обновляю…" : "Обновить курсы"}
@@ -103,7 +106,10 @@ function CurrencySetEditor({
   // Основная валюта — поле профиля, а не свойство набора: два
   // источника одного факта расходятся молча.
   const setDefault = (code: string) => {
-    updateProfile.mutate({ default_currency: code })
+    updateProfile.mutate(
+      { default_currency: code },
+      { onError: reportError },
+    )
   }
   const move = (index: number, dir: -1 | 1) =>
     setRows((rs) => {

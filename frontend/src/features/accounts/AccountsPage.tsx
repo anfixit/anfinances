@@ -13,6 +13,7 @@ import { TYPE_LABELS } from "@/features/accounts/types"
 import type { Account } from "@/features/accounts/types"
 import { Sheet } from "@/components/Sheet"
 import { useConfirm } from "@/components/confirm-context"
+import { reportError } from "@/lib/errors/reportError"
 import { AppError } from "@/lib/api/errors"
 import { formatMoney } from "@/lib/money"
 import { useDashboard } from "@/features/summary/hooks"
@@ -72,7 +73,7 @@ export function AccountsPage() {
         confirmLabel: "Архивировать",
       })
       if (ok) {
-        archive.mutate({ id: account.id })
+        archive.mutate({ id: account.id }, { onError: reportError })
       }
       return
     }
@@ -89,7 +90,10 @@ export function AccountsPage() {
       danger: true,
     })
     if (ok) {
-      archive.mutate({ id: account.id, force: true })
+      archive.mutate(
+        { id: account.id, force: true },
+        { onError: reportError },
+      )
     }
   }
 
@@ -109,7 +113,7 @@ export function AccountsPage() {
       .filter(({ acc, idx }) => acc.sort_order !== idx)
       .map(({ acc, idx }) => ({ id: acc.id, sort_order: idx }))
     if (changed.length > 0) {
-      reorder.mutate(changed)
+      reorder.mutate(changed, { onError: reportError })
     }
   }
 

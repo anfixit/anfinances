@@ -20,6 +20,7 @@ import { useGoals } from "@/features/goals/hooks"
 import { useRecurring } from "@/features/recurring/hooks"
 import { Sheet } from "@/components/Sheet"
 import { useConfirm } from "@/components/confirm-context"
+import { reportError } from "@/lib/errors/reportError"
 import { queryKeys } from "@/lib/query/keys"
 import { formatMoney, sumMoney } from "@/lib/money"
 
@@ -138,10 +139,16 @@ export function BudgetsPage() {
 
   const copyPrev = async () => {
     const prev = shiftMonth(month, -1)
-    const prevBudgets = await qc.fetchQuery({
-      queryKey: queryKeys.budgets(prev),
-      queryFn: () => listBudgets(prev),
-    })
+    let prevBudgets: Budget[]
+    try {
+      prevBudgets = await qc.fetchQuery({
+        queryKey: queryKeys.budgets(prev),
+        queryFn: () => listBudgets(prev),
+      })
+    } catch (err) {
+      reportError(err)
+      return
+    }
     if (prevBudgets.length === 0) {
       await notify({
         title: "В прошлом месяце бюджета нет",
@@ -164,15 +171,18 @@ export function BudgetsPage() {
         return
       }
     }
-    importMut.mutate({
-      month,
-      items: prevBudgets.map((b) => ({
-        category_id: b.category_id,
-        planned: b.planned,
-        notes: b.notes,
-        rollover: b.rollover,
-      })),
-    })
+    importMut.mutate(
+      {
+        month,
+        items: prevBudgets.map((b) => ({
+          category_id: b.category_id,
+          planned: b.planned,
+          notes: b.notes,
+          rollover: b.rollover,
+        })),
+      },
+      { onError: reportError },
+    )
   }
 
   // Обязательные траты уже перечислены в плане-минимуме. Заставлять
@@ -199,7 +209,7 @@ export function BudgetsPage() {
       })
       return
     }
-    importMut.mutate({ month, items })
+    importMut.mutate({ month, items }, { onError: reportError })
   }
 
   const removeBudget = async (b: Budget, name: string) => {
@@ -214,7 +224,7 @@ export function BudgetsPage() {
       danger: true,
     })
     if (ok) {
-      del.mutate(b.id)
+      del.mutate(b.id, { onError: reportError })
     }
   }
 

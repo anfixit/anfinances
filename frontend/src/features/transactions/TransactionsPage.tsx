@@ -21,6 +21,7 @@ import type {
   TransactionFilters,
 } from "@/features/transactions/types"
 import { TRASH_NOTE } from "@/features/trash/types"
+import { reportError } from "@/lib/errors/reportError"
 import { formatDate } from "@/lib/datetime"
 import { formatMoney } from "@/lib/money"
 import type { TransactionKind } from "@/types/enums"
@@ -283,7 +284,7 @@ export function TransactionsPage() {
         danger: true,
       })
       if (ok) {
-        delTransfer.mutate(t.transfer_id)
+        delTransfer.mutate(t.transfer_id, { onError: reportError })
       }
       return
     }
@@ -298,7 +299,7 @@ export function TransactionsPage() {
       danger: true,
     })
     if (ok) {
-      delTx.mutate(t.id)
+      delTx.mutate(t.id, { onError: reportError })
     }
   }
 

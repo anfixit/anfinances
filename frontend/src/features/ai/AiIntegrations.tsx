@@ -8,6 +8,7 @@ import {
 } from "@/features/ai/hooks"
 import { scopesLabel } from "@/features/ai/scopes"
 import type { AiConnection, AiScope } from "@/features/ai/types"
+import { reportError } from "@/lib/errors/reportError"
 import { AppError } from "@/lib/api/errors"
 import { formatDate } from "@/lib/datetime"
 
@@ -73,7 +74,7 @@ function ConnectionRow({ conn }: { conn: AiConnection }) {
       danger: true,
     })
     if (ok) {
-      revoke.mutate(conn.id)
+      revoke.mutate(conn.id, { onError: reportError })
     }
   }
 

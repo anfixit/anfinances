@@ -135,7 +135,7 @@ class TrashService:
         rows.append(("credit_payments", payment))
         summary = (
             f"Платёж по кредиту «{name}»: "
-            f"{_money(payment.total_amount)} {payment.currency_code} "
+            f"{_money(payment.total_amount, payment.currency_code)} "
             f"(тело {_money(payment.principal_amount)}, проценты "
             f"{_money(payment.interest_amount)}) · "
             f"{self._day(payment.date)}"
@@ -264,7 +264,7 @@ class TrashService:
     def _tx_summary(self, tx: Transaction) -> str:
         label = _KIND_LABELS.get(tx.kind, str(tx.kind))
         parts = [
-            f"{label} {_money(abs(tx.amount))} {tx.currency_code}",
+            f"{label} {_money(abs(tx.amount), tx.currency_code)}",
             tx.account_name_snapshot or "",
             " → ".join(
                 p
@@ -292,10 +292,10 @@ class TrashService:
         text = (
             f"Перевод {out.account_name_snapshot} → "
             f"{into.account_name_snapshot}: "
-            f"{_money(-out.amount)} {out.currency_code}"
+            f"{_money(-out.amount, out.currency_code)}"
         )
         if into.currency_code != out.currency_code:
-            text += f" → {_money(into.amount)} {into.currency_code}"
+            text += f" → {_money(into.amount, into.currency_code)}"
         if fee is not None:
             text += f", комиссия {_money(-fee.amount)}"
         if out.comment:
@@ -308,5 +308,14 @@ class TrashService:
         return moment.astimezone(self._tz).strftime("%d.%m.%Y")
 
 
-def _money(value: Decimal) -> str:
-    return f"{value:.2f}"
+def _money(value: Decimal, currency: str | None = None) -> str:
+    """Сумма так, как её пишет сайт: «4 312,04 ₽».
+
+    Описание показывают страница «Корзина» и ассистент. С точкой и
+    кодом («431.00 RUB») оно выглядело чужим рядом с остальным
+    интерфейсом, где суммы — по-русски и с символом рубля.
+    """
+    text = f"{value:,.2f}".replace(",", " ").replace(".", ",")
+    if currency is None:
+        return text
+    return f"{text} {'₽' if currency == 'RUB' else currency}"

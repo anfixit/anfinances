@@ -111,6 +111,10 @@ function Dialog({
 
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
+        // Диалог открыт поверх листа: Escape закрывает только его.
+        // Слушатель в фазе захвата срабатывает раньше листа, а
+        // stopPropagation не даёт событию дойти до него.
+        e.stopPropagation()
         onAnswer(false)
         return
       }
@@ -135,9 +139,9 @@ function Dialog({
       }
     }
 
-    window.addEventListener("keydown", onKey)
+    window.addEventListener("keydown", onKey, { capture: true })
     return () => {
-      window.removeEventListener("keydown", onKey)
+      window.removeEventListener("keydown", onKey, { capture: true })
       document.body.style.overflow = previousOverflow
       returnTo.current?.focus()
     }

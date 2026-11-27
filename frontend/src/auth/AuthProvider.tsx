@@ -73,9 +73,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
+  // Профиль живёт здесь, а не в кэше запросов: раньше сохранение
+  // инвалидировало ключ «me», которого никто не читал, и экран
+  // показывал старые часовой пояс и валюту до перезагрузки.
+  const updateUser = useCallback((next: User) => {
+    setUser(next)
+  }, [])
+
   const value = useMemo<AuthContextValue>(
-    () => ({ status, user, login, logout }),
-    [status, user, login, logout],
+    () => ({ status, user, login, logout, updateUser }),
+    [status, user, login, logout, updateUser],
   )
 
   return <AuthContext value={value}>{children}</AuthContext>

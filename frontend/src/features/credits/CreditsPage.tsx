@@ -13,6 +13,7 @@ import {
 } from "@/features/credits/hooks"
 import type { Credit, CreditPayment } from "@/features/credits/types"
 import { TRASH_NOTE } from "@/features/trash/types"
+import { reportError } from "@/lib/errors/reportError"
 import { formatDate } from "@/lib/datetime"
 import { formatMoney } from "@/lib/money"
 
@@ -91,10 +92,10 @@ export function CreditsPage() {
       danger: true,
     })
     if (confirmed) {
-      removePaymentMut.mutate({
-        creditId: selectedCredit.id,
-        paymentId: payment.id,
-      })
+      removePaymentMut.mutate(
+        { creditId: selectedCredit.id, paymentId: payment.id },
+        { onError: reportError },
+      )
     }
   }
   const accountById = useMemo(
@@ -136,7 +137,7 @@ export function CreditsPage() {
       confirmLabel: "Архивировать",
     })
     if (ok) {
-      archive.mutate(credit.id)
+      archive.mutate(credit.id, { onError: reportError })
     }
   }
 

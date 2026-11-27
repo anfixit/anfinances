@@ -15,6 +15,7 @@ import {
 
 import { useBudgets } from "@/features/budgets/hooks"
 import { useCategories } from "@/features/categories/hooks"
+import { categoryPath } from "@/features/categories/path"
 import {
   useByCategory,
   useCashflow,
@@ -112,13 +113,14 @@ export function DashboardPage() {
   // видно, они и не разбираются.
   const looseQ = useTransactions({ uncategorized: true })
 
+  const categoryById = new Map((categoriesQ.data ?? []).map((c) => [c.id, c]))
+  // Полный путь: «Аксессуары» бывают и в «Авто», и в «Одежде», и по
+  // одному имени две строки таблицы было не различить.
   const catName = (id: string | null): string => {
     if (id === null) {
       return "Без категории"
     }
-    return (
-      (categoriesQ.data ?? []).find((c) => c.id === id)?.name ?? "Категория"
-    )
+    return categoryPath(categoryById, id) ?? "Категория"
   }
 
   const flowData = flow.data
@@ -155,6 +157,9 @@ export function DashboardPage() {
 
   const catRows = (cats.data?.items ?? [])
     .map((i) => ({
+      // Ключ — id, а не имя: одинаковые имена подкатегорий давали
+      // повторяющиеся ключи, и React мог потерять строку.
+      key: i.category_id ?? "uncategorized",
       name: catName(i.category_id),
       value: Number(i.amount_rub),
     }))
@@ -172,6 +177,7 @@ export function DashboardPage() {
       ? [
           ...pieHead,
           {
+            key: "other",
             name: `Прочее (${String(pieTail.length)})`,
             value: sumMoney(pieTail.map((d) => String(d.value))),
           },
@@ -475,6 +481,8 @@ export function DashboardPage() {
                     cursor={{ fill: "var(--surface-container)" }}
                   />
                   <Bar
+                    // Без имени подсказка подписывала столбец «value».
+                    name="Сумма"
                     dataKey="value"
                     radius={[3, 3, 0, 0]}
                     animationDuration={450}
@@ -535,7 +543,7 @@ export function DashboardPage() {
                   >
                     {pieData.map((d, i) => (
                       <Cell
-                        key={d.name}
+                        key={d.key}
                         fill={PIE_COLORS[i % PIE_COLORS.length] ?? "#888888"}
                       />
                     ))}
@@ -555,7 +563,7 @@ export function DashboardPage() {
             <table className="data-table">
               <tbody>
                 {catRows.map((d, i) => (
-                  <tr key={d.name}>
+                  <tr key={d.key}>
                     <td>
                       <span
                         className={

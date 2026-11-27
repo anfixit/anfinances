@@ -9,6 +9,8 @@ export interface AuthContextValue {
   user: User | null
   login: (email: string, password: string) => Promise<void>
   logout: () => Promise<void>
+  /** Подставить свежий профиль — после того как сервер его сохранил. */
+  updateUser: (user: User) => void
 }
 
 export const AuthContext = createContext<AuthContextValue | null>(null)
