@@ -100,10 +100,6 @@
   height: 260px;
 }
 
-.chart-box--tall {
-  height: 340px;
-}
-
 /* Долг по кредитам: показываем отдельной строкой под капиталом,
    чтобы было видно, из чего сложился минус. */
 .capital-debt {
@@ -219,46 +215,16 @@
   padding-left: 12px;
 }
 
-/* Цветная метка вместо легенды: связывает строку с сектором круга. */
-.swatch {
-  display: inline-block;
-  width: 9px;
-  height: 9px;
-  border-radius: 2px;
-  margin-right: 8px;
-  vertical-align: baseline;
-}
-
-.swatch--empty {
-  background: transparent;
-}
-
-/* Строки, слипшиеся в «Прочее»: тот же цвет, но приглушённый —
-   видно, что они попали в один сектор, а не в свой. */
-.swatch--rest {
-  opacity: 0.35;
-}
-
-/* Браузер рисует вокруг сектора прямоугольную рамку фокуса — на
-   круге она выглядит поломкой. Наводку показываем самим сектором. */
+/* Браузер рисует вокруг столбца прямоугольную рамку фокуса — поверх
+   графика она выглядит поломкой. Наводку показывает сам столбец. */
 .recharts-wrapper :focus,
-.recharts-wrapper :focus-visible,
-.recharts-sector:focus {
+.recharts-wrapper :focus-visible {
   outline: none;
-}
-
-.recharts-pie-sector:hover {
-  filter: brightness(1.12);
 }
 
 .data-share {
   color: var(--on-surface-variant);
   width: 4.5rem;
-}
-
-.data-total td {
-  font-weight: 700;
-  border-top: 2px solid var(--outline);
 }
 
 /* Расходы по категориям: итог над списком. В кольце он лежал бы в

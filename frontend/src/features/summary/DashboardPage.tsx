@@ -5,8 +5,6 @@ import {
   BarChart,
   CartesianGrid,
   Cell,
-  Pie,
-  PieChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -28,20 +26,6 @@ import { useTransactions } from "@/features/transactions/hooks"
 import { buildRules, overspentCategories } from "@/features/summary/rules"
 import type { Rule } from "@/features/summary/rules"
 import { formatMoney, sumMoney } from "@/lib/money"
-
-// Оттенки одного синего с добавками — на Хабре график не пестрит.
-const PIE_COLORS = [
-  "#4c8eda",
-  "#7fb2e8",
-  "#3f8f4a",
-  "#d0453b",
-  "#b9762a",
-  "#6c7378",
-  "#2f6ba8",
-  "#a3c7ec",
-  "#7a5ea8",
-  "#3a8f8c",
-]
 
 // Подсказки графиков показывали голое «16000» — в приложении про
 // деньги число без валюты читается как ошибка.
