@@ -13,7 +13,8 @@ export const queryKeys = {
   payees: ["payees"] as const,
   reconciliations: (accountId: string) =>
     ["reconciliations", accountId] as const,
-  newPayees: ["payees", "new"] as const,
+  payeeCandidates: (status: string) =>
+    ["payees", "candidates", status] as const,
   payeeSpending: (month: string) => ["payees", "spending", month] as const,
   currencies: ["currencies"] as const,
   rates: ["currencies", "rates"] as const,

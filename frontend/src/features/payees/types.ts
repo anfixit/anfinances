@@ -22,4 +22,20 @@ export interface SpendingByPayee {
   month: string
   items: PayeeSpending[]
   total_rub: Money
+  // Имена, что ждут подтверждения: в items их нет.
+  unsorted_names: number
+  unsorted_amount: Money
+}
+
+export type CandidateStatus = "pending" | "rejected"
+
+// Зеркало PayeeCandidateRead: невиданное имя, ждущее решения.
+export interface Candidate {
+  id: string
+  name: string
+  times_seen: number
+  amount: Money
+  first_seen_at: string
+  last_seen_at: string
+  status: CandidateStatus
 }

@@ -118,7 +118,7 @@ CATALOG: tuple[ToolSpec, ...] = (
     ),
     _read("get_payoff_plan", "План погашения кредитов"),
     _read("list_payees", "Получатели"),
-    _read("list_new_payees", "Новые получатели"),
+    _read("list_payee_candidates", "Очередь разбора получателей"),
     _read("get_by_payee", "Траты по получателям"),
     _read("get_method_reference", "Справочник по методу ВНБ"),
     _read(

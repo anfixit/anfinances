@@ -9,7 +9,8 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.enums import TransactionKind
-from app.domains.payees.models import Payee
+from app.domains.payees.keys import payee_key
+from app.domains.payees.models import Payee, PayeeCandidate
 from app.domains.transactions.models import Transaction
 
 __all__ = ["PayeeRepository", "SqlPayeeRepository"]
@@ -30,9 +31,35 @@ class PayeeRepository(Protocol):
 
     async def delete(self, payee: Payee) -> None: ...
 
+    async def get_candidate(
+        self, user_id: uuid.UUID, name_key: str
+    ) -> PayeeCandidate | None: ...
+
+    async def add_candidate(
+        self, candidate: PayeeCandidate
+    ) -> PayeeCandidate: ...
+
+    async def list_candidates(
+        self, user_id: uuid.UUID, status: str
+    ) -> list[PayeeCandidate]: ...
+
+    async def get_candidate_by_id(
+        self, candidate_id: uuid.UUID, user_id: uuid.UUID
+    ) -> PayeeCandidate | None: ...
+
+    async def delete_candidate(self, candidate: PayeeCandidate) -> None: ...
+
     async def reassign(
         self, from_payee_id: uuid.UUID, to_payee_id: uuid.UUID
     ) -> int: ...
+
+    async def reassign_orphans(
+        self, user_id: uuid.UUID, name_key: str, payee_id: uuid.UUID
+    ) -> tuple[int, uuid.UUID | None]: ...
+
+    async def candidate_totals(
+        self, user_id: uuid.UUID, name_keys: list[str]
+    ) -> dict[str, Decimal]: ...
 
     async def spending_by_payee(
         self,
@@ -41,9 +68,12 @@ class PayeeRepository(Protocol):
         date_to: datetime,
     ) -> list[tuple[uuid.UUID, str, Decimal, int]]: ...
 
-    async def first_seen(
-        self, user_id: uuid.UUID
-    ) -> dict[uuid.UUID, datetime]: ...
+    async def unsorted_spending(
+        self,
+        user_id: uuid.UUID,
+        date_from: datetime,
+        date_to: datetime,
+    ) -> tuple[int, Decimal]: ...
 
 
 class SqlPayeeRepository:
@@ -88,6 +118,49 @@ class SqlPayeeRepository:
     async def delete(self, payee: Payee) -> None:
         await self._session.delete(payee)
 
+    async def get_candidate(
+        self, user_id: uuid.UUID, name_key: str
+    ) -> PayeeCandidate | None:
+        result = await self._session.execute(
+            select(PayeeCandidate).where(
+                PayeeCandidate.user_id == user_id,
+                PayeeCandidate.name_key == name_key,
+            )
+        )
+        return result.scalar_one_or_none()
+
+    async def add_candidate(self, candidate: PayeeCandidate) -> PayeeCandidate:
+        self._session.add(candidate)
+        await self._session.flush()
+        return candidate
+
+    async def list_candidates(
+        self, user_id: uuid.UUID, status: str
+    ) -> list[PayeeCandidate]:
+        result = await self._session.execute(
+            select(PayeeCandidate)
+            .where(
+                PayeeCandidate.user_id == user_id,
+                PayeeCandidate.status == status,
+            )
+            .order_by(PayeeCandidate.name_key)
+        )
+        return list(result.scalars().all())
+
+    async def get_candidate_by_id(
+        self, candidate_id: uuid.UUID, user_id: uuid.UUID
+    ) -> PayeeCandidate | None:
+        result = await self._session.execute(
+            select(PayeeCandidate).where(
+                PayeeCandidate.id == candidate_id,
+                PayeeCandidate.user_id == user_id,
+            )
+        )
+        return result.scalar_one_or_none()
+
+    async def delete_candidate(self, candidate: PayeeCandidate) -> None:
+        await self._session.delete(candidate)
+
     async def reassign(
         self, from_payee_id: uuid.UUID, to_payee_id: uuid.UUID
     ) -> int:
@@ -100,6 +173,67 @@ class SqlPayeeRepository:
             row.payee_id = to_payee_id
         await self._session.flush()
         return len(rows)
+
+    async def reassign_orphans(
+        self, user_id: uuid.UUID, name_key: str, payee_id: uuid.UUID
+    ) -> tuple[int, uuid.UUID | None]:
+        """Перевесить операции без получателя, чьё имя сворачивается в ключ.
+
+        Возвращает сколько перевешено и категорию самой свежей из них:
+        ею засевается память получателя. Имя в снимке сворачиваем в
+        питоне, а не в SQL: lower() в SQLite кириллицу не трогает.
+        """
+        result = await self._session.execute(
+            select(Transaction)
+            .where(
+                Transaction.user_id == user_id,
+                Transaction.payee_id.is_(None),
+                Transaction.payee_name_snapshot.is_not(None),
+                Transaction.payee_name_snapshot != "",
+            )
+            .order_by(Transaction.date.desc())
+        )
+        rows = [
+            tx
+            for tx in result.scalars().all()
+            if tx.payee_name_snapshot is not None
+            and payee_key(tx.payee_name_snapshot) == name_key
+        ]
+        for tx in rows:
+            tx.payee_id = payee_id
+        await self._session.flush()
+        return len(rows), rows[0].category_id if rows else None
+
+    async def candidate_totals(
+        self, user_id: uuid.UUID, name_keys: list[str]
+    ) -> dict[str, Decimal]:
+        """Сколько потрачено по осиротевшим операциям каждого имени.
+
+        Один проход по всем операциям без получателя: свёртка имени в
+        питоне, поэтому SQL-группировкой не обойтись. Считаются расходы
+        и возвраты, как в отчёте по получателям; имена без таких
+        операций в ответе не появляются.
+        """
+        wanted = set(name_keys)
+        result = await self._session.execute(
+            select(
+                Transaction.payee_name_snapshot, Transaction.amount_rub
+            ).where(
+                Transaction.user_id == user_id,
+                Transaction.payee_id.is_(None),
+                Transaction.payee_name_snapshot.is_not(None),
+                Transaction.payee_name_snapshot != "",
+                Transaction.kind.in_(
+                    (TransactionKind.EXPENSE, TransactionKind.REFUND)
+                ),
+            )
+        )
+        totals: dict[str, Decimal] = {}
+        for snapshot, amount_rub in result.all():
+            key = payee_key(snapshot)
+            if key in wanted:
+                totals[key] = totals.get(key, Decimal(0)) - amount_rub
+        return totals
 
     async def spending_by_payee(
         self,
@@ -138,22 +272,52 @@ class SqlPayeeRepository:
             for row in result.all()
         ]
 
-    async def first_seen(
-        self, user_id: uuid.UUID
-    ) -> dict[uuid.UUID, datetime]:
-        """Дата первой операции по каждому получателю.
+    async def unsorted_spending(
+        self,
+        user_id: uuid.UUID,
+        date_from: datetime,
+        date_to: datetime,
+    ) -> tuple[int, Decimal]:
+        """Сколько имён ждут разбора и сколько по ним потрачено за период.
 
-        По ней отбираются «новые получатели»: не по дате заведения
-        записи, а по первой настоящей трате — выписку заносят задним
-        числом, и запись создаётся сегодня для траты трёхлетней
-        давности.
+        Тот же период и те же виды операций, что у spending_by_payee.
+        Считаются только имена, ждущие в очереди (кандидаты со статусом
+        pending): число обязано совпадать с длиной очереди, иначе
+        отклонённые имена, чьи операции навсегда остаются без
+        получателя, держали бы на дашборде строку, которую нечем
+        убрать. Имён считаем по свёрнутому ключу, а не по операциям,
+        поэтому свёртка в питоне, как в candidate_totals.
         """
-        result = await self._session.execute(
-            select(Transaction.payee_id, func.min(Transaction.date))
-            .where(
-                Transaction.user_id == user_id,
-                Transaction.payee_id.is_not(None),
+        pending_result = await self._session.execute(
+            select(PayeeCandidate.name_key).where(
+                PayeeCandidate.user_id == user_id,
+                PayeeCandidate.status == "pending",
             )
-            .group_by(Transaction.payee_id)
         )
-        return {row[0]: row[1] for row in result.all()}
+        pending_keys = set(pending_result.scalars().all())
+        if not pending_keys:
+            return 0, Decimal(0)
+        result = await self._session.execute(
+            select(
+                Transaction.payee_name_snapshot, Transaction.amount_rub
+            ).where(
+                Transaction.user_id == user_id,
+                Transaction.payee_id.is_(None),
+                Transaction.payee_name_snapshot.is_not(None),
+                Transaction.payee_name_snapshot != "",
+                Transaction.kind.in_(
+                    (TransactionKind.EXPENSE, TransactionKind.REFUND)
+                ),
+                Transaction.date >= date_from,
+                Transaction.date < date_to,
+            )
+        )
+        keys: set[str] = set()
+        total = Decimal(0)
+        for snapshot, amount_rub in result.all():
+            key = payee_key(snapshot)
+            if key not in pending_keys:
+                continue
+            keys.add(key)
+            total -= amount_rub
+        return len(keys), total

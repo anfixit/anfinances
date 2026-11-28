@@ -25,7 +25,7 @@ from app.domains.export.schemas import ExportBundle
 from app.domains.goals.models import CategoryGoal
 from app.domains.import_.repository import ImportRepository
 from app.domains.import_.schemas import ImportResult
-from app.domains.payees.models import Payee
+from app.domains.payees.models import Payee, PayeeCandidate
 from app.domains.payees.service import payee_key
 from app.domains.reconciliation.models import Reconciliation
 from app.domains.recurring.models import RecurringExpense
@@ -119,6 +119,21 @@ class ImportService:
                         categories, payee.last_category_id
                     ),
                     varied_categories=payee.varied_categories,
+                )
+            )
+        # Кандидаты идут мимо прихожей, как и получатели: восстановление
+        # должно вернуть базу точь-в-точь, с отклонёнными именами.
+        for candidate in bundle.payee_candidates:
+            objects.append(
+                PayeeCandidate(
+                    id=uuid.uuid4(),
+                    user_id=user_id,
+                    name=candidate.name,
+                    name_key=payee_key(candidate.name),
+                    status=candidate.status,
+                    times_seen=candidate.times_seen,
+                    first_seen_at=candidate.first_seen_at,
+                    last_seen_at=candidate.last_seen_at,
                 )
             )
         for transfer in bundle.transfers:
@@ -275,6 +290,7 @@ class ImportService:
             credits=len(bundle.credits),
             credit_payments=len(bundle.credit_payments),
             payees=len(bundle.payees),
+            payee_candidates=len(bundle.payee_candidates),
             goals=len(bundle.goals),
             reconciliations=len(bundle.reconciliations),
         )
@@ -353,6 +369,12 @@ def _check_integrity(bundle: ExportBundle) -> None:
         need(payment.transaction_id, transactions)
         need(payment.interest_category_id, categories)
         need(payment.fee_category_id, categories)
+    # Имя кандидата уникально по свёрнутому ключу: два одинаковых
+    # уронили бы заливку на уникальном индексе, уже после частичной
+    # записи.
+    candidate_keys = [payee_key(c.name) for c in bundle.payee_candidates]
+    if len(candidate_keys) != len(set(candidate_keys)):
+        raise ValidationFailedError(_DUPLICATE_CANDIDATES)
     for goal in bundle.goals:
         need(goal.category_id, categories)
     for reconciliation in bundle.reconciliations:
@@ -361,3 +383,6 @@ def _check_integrity(bundle: ExportBundle) -> None:
 
 
 _BROKEN = "Повреждённый бэкап: ссылка на несуществующую запись."
+_DUPLICATE_CANDIDATES = (
+    "Повреждённый бэкап: в очереди получателей два одинаковых имени."
+)

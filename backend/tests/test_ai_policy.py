@@ -87,6 +87,12 @@ def _denylisted(method: str, path: str) -> bool:
         return path not in allowed or method != "GET"
     if path.startswith(f"{API}/payees/") and "/merge/" in path:
         return True
+    # Разбор очереди получателей и прямое создание — решения владелицы;
+    # очередь читать можно.
+    if path.startswith(f"{API}/payees/candidates/") and method == "POST":
+        return True
+    if path == f"{API}/payees" and method == "POST":
+        return True
     if path in _DENY_ANY_METHOD_PATHS:
         return True
     if path.endswith(("/restore", "/archive")):
@@ -190,3 +196,20 @@ async def test_site_jwt_keeps_full_access() -> None:
         assert r.status_code == 200
         r = await env.client.get(f"{API}/export/all.json", headers=env.site)
         assert r.status_code == 200
+
+
+async def test_ai_reads_the_candidate_queue_but_cannot_resolve_it() -> None:
+    async with ai_env(make_settings(**_NO_LIMIT)) as env:
+        token = await env.personal_token(["finance.write"])
+        auth = {"Authorization": f"Bearer {token}"}
+        r = await env.client.get(f"{API}/payees/candidates", headers=auth)
+        assert r.status_code == 200, r.text
+        cid = uuid.uuid4()
+        for path, body in (
+            (f"{API}/payees/candidates/{cid}/accept", {}),
+            (f"{API}/payees/candidates/{cid}/reject", None),
+            (f"{API}/payees/candidates/{cid}/unreject", None),
+            (f"{API}/payees", {"name": "Магазин"}),
+        ):
+            r = await env.client.post(path, headers=auth, json=body)
+            assert r.status_code == 403, (path, r.status_code)

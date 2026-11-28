@@ -22,7 +22,7 @@ from sqlalchemy import event, select
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 from app.core.enums import AccountType, CategoryKind, GoalKind, TransactionKind
-from app.core.exceptions import AlreadyExistsError
+from app.core.exceptions import AlreadyExistsError, ValidationFailedError
 from app.core.models import Base
 from app.domains.accounts.models import Account
 from app.domains.auth.models import User
@@ -35,11 +35,16 @@ from app.domains.export.service import BACKUP_VERSION, ExportService
 from app.domains.goals.models import CategoryGoal
 from app.domains.import_.repository import SqlImportRepository
 from app.domains.import_.service import ImportService
-from app.domains.payees.models import Payee
+from app.domains.payees.models import Payee, PayeeCandidate
 from app.domains.reconciliation.models import Reconciliation
 from app.domains.transactions.models import Transaction, Transfer
 
 WHEN = datetime(2026, 9, 10, 12, 0, tzinfo=UTC)
+
+
+def _utc(value: datetime) -> datetime:
+    # SQLite отдаёт даты без пояса; на проде пояс на месте.
+    return value if value.tzinfo else value.replace(tzinfo=UTC)
 
 
 def _tx(
@@ -91,7 +96,33 @@ async def _fill(
     market = Payee(
         user_id=user, name="Ozon", name_key="ozon", varied_categories=True
     )
-    db_session.add_all([shop, market])
+    # Разобранный мусор: отклонённое имя и ещё одно, что ждёт решения.
+    # Даты передаём явно: у колонок только server_default, и без них
+    # после flush обращение к полю в async-сессии даёт MissingGreenlet.
+    db_session.add_all(
+        [
+            shop,
+            market,
+            PayeeCandidate(
+                user_id=user,
+                name="TAKSOPOLIS",
+                name_key="taksopolis",
+                status="rejected",
+                times_seen=3,
+                first_seen_at=WHEN,
+                last_seen_at=WHEN,
+            ),
+            PayeeCandidate(
+                user_id=user,
+                name="Новая лавка",
+                name_key="новая лавка",
+                status="pending",
+                times_seen=1,
+                first_seen_at=WHEN,
+                last_seen_at=WHEN,
+            ),
+        ]
+    )
     await db_session.flush()
 
     purchase = _tx(
@@ -180,10 +211,14 @@ async def test_backup_carries_everything_added_after_version_one(
         ledger["user"]
     )
 
-    assert bundle.version == BACKUP_VERSION == 2
+    assert bundle.version == BACKUP_VERSION == 3
     assert len(bundle.credits) == 1
     assert len(bundle.credit_payments) == 1
     assert len(bundle.payees) == 2
+    assert {(c.name, c.status) for c in bundle.payee_candidates} == {
+        ("TAKSOPOLIS", "rejected"),
+        ("Новая лавка", "pending"),
+    }
     assert len(bundle.goals) == 1
     assert len(bundle.reconciliations) == 1
     purchase = next(t for t in bundle.transactions if t.payee_id is not None)
@@ -204,6 +239,7 @@ async def test_restore_rebuilds_every_link_for_the_new_owner(
     assert result.credits == 1
     assert result.credit_payments == 1
     assert result.payees == 2
+    assert result.payee_candidates == 2
     assert result.goals == 1
     assert result.reconciliations == 1
 
@@ -240,6 +276,17 @@ async def test_restore_rebuilds_every_link_for_the_new_owner(
     assert payees["Ozon"].varied_categories is True
     shop = payees["Пятёрочка"]
     assert own_categories[shop.last_category_id].name == "Продукты"
+
+    # Кандидаты: отклонённое имя осталось отклонённым — иначе
+    # разобранный мусор после восстановления всплыл бы в очереди снова.
+    candidates = {c.name: c for c in await one(PayeeCandidate)}
+    assert candidates["TAKSOPOLIS"].status == "rejected"
+    assert candidates["TAKSOPOLIS"].times_seen == 3
+    # Конкретные даты, а не «не None»: server_default подставил бы
+    # дату восстановления, и «последний раз виден» врал бы.
+    assert _utc(candidates["TAKSOPOLIS"].first_seen_at) == WHEN
+    assert _utc(candidates["TAKSOPOLIS"].last_seen_at) == WHEN
+    assert candidates["Новая лавка"].status == "pending"
 
     # Операция: получатель, подписи и отметка сверки на месте.
     purchase = next(t for t in own_tx.values() if t.payee_id is not None)
@@ -419,3 +466,86 @@ async def test_csv_names_the_payee_and_the_full_category_path(
     assert "Получатель" in header
     assert "Еда → Продукты" in csv_text
     assert "Пятёрочка" in csv_text
+
+
+async def test_version_two_backup_restores_with_no_candidates(
+    db_session: AsyncSession, ledger: dict[str, uuid.UUID]
+) -> None:
+    """Бэкап версии 2 кандидатов не знал: восстанавливается без них."""
+    await _fill(db_session, ledger)
+    bundle = await ExportService(SqlExportRepository(db_session)).build_backup(
+        ledger["user"]
+    )
+    payload = bundle.model_dump(mode="json")
+    payload["version"] = 2
+    del payload["payee_candidates"]
+    old = type(bundle).model_validate(payload)
+    assert old.payee_candidates == []
+    owner = await _second_user(db_session)
+
+    result = await _service(db_session).restore_all(owner, old)
+
+    assert result.payees == 2
+    assert result.payee_candidates == 0
+    rows = (
+        (
+            await db_session.execute(
+                select(PayeeCandidate).where(PayeeCandidate.user_id == owner)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert rows == []
+
+
+async def test_restore_refuses_duplicate_candidate_names(
+    db_session: AsyncSession, ledger: dict[str, uuid.UUID]
+) -> None:
+    await _fill(db_session, ledger)
+    bundle = await ExportService(SqlExportRepository(db_session)).build_backup(
+        ledger["user"]
+    )
+    bundle.payee_candidates.append(bundle.payee_candidates[0].model_copy())
+    owner = await _second_user(db_session)
+
+    with pytest.raises(ValidationFailedError, match="одинаков"):
+        await _service(db_session).restore_all(owner, bundle)
+
+
+async def test_restore_clears_leftover_candidates_of_an_empty_account(
+    db_session: AsyncSession, ledger: dict[str, uuid.UUID]
+) -> None:
+    """Отклонённые имена из интерфейса не удаляются: аккаунт без счетов
+    и операций, где они остались, считается пустым и не должен падать
+    на уникальном индексе."""
+    await _fill(db_session, ledger)
+    bundle = await ExportService(SqlExportRepository(db_session)).build_backup(
+        ledger["user"]
+    )
+    owner = await _second_user(db_session)
+    db_session.add(
+        PayeeCandidate(
+            user_id=owner,
+            name="TAKSOPOLIS",
+            name_key="taksopolis",
+            status="rejected",
+            first_seen_at=datetime(2020, 1, 1, tzinfo=UTC),
+            last_seen_at=datetime(2020, 1, 1, tzinfo=UTC),
+        )
+    )
+    await db_session.flush()
+
+    result = await _service(db_session).restore_all(owner, bundle)
+
+    assert result.payee_candidates == 2
+    rows = (
+        (
+            await db_session.execute(
+                select(PayeeCandidate).where(PayeeCandidate.user_id == owner)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert _utc({r.name: r.last_seen_at for r in rows}["TAKSOPOLIS"]) == WHEN

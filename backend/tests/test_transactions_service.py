@@ -107,21 +107,31 @@ def _category(kind=CategoryKind.EXPENSE) -> Category:
 
 
 class FakePayees:
-    """Справочник получателей в памяти: ensure заводит на лету."""
+    """Справочник в памяти: подтверждённые в by_key, остальные — кандидаты."""
 
     def __init__(self) -> None:
         self.by_key: dict[str, Any] = {}
+        self.candidates: list[str] = []
 
-    async def ensure(self, user_id, name):  # type: ignore[no-untyped-def]
-        key = " ".join(name.split()).casefold()
-        if key not in self.by_key:
-            self.by_key[key] = Payee(
-                id=uuid.uuid4(),
-                user_id=user_id,
-                name=" ".join(name.split()),
-                name_key=key,
-            )
-        return self.by_key[key]
+    def confirm(self, user_id, name):  # type: ignore[no-untyped-def]
+        payee = Payee(
+            id=uuid.uuid4(),
+            user_id=user_id,
+            name=name,
+            name_key=name.casefold(),
+        )
+        self.by_key[payee.name_key] = payee
+        return payee
+
+    async def remember(self, user_id, name):  # type: ignore[no-untyped-def]
+        cleaned = " ".join(name.split())
+        if not cleaned:
+            return None, ""
+        existing = self.by_key.get(cleaned.casefold())
+        if existing is not None:
+            return existing, existing.name
+        self.candidates.append(cleaned)
+        return None, cleaned
 
 
 def _service(accounts, cats, rates, payees=None):
@@ -247,6 +257,7 @@ async def test_payee_remembers_the_category_it_was_spent_on() -> None:
     acc = _account("RUB")
     cat = _category()
     payees = FakePayees()
+    payees.confirm(USER, "ПЯТЁРОЧКА")
     svc = _service([acc], [cat], {}, payees)
 
     await svc.create_transaction(
@@ -262,7 +273,7 @@ async def test_payee_remembers_the_category_it_was_spent_on() -> None:
     )
 
     payee = payees.by_key["пятёрочка"]
-    assert payee.name == "ПЯТЁРОЧКА", "имя храним как ввели"
+    assert payee.name == "ПЯТЁРОЧКА"
     assert payee.last_category_id == cat.id
 
 
@@ -272,6 +283,7 @@ async def test_fixing_the_category_fixes_the_hint_too() -> None:
     wrong = _category()
     right = _category()
     payees = FakePayees()
+    payees.confirm(USER, "Лента")
     svc = _service([acc], [wrong, right], {}, payees)
 
     tx = await svc.create_transaction(
@@ -311,12 +323,14 @@ async def test_transaction_without_a_payee_creates_none() -> None:
     )
     assert tx.payee_id is None
     assert payees.by_key == {}
+    assert payees.candidates == []
 
 
 async def test_empty_payee_clears_the_link() -> None:
     """Пустая строка — «получателя тут нет», а не имя из пробелов."""
     acc = _account("RUB")
     payees = FakePayees()
+    payees.confirm(USER, "Ошибка")
     svc = _service([acc], [], {}, payees)
 
     tx = await svc.create_transaction(

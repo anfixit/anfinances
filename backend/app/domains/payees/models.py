@@ -9,8 +9,9 @@
 """
 
 import uuid
+from datetime import datetime
 
-from sqlalchemy import ForeignKey, Index, String
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.models import Base, TimestampMixin, UUIDMixin
@@ -52,4 +53,44 @@ class Payee(UUIDMixin, TimestampMixin, Base):
     # пишет и не отдаёт.
     varied_categories: Mapped[bool] = mapped_column(
         default=False, server_default="false", nullable=False
+    )
+
+
+class PayeeCandidate(UUIDMixin, TimestampMixin, Base):
+    """Имя, которое встретилось в операции, но ещё не стало получателем.
+
+    Ждёт решения владелицы: принять в справочник или отклонить.
+    Статусов ровно два: ``pending`` (ждёт) и ``rejected`` (отклонён,
+    больше не спрашивать).
+    """
+
+    __tablename__ = "payee_candidates"
+    __table_args__ = (
+        Index(
+            "uq_payee_candidate_user_name_key",
+            "user_id",
+            "name_key",
+            unique=True,
+        ),
+        Index("ix_payee_candidates_user_id", "user_id"),
+    )
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id"), nullable=False
+    )
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    # Свёрнутое имя — тот же payee_key(), что и у Payee, считается в
+    # питоне по тем же причинам.
+    name_key: Mapped[str] = mapped_column(String, nullable=False)
+    status: Mapped[str] = mapped_column(
+        String, default="pending", server_default="pending", nullable=False
+    )
+    times_seen: Mapped[int] = mapped_column(
+        Integer, default=1, server_default="1", nullable=False
+    )
+    first_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    last_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
     )

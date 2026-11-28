@@ -9,6 +9,7 @@
 import uuid
 from datetime import date, datetime
 from decimal import Decimal
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -194,6 +195,20 @@ class ExportPayee(BaseModel):
     updated_at: datetime
 
 
+class ExportPayeeCandidate(BaseModel):
+    model_config = _RAW
+
+    id: uuid.UUID
+    name: str
+    # Ровно два статуса: ждёт решения и отклонён.
+    status: Literal["pending", "rejected"]
+    times_seen: int
+    first_seen_at: datetime
+    last_seen_at: datetime
+    created_at: datetime
+    updated_at: datetime
+
+
 class ExportGoal(BaseModel):
     model_config = _RAW
 
@@ -227,7 +242,11 @@ class ExportBundle(BaseModel):
     платежами, получатели, цели и сверки — в версии 2. Без них
     восстановленные платежи по кредиту висели без самого кредита:
     ни поправить, ни удалить, а долг пропадал из капитала.
-    Бэкап версии 1 по-прежнему восстанавливается — новые списки
+    Версия 3 принесла кандидатов в получатели: имена из очереди
+    разбора, и ждущие решения, и отклонённые. Без них после
+    восстановления пропали бы все отклонённые имена, и однажды
+    разобранный мусор молча всплыл бы в очереди снова.
+    Бэкап версии 1 или 2 по-прежнему восстанавливается — новые списки
     в нём просто пустые.
     """
 
@@ -244,5 +263,6 @@ class ExportBundle(BaseModel):
     credits: list[ExportCredit] = Field(default_factory=list)
     credit_payments: list[ExportCreditPayment] = Field(default_factory=list)
     payees: list[ExportPayee] = Field(default_factory=list)
+    payee_candidates: list[ExportPayeeCandidate] = Field(default_factory=list)
     goals: list[ExportGoal] = Field(default_factory=list)
     reconciliations: list[ExportReconciliation] = Field(default_factory=list)

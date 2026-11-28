@@ -3,24 +3,28 @@ import { useState } from "react"
 import { useConfirm } from "@/components/confirm-context"
 import { useCategories } from "@/features/categories/hooks"
 import {
+  useAcceptCandidate,
+  useCandidates,
   useDeletePayee,
   useMergePayees,
-  useNewPayees,
   usePayees,
+  useRejectCandidate,
   useRenamePayee,
   useSetPayeeVaried,
+  useUnrejectCandidate,
 } from "@/features/payees/hooks"
-import type { Payee } from "@/features/payees/types"
+import type { Candidate, Payee } from "@/features/payees/types"
 import { categoryPath } from "@/features/categories/path"
 import { reportError } from "@/lib/errors/reportError"
+import { formatMoney } from "@/lib/money"
 
 export function PayeesPage() {
   const payees = usePayees()
-  const fresh = useNewPayees()
+  const queue = useCandidates("pending")
+  const rejected = useCandidates("rejected")
   const categories = useCategories()
 
   const catById = new Map((categories.data ?? []).map((c) => [c.id, c]))
-  const freshIds = new Set((fresh.data ?? []).map((p) => p.id))
 
   if (payees.isPending) {
     return <p>Загрузка…</p>
@@ -41,17 +45,18 @@ export function PayeesPage() {
         Wildberries и Яндекс Маркет отмечаются сами.
       </p>
 
-      {fresh.data && fresh.data.length > 0 && (
-        <div className="card">
-          <h2>Новые за месяц</h2>
-          <p className="allowance-note">
-            Раньше не встречались. Проверьте: забытая подписка или чужое
-            списание выглядят именно так.
-          </p>
-          <p>
-            <strong>{fresh.data.map((p) => p.name).join(", ")}</strong>
-          </p>
-        </div>
+      {queue.isError && (
+        <p className="error">Не удалось загрузить очередь разбора</p>
+      )}
+      {queue.data && queue.data.length > 0 && (
+        <CandidateQueue items={queue.data} payees={payees.data} />
+      )}
+
+      {rejected.isError && (
+        <p className="error">Не удалось загрузить список «Не магазины»</p>
+      )}
+      {rejected.data && rejected.data.length > 0 && (
+        <RejectedList items={rejected.data} />
       )}
 
       {payees.data.length === 0 && (
@@ -66,7 +71,6 @@ export function PayeesPage() {
           <li key={payee.id}>
             <PayeeRow
               payee={payee}
-              isNew={freshIds.has(payee.id)}
               hint={categoryPath(catById, payee.last_category_id)}
               all={payees.data ?? []}
             />
@@ -80,12 +84,10 @@ export function PayeesPage() {
 function PayeeRow({
   payee,
   hint,
-  isNew,
   all,
 }: {
   payee: Payee
   hint: string | null
-  isNew: boolean
   all: Payee[]
 }) {
   const rename = useRenamePayee()
@@ -120,14 +122,16 @@ function PayeeRow({
     }
   }
 
-  const onDelete = async () => {
+  const onNotShop = async () => {
     const ok = await confirm({
-      title: `Удалить получателя «${payee.name}»?`,
+      title: `«${payee.name}» — не магазин?`,
       body: [
-        "Операции останутся, но потеряют ссылку на него — и вместе с " +
-          "ней запомненную категорию.",
+        "Получатель исчезнет из справочника, имя на операциях " +
+          "останется, и в очередь оно больше не попадёт. Если " +
+          "понадобится, вернёте его кнопкой «вернуть в очередь» " +
+          "в списке «Не магазины».",
       ],
-      confirmLabel: "Удалить",
+      confirmLabel: "Не магазин",
       danger: true,
     })
     if (ok) {
@@ -171,7 +175,6 @@ function PayeeRow({
       <span className="payee-info">
         <span className="payee-name">
           <span className="payee-name__text">{payee.name}</span>
-          {isNew && <span className="tree-count">новый</span>}
         </span>
         <span className="acc-meta">
           {payee.varied_categories
@@ -225,15 +228,163 @@ function PayeeRow({
         </button>
         <button
           type="button"
-          className="link danger"
+          className="link"
           disabled={remove.isPending}
           onClick={() => {
-            void onDelete()
+            void onNotShop()
           }}
         >
-          Удалить
+          Не магазин
         </button>
       </span>
     </span>
+  )
+}
+
+function CandidateQueue({
+  items,
+  payees,
+}: {
+  items: Candidate[]
+  payees: Payee[]
+}) {
+  return (
+    <div className="card">
+      <h2>Очередь разбора ({items.length})</h2>
+      <p className="allowance-note">
+        Эти имена встретились в выписках, но в справочнике их нет. Если это
+        магазин — добавьте; если человек или слово из назначения платежа — «Не
+        магазин».
+      </p>
+      <ul className="tree">
+        {items.map((c) => (
+          <li key={c.id}>
+            <CandidateRow candidate={c} payees={payees} />
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+function CandidateRow({
+  candidate,
+  payees,
+}: {
+  candidate: Candidate
+  payees: Payee[]
+}) {
+  const accept = useAcceptCandidate()
+  const reject = useRejectCandidate()
+  const { confirm } = useConfirm()
+  const busy = accept.isPending || reject.isPending
+
+  const onSame = async (target: Payee) => {
+    const ok = await confirm({
+      title: `«${candidate.name}» — это «${target.name}»?`,
+      body: [
+        "Все операции с этим именем уйдут к получателю " +
+          `«${target.name}», а имя исчезнет из очереди.`,
+        "Отменить одним действием не получится.",
+      ],
+      confirmLabel: "Склеить",
+      danger: true,
+    })
+    if (ok) {
+      accept.mutate(
+        { id: candidate.id, payeeId: target.id },
+        { onError: reportError },
+      )
+    }
+  }
+
+  return (
+    <span className="row payee-row">
+      <span className="payee-info">
+        <span className="payee-name">
+          <span className="payee-name__text">{candidate.name}</span>
+        </span>
+        <span className="acc-meta">
+          встретилось {candidate.times_seen} ·{" "}
+          {formatMoney(candidate.amount, "RUB")}
+        </span>
+      </span>
+      <select
+        className="payee-merge"
+        aria-label="Это тот же, что…"
+        value=""
+        disabled={busy}
+        onChange={(e) => {
+          const target = payees.find((p) => p.id === e.target.value)
+          if (target !== undefined) {
+            void onSame(target)
+          }
+        }}
+      >
+        <option value="">Это тот же, что…</option>
+        {payees.map((p) => (
+          <option key={p.id} value={p.id}>
+            {p.name}
+          </option>
+        ))}
+      </select>
+      <span className="payee-actions">
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => {
+            accept.mutate(
+              { id: candidate.id, payeeId: null },
+              { onError: reportError },
+            )
+          }}
+        >
+          В справочник
+        </button>
+        <button
+          type="button"
+          className="link"
+          disabled={busy}
+          onClick={() => {
+            reject.mutate(candidate.id, { onError: reportError })
+          }}
+        >
+          Не магазин
+        </button>
+      </span>
+    </span>
+  )
+}
+
+function RejectedList({ items }: { items: Candidate[] }) {
+  const unreject = useUnrejectCandidate()
+
+  return (
+    <details className="card payee-rejected">
+      <summary>Не магазины ({items.length})</summary>
+      <ul className="tree">
+        {items.map((c) => (
+          <li key={c.id}>
+            <span className="row payee-row">
+              <span className="payee-info">
+                <span className="payee-name">
+                  <span className="payee-name__text">{c.name}</span>
+                </span>
+              </span>
+              <button
+                type="button"
+                className="link"
+                disabled={unreject.isPending}
+                onClick={() => {
+                  unreject.mutate(c.id, { onError: reportError })
+                }}
+              >
+                вернуть в очередь
+              </button>
+            </span>
+          </li>
+        ))}
+      </ul>
+    </details>
   )
 }

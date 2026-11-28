@@ -2,7 +2,7 @@
 
 import uuid
 from datetime import UTC, datetime
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Query, status
 
@@ -14,6 +14,8 @@ from app.domains.payees.repository import (
     SqlPayeeRepository,
 )
 from app.domains.payees.schemas import (
+    CandidateAccept,
+    PayeeCandidateRead,
     PayeeCreate,
     PayeeRead,
     PayeeSpending,
@@ -47,16 +49,78 @@ async def list_payees(
     return ApiResponse(data=[PayeeRead.model_validate(p) for p in items])
 
 
-@router.get("/new", response_model=ApiResponse[list[PayeeRead]])
-async def list_new_payees(
-    user: CurrentUser, service: ServiceDep
-) -> ApiResponse[list[PayeeRead]]:
-    """Кого раньше не было: забытая подписка или чужое списание."""
-    rows = await service.new_payees(user.id, datetime.now(UTC))
+@router.get(
+    "/candidates", response_model=ApiResponse[list[PayeeCandidateRead]]
+)
+async def list_candidates(
+    user: CurrentUser,
+    service: ServiceDep,
+    status_: Annotated[
+        Literal["pending", "rejected"], Query(alias="status")
+    ] = "pending",
+) -> ApiResponse[list[PayeeCandidateRead]]:
+    """Очередь разбора: имена, которых ещё нет в справочнике."""
+    rows = await service.list_candidates(user.id, status_)
     return ApiResponse(
-        data=[PayeeRead.model_validate(p) for p, _ in rows],
-        meta={"since": {str(p.id): seen.isoformat() for p, seen in rows}},
+        data=[
+            PayeeCandidateRead(
+                id=c.id,
+                name=c.name,
+                times_seen=c.times_seen,
+                amount=amount,
+                first_seen_at=c.first_seen_at,
+                last_seen_at=c.last_seen_at,
+                status=c.status,
+            )
+            for c, amount in rows
+        ]
     )
+
+
+@router.post(
+    "/candidates/{candidate_id}/accept",
+    response_model=ApiResponse[PayeeRead],
+)
+async def accept_candidate(
+    candidate_id: uuid.UUID,
+    data: CandidateAccept,
+    user: CurrentUser,
+    service: ServiceDep,
+    db: DbSession,
+) -> ApiResponse[PayeeRead]:
+    payee = await service.accept_candidate(
+        candidate_id, user.id, data.payee_id
+    )
+    await db.commit()
+    return ApiResponse(data=PayeeRead.model_validate(payee))
+
+
+@router.post(
+    "/candidates/{candidate_id}/reject",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def reject_candidate(
+    candidate_id: uuid.UUID,
+    user: CurrentUser,
+    service: ServiceDep,
+    db: DbSession,
+) -> None:
+    await service.reject_candidate(candidate_id, user.id)
+    await db.commit()
+
+
+@router.post(
+    "/candidates/{candidate_id}/unreject",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def unreject_candidate(
+    candidate_id: uuid.UUID,
+    user: CurrentUser,
+    service: ServiceDep,
+    db: DbSession,
+) -> None:
+    await service.unreject_candidate(candidate_id, user.id)
+    await db.commit()
 
 
 @router.get("/spending", response_model=ApiResponse[SpendingByPayee])
@@ -77,9 +141,14 @@ async def spending_by_payee(
         )
         for row in rows
     ]
+    unsorted_names, unsorted_amount = await repo.unsorted_spending(
+        user.id, start, end
+    )
     return ApiResponse(
         data=SpendingByPayee(
             month=month,
+            unsorted_names=unsorted_names,
+            unsorted_amount=unsorted_amount,
             items=items,
             total_rub=sum(
                 (i.amount_rub for i in items), start=items[0].amount_rub * 0
