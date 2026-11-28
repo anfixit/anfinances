@@ -166,27 +166,18 @@ export function DashboardPage() {
     .filter((d) => d.value > 0)
     .sort((a, b) => b.value - a.value)
 
-  // Два десятка секторов не читаются: половина тоньше линии, а
-  // подписи налезают друг на друга. В круге — крупные, остальное
-  // одним сектором; полный список всё равно ниже, в таблице.
-  const PIE_LIMIT = 8
-  const pieHead = catRows.slice(0, PIE_LIMIT)
-  const pieTail = catRows.slice(PIE_LIMIT)
-  const pieData =
-    pieTail.length > 0
-      ? [
-          ...pieHead,
-          {
-            key: "other",
-            name: `Прочее (${String(pieTail.length)})`,
-            value: sumMoney(pieTail.map((d) => String(d.value))),
-          },
-        ]
-      : pieHead
-
   const loose = looseQ.data?.pages.flatMap((p) => p.items) ?? []
 
-  const catTotal = sumMoney((cats.data?.items ?? []).map((i) => i.amount_rub))
+  // Итог — по показанным строкам, а не по всему ответу. Возврат
+  // больше трат даёт по категории минус, такая строка не
+  // показывается, и доли от полного ответа сложились бы в больше
+  // ста процентов.
+  const catTotal = sumMoney(catRows.map((d) => String(d.value)))
+  // Полоса отсчитывается от самой крупной категории, а не от итога:
+  // массив уже отсортирован по убыванию, значит максимум — первый.
+  // Строки с нулём и минусом отфильтрованы, поэтому при непустом
+  // списке делитель всегда больше нуля.
+  const catMax = catRows[0]?.value ?? 0
 
   return (
     <>
@@ -524,60 +515,35 @@ export function DashboardPage() {
       <div className="card">
         <h2>Расходы по категориям</h2>
         {cats.isPending && <p>Загрузка…</p>}
-        {cats.data && pieData.length === 0 && (
+        {cats.data && catRows.length === 0 && (
           <p>За этот месяц расходов нет.</p>
         )}
-        {pieData.length > 0 && (
+        {catRows.length > 0 && (
           <>
-            <div className="chart-box chart-box--tall">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={pieData}
-                    dataKey="value"
-                    nameKey="name"
-                    innerRadius={70}
-                    outerRadius={110}
-                    paddingAngle={2}
-                    animationDuration={450}
-                  >
-                    {pieData.map((d, i) => (
-                      <Cell
-                        key={d.key}
-                        fill={PIE_COLORS[i % PIE_COLORS.length] ?? "#888888"}
-                      />
-                    ))}
-                  </Pie>
-                  <Tooltip
-                    formatter={moneyTip}
-                    contentStyle={TIP_BOX}
-                    itemStyle={TIP_TEXT}
-                    labelStyle={TIP_TEXT}
-                  />
-                </PieChart>
-              </ResponsiveContainer>
+            {/* Итог стоит над списком: в кольце он лежал бы в центре,
+                а в таблице строка «Итого» снизу дублировала бы его. */}
+            <div className="cat-head">
+              <span>За месяц</span>
+              <strong className="cat-head-total num">
+                {formatMoney(String(catTotal), "RUB")}
+              </strong>
             </div>
-            {/* Круг показывает пропорции, но не суммы, а легенда на два
-                десятка категорий не помещалась и обрезалась. Цвет
-                переехал сюда, к строке с рублями и долей. */}
-            <table className="data-table">
+            {/* Полосы от одной вертикали: так величины сравниваются
+                точнее, чем секторами круга, и цвет не обязан
+                различать категории — их различают имена. */}
+            <table className="data-table cat-list">
               <tbody>
-                {catRows.map((d, i) => (
+                {catRows.map((d) => (
                   <tr key={d.key}>
-                    <td>
+                    <td>{d.name}</td>
+                    <td className="cat-bar">
                       <span
-                        className={
-                          i < PIE_LIMIT ? "swatch" : "swatch swatch--rest"
-                        }
+                        className="cat-bar-fill"
+                        aria-hidden="true"
                         style={{
-                          background:
-                            (i < PIE_LIMIT
-                              ? PIE_COLORS[i % PIE_COLORS.length]
-                              : PIE_COLORS[PIE_LIMIT % PIE_COLORS.length]) ??
-                            "#888888",
+                          width: `${((d.value / catMax) * 100).toFixed(1)}%`,
                         }}
                       />
-                      {d.name}
                     </td>
                     <td className="num">
                       {formatMoney(String(d.value), "RUB")}
@@ -589,16 +555,6 @@ export function DashboardPage() {
                     </td>
                   </tr>
                 ))}
-                <tr className="data-total">
-                  <td>
-                    <span className="swatch swatch--empty" />
-                    Итого
-                  </td>
-                  <td className="num">
-                    {formatMoney(String(catTotal), "RUB")}
-                  </td>
-                  <td />
-                </tr>
               </tbody>
             </table>
           </>

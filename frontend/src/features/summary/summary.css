@@ -260,3 +260,82 @@
   font-weight: 700;
   border-top: 2px solid var(--outline);
 }
+
+/* Расходы по категориям: итог над списком. В кольце он лежал бы в
+   центре, а строка «Итого» снизу дублировала бы его. */
+.cat-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 4px 0 0;
+  color: var(--on-surface-variant);
+}
+
+.cat-head-total {
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: var(--on-surface);
+}
+
+/* Дорожка отдаёт полосе свободную ширину строки: имя и суммы держат
+   свою, остальное уходит на сравнение величин. */
+.cat-list .cat-bar {
+  width: 45%;
+}
+
+/* Левый край прямой — все полосы начинаются от одной вертикали, иначе
+   сравнивать длину глазом нельзя. Скруглён только наружный конец.
+   Цвет один: длину читает глаз, различать категории цвету не нужно,
+   их различают имена. */
+.cat-bar-fill {
+  display: block;
+  height: 8px;
+  min-width: 2px;
+  border-radius: 0 4px 4px 0;
+  background: var(--expense);
+}
+
+/* Узкий экран: полоса уезжает под имя во всю ширину строки, суммы
+   остаются справа. Раскладка задана явно — при автоматической полоса
+   на всю ширину вытолкнула бы суммы на третий ряд. */
+@media (max-width: 560px) {
+  .cat-list tbody {
+    display: block;
+  }
+
+  .cat-list tr {
+    display: grid;
+    grid-template-columns: 1fr auto auto;
+    grid-template-areas:
+      "name sum share"
+      "bar bar bar";
+    align-items: baseline;
+    gap: 4px 12px;
+    padding: 6px 0;
+    border-top: 1px solid var(--outline-variant);
+  }
+
+  .cat-list td {
+    border-top: none;
+    padding: 0;
+  }
+
+  .cat-list td:nth-child(1) {
+    grid-area: name;
+  }
+
+  .cat-list .cat-bar {
+    grid-area: bar;
+    width: auto;
+    padding-left: 0;
+  }
+
+  .cat-list td:nth-child(3) {
+    grid-area: sum;
+  }
+
+  .cat-list td:nth-child(4) {
+    grid-area: share;
+  }
+}
