@@ -100,10 +100,6 @@
   height: 260px;
 }
 
-.chart-box--tall {
-  height: 340px;
-}
-
 /* Долг по кредитам: показываем отдельной строкой под капиталом,
    чтобы было видно, из чего сложился минус. */
 .capital-debt {
@@ -219,36 +215,11 @@
   padding-left: 12px;
 }
 
-/* Цветная метка вместо легенды: связывает строку с сектором круга. */
-.swatch {
-  display: inline-block;
-  width: 9px;
-  height: 9px;
-  border-radius: 2px;
-  margin-right: 8px;
-  vertical-align: baseline;
-}
-
-.swatch--empty {
-  background: transparent;
-}
-
-/* Строки, слипшиеся в «Прочее»: тот же цвет, но приглушённый —
-   видно, что они попали в один сектор, а не в свой. */
-.swatch--rest {
-  opacity: 0.35;
-}
-
-/* Браузер рисует вокруг сектора прямоугольную рамку фокуса — на
-   круге она выглядит поломкой. Наводку показываем самим сектором. */
+/* Браузер рисует вокруг столбца прямоугольную рамку фокуса — поверх
+   графика она выглядит поломкой. Наводку показывает сам столбец. */
 .recharts-wrapper :focus,
-.recharts-wrapper :focus-visible,
-.recharts-sector:focus {
+.recharts-wrapper :focus-visible {
   outline: none;
-}
-
-.recharts-pie-sector:hover {
-  filter: brightness(1.12);
 }
 
 .data-share {
@@ -256,7 +227,99 @@
   width: 4.5rem;
 }
 
-.data-total td {
-  font-weight: 700;
-  border-top: 2px solid var(--outline);
+/* Расходы по категориям: итог над списком. В кольце он лежал бы в
+   центре, а строка «Итого» снизу дублировала бы его. */
+.cat-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 4px 0 0;
+  color: var(--on-surface-variant);
+}
+
+.cat-head-total {
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: var(--on-surface);
+}
+
+/* Треть строки под дорожку: имени нужно место, иначе «Софт →
+   Подписки» переносится на вторую строку там, где ширины вдоволь. */
+.cat-list .cat-bar {
+  width: 32%;
+}
+
+/* Дорожка видна целиком: без неё мелкая категория — красная крапина
+   посреди пустоты, а в пустой дорожке она читается как «почти ничего
+   от самой крупной». Размеры те же, что у полос бюджета (.bar в
+   budgets.css): приложение должно выглядеть одним приложением.
+   Повторяем, а не переиспользуем: main.tsx тянет все стили фич сразу,
+   так что `.bar` здесь доступен, но это классы чужой страницы —
+   правка полос бюджета поехала бы на обзор молча. */
+.cat-bar-track {
+  display: block;
+  height: 8px;
+  border-radius: var(--shape-full);
+  background: var(--surface-container-highest);
+  overflow: hidden;
+}
+
+/* Все полосы начинаются от одной вертикали — иначе сравнивать длину
+   глазом нельзя. Цвет один: длину читает глаз, различать категории
+   цвету не нужно, их различают имена. */
+.cat-bar-fill {
+  display: block;
+  height: 100%;
+  min-width: 3px;
+  border-radius: var(--shape-full);
+  background: var(--expense);
+  transition: width var(--spring);
+}
+
+/* Узкий экран: полоса уезжает под имя во всю ширину строки, суммы
+   остаются справа. Раскладка задана явно — при автоматической полоса
+   на всю ширину вытолкнула бы суммы на третий ряд. */
+@media (max-width: 560px) {
+  .cat-list tbody {
+    display: block;
+  }
+
+  .cat-list tr {
+    display: grid;
+    grid-template-columns: 1fr auto auto;
+    grid-template-areas:
+      "name sum share"
+      "bar bar bar";
+    align-items: baseline;
+    gap: 4px 12px;
+    padding: 6px 0;
+    border-top: 1px solid var(--outline-variant);
+  }
+
+  .cat-list td {
+    border-top: none;
+    padding: 0;
+  }
+
+  .cat-list td:nth-child(1) {
+    grid-area: name;
+  }
+
+  /* `td.cat-bar`, а не `.cat-bar`: вес должен перебить
+     `.data-table td:not(:first-child)`, иначе padding-left в 12px
+     остаётся и полоса стоит правее имени. */
+  .cat-list td.cat-bar {
+    grid-area: bar;
+    width: auto;
+    padding-left: 0;
+  }
+
+  .cat-list td:nth-child(3) {
+    grid-area: sum;
+  }
+
+  .cat-list td:nth-child(4) {
+    grid-area: share;
+  }
 }

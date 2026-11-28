@@ -39,6 +39,18 @@ const TYPOGRAPHIC_MINUS = String.fromCharCode(0x2212)
  * разделитель последний, остальные были разрядами. Неразрывные
  * пробелы ловит сам \s.
  */
+/** Доля в процентах без знака «%»: «18,2», «20».
+ *
+ * Разделитель — запятая: рядом в тех же строках стоят рубли, и точка
+ * среди них читается как чужая. Нулевой хвост не печатаем, «20%»
+ * вместо «20,0%».
+ */
+export function formatPercent(value: number): string {
+  return new Intl.NumberFormat("ru-RU", {
+    maximumFractionDigits: 1,
+  }).format(value)
+}
+
 export function normalizeAmount(raw: string): string {
   const compact = raw
     .replace(/[\s']/g, "")

@@ -15,7 +15,7 @@ import type { Credit, CreditPayment } from "@/features/credits/types"
 import { TRASH_NOTE } from "@/features/trash/types"
 import { reportError } from "@/lib/errors/reportError"
 import { formatDate } from "@/lib/datetime"
-import { formatMoney } from "@/lib/money"
+import { formatMoney, formatPercent } from "@/lib/money"
 
 function percentPaid(credit: Credit): number {
   const initial = Number(credit.principal_initial)
@@ -24,12 +24,6 @@ function percentPaid(credit: Credit): number {
   }
   const paid = initial - Number(credit.principal_balance)
   return Math.min(100, Math.max(0, (paid / initial) * 100))
-}
-
-function formatPercent(value: number): string {
-  return new Intl.NumberFormat("ru-RU", {
-    maximumFractionDigits: 1,
-  }).format(value)
 }
 
 function creditMeta(credit: Credit): string {

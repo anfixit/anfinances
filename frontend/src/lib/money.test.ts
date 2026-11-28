@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { normalizeAmount } from "@/lib/money"
+import { formatPercent, normalizeAmount } from "@/lib/money"
 
 const NBSP = String.fromCharCode(0xa0)
 const NARROW_NBSP = String.fromCharCode(0x202f)
@@ -33,5 +33,17 @@ describe("normalizeAmount", () => {
 
   it("целое число не трогает", () => {
     expect(normalizeAmount("300")).toBe("300")
+  })
+})
+
+describe("formatPercent", () => {
+  it("десятичный знак — запятая, как в суммах рядом", () => {
+    expect(formatPercent(18.1818)).toBe("18,2")
+    expect(formatPercent(1.8181)).toBe("1,8")
+  })
+
+  it("круглое число без нулевого хвоста", () => {
+    expect(formatPercent(20)).toBe("20")
+    expect(formatPercent(100)).toBe("100")
   })
 })
