@@ -25,7 +25,7 @@ import { useSpendingByPayee } from "@/features/payees/hooks"
 import { useTransactions } from "@/features/transactions/hooks"
 import { buildRules, overspentCategories } from "@/features/summary/rules"
 import type { Rule } from "@/features/summary/rules"
-import { formatMoney, sumMoney } from "@/lib/money"
+import { formatMoney, formatPercent, sumMoney } from "@/lib/money"
 
 // Подсказки графиков показывали голое «16000» — в приложении про
 // деньги число без валюты читается как ошибка.
@@ -535,12 +535,7 @@ export function DashboardPage() {
                     </td>
                     <td className="num data-share">
                       {catTotal > 0
-                        ? // Запятая, а не точка: рядом в той же
-                          // строке рубли через запятую, и точка
-                          // рядом с ними читается как чужая.
-                          `${((d.value / catTotal) * 100)
-                            .toFixed(1)
-                            .replace(".", ",")}%`
+                        ? `${formatPercent((d.value / catTotal) * 100)}%`
                         : "—"}
                     </td>
                   </tr>
