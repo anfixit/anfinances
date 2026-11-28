@@ -147,20 +147,23 @@ export function DashboardPage() {
       name: catName(i.category_id),
       value: Number(i.amount_rub),
     }))
-    .filter((d) => d.value > 0)
+    // Ноль не строка: категории без трат в списке делать нечего.
+    // Минус — строка: бэкенд уводит в минус категорию, где за месяц
+    // был только возврат, и спрятать её значило бы разойтись с его
+    // итогом.
+    .filter((d) => d.value !== 0)
     .sort((a, b) => b.value - a.value)
 
   const loose = looseQ.data?.pages.flatMap((p) => p.items) ?? []
 
-  // Итог — по показанным строкам, а не по всему ответу. Возврат
-  // больше трат даёт по категории минус, такая строка не
-  // показывается, и доли от полного ответа сложились бы в больше
-  // ста процентов.
-  const catTotal = sumMoney(catRows.map((d) => String(d.value)))
+  // Итог — по всему ответу, как считает бэкенд (`total_rub`).
+  // Иначе в месяц с возвратом больше трат карточка «Поток денег» на
+  // том же экране показала бы за тот же месяц другое число.
+  const catTotal = sumMoney((cats.data?.items ?? []).map((i) => i.amount_rub))
   // Полоса отсчитывается от самой крупной категории, а не от итога:
-  // массив уже отсортирован по убыванию, значит максимум — первый.
-  // Строки с нулём и минусом отфильтрованы, поэтому при непустом
-  // списке делитель всегда больше нуля.
+  // массив отсортирован по убыванию, значит максимум — первый. Он
+  // бывает и нулём, и минусом — месяц мог состоять из одних
+  // возвратов, тогда полос нет вовсе.
   const catMax = catRows[0]?.value ?? 0
 
   return (
@@ -522,12 +525,14 @@ export function DashboardPage() {
                     <td>{d.name}</td>
                     <td className="cat-bar">
                       <span className="cat-bar-track" aria-hidden="true">
-                        <span
-                          className="cat-bar-fill"
-                          style={{
-                            width: `${((d.value / catMax) * 100).toFixed(1)}%`,
-                          }}
-                        />
+                        {d.value > 0 && catMax > 0 && (
+                          <span
+                            className="cat-bar-fill"
+                            style={{
+                              width: `${((d.value / catMax) * 100).toFixed(1)}%`,
+                            }}
+                          />
+                        )}
                       </span>
                     </td>
                     <td className="num">

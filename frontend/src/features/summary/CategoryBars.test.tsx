@@ -103,6 +103,15 @@ beforeEach(() => {
   }
 })
 
+// Месяц, в котором по одной категории возврат превысил траты.
+function withRefund() {
+  categories = [...categories, cat("cneg", "Возврат")]
+  byCategory.items = [
+    ...byCategory.items,
+    { category_id: "cneg", amount_rub: "-50.00" },
+  ]
+}
+
 afterEach(cleanup)
 
 describe("карточка «Расходы по категориям»", () => {
@@ -132,32 +141,45 @@ describe("карточка «Расходы по категориям»", () => 
     expect(card().queryByText("Итого")).not.toBeInTheDocument()
   })
 
-  it("доля считается от показанных строк и печатается через запятую", () => {
-    // Возврат уводит общую сумму ответа в 5450, но строка с ним не
-    // показывается — доли должны считаться от 5500, иначе их сумма
-    // перевалит за сто процентов.
-    categories = [...categories, cat("cneg", "Возврат")]
-    byCategory.items = [
-      ...byCategory.items,
-      { category_id: "cneg", amount_rub: "-50.00" },
-    ]
+  it("доля печатается через запятую", () => {
     renderPage()
 
     expect(card().getByText("18,2%")).toBeInTheDocument()
     expect(card().getByText("1,8%")).toBeInTheDocument()
   })
 
-  it("отрицательная сумма не показывается и в итог не входит", () => {
-    categories = [...categories, cat("cneg", "Возврат")]
+  it("категория с возвратом показана строкой и уменьшает итог", () => {
+    // Бэкенд уводит такую категорию в минус намеренно
+    // (summary/service.py: «Минус, а не abs»). Итог на карточке должен
+    // совпадать с его `total_rub`, иначе «Поток денег» на том же
+    // экране покажет другое число за тот же месяц.
+    withRefund()
+    renderPage()
+
+    expect(card().getByText("Возврат")).toBeInTheDocument()
+    expect(card().getByText(/5\s?450/)).toBeInTheDocument()
+    expect(card().queryByText(/5\s?500/)).not.toBeInTheDocument()
+  })
+
+  it("у категории с возвратом нет полосы, а доли считаются от итога", () => {
+    withRefund()
+    renderPage()
+
+    // Одиннадцать строк, но полос десять: отрицательной длины не бывает.
+    expect(fills()).toHaveLength(10)
+    expect(card().getByText("18,3%")).toBeInTheDocument()
+  })
+
+  it("нулевая категория в список не попадает", () => {
+    categories = [...categories, cat("czero", "Пустая")]
     byCategory.items = [
       ...byCategory.items,
-      { category_id: "cneg", amount_rub: "-50.00" },
+      { category_id: "czero", amount_rub: "0" },
     ]
     renderPage()
 
+    expect(card().queryByText("Пустая")).not.toBeInTheDocument()
     expect(fills()).toHaveLength(10)
-    expect(card().queryByText("Возврат")).not.toBeInTheDocument()
-    expect(card().getByText(/5\s?500/)).toBeInTheDocument()
   })
 
   it("когда все суммы нулевые — текст про отсутствие расходов", () => {
