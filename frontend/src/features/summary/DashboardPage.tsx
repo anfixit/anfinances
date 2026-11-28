@@ -521,20 +521,26 @@ export function DashboardPage() {
                   <tr key={d.key}>
                     <td>{d.name}</td>
                     <td className="cat-bar">
-                      <span
-                        className="cat-bar-fill"
-                        aria-hidden="true"
-                        style={{
-                          width: `${((d.value / catMax) * 100).toFixed(1)}%`,
-                        }}
-                      />
+                      <span className="cat-bar-track" aria-hidden="true">
+                        <span
+                          className="cat-bar-fill"
+                          style={{
+                            width: `${((d.value / catMax) * 100).toFixed(1)}%`,
+                          }}
+                        />
+                      </span>
                     </td>
                     <td className="num">
                       {formatMoney(String(d.value), "RUB")}
                     </td>
                     <td className="num data-share">
                       {catTotal > 0
-                        ? `${((d.value / catTotal) * 100).toFixed(1)}%`
+                        ? // Запятая, а не точка: рядом в той же
+                          // строке рубли через запятую, и точка
+                          // рядом с ними читается как чужая.
+                          `${((d.value / catTotal) * 100)
+                            .toFixed(1)
+                            .replace(".", ",")}%`
                         : "—"}
                     </td>
                   </tr>
